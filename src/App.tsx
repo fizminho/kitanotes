@@ -1200,7 +1200,7 @@ export default function App() {
             {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceModalOpen}><Plus size={14}/> New space</button>}
             <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
-            {user ? <button className="topbar-action logout-action" onClick={signOut}><LogOut size={14}/> Sign out</button> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
+            {user ? <button className="topbar-action logout-action" onClick={signOut} aria-label="Sign out" title="Sign out"><LogOut size={14}/> Sign out</button> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
             {user?.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <div className="profile-avatar small">{user?.displayName?.slice(0, 1).toUpperCase() ?? "?"}</div>}
           </div>
         </header>
