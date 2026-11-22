@@ -1,6 +1,17 @@
 import { sendPushToUser } from "./push.ts";
 import { cleanupExpiredRateLimits } from "./rate-limit.ts";
-type DueReminder={id:string;workspace_id:string;event_id:string|null;note_id:string|null;title:string;due_at_utc:string};
+type DueReminder={id:string;workspace_id:string;event_id:string|null;note_id:string|null;title:string;due_at_utc:string;timezone:string};
+
+export function formatReminderDueAt(dueAtUtc:string,timeZone="Asia/Kuala_Lumpur"):string {
+  const date=new Date(dueAtUtc);
+  if(Number.isNaN(date.getTime()))return "at the scheduled time";
+  let zone=timeZone;
+  try{new Intl.DateTimeFormat("en-US",{timeZone:zone}).format(date);}catch{zone="Asia/Kuala_Lumpur";}
+  const dateLabel=new Intl.DateTimeFormat("en-GB",{timeZone:zone,weekday:"short",day:"numeric",month:"short",year:"numeric"}).format(date);
+  const timeLabel=new Intl.DateTimeFormat("en-US",{timeZone:zone,hour:"numeric",minute:"2-digit",hourCycle:"h12"}).format(date);
+  const zoneLabel=zone==="Asia/Kuala_Lumpur"?"MYT":new Intl.DateTimeFormat("en-US",{timeZone:zone,timeZoneName:"short"}).formatToParts(date).find(part=>part.type==="timeZoneName")?.value??zone;
+  return dateLabel+", "+timeLabel+" "+zoneLabel;
+}
 
 export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}):Promise<number>{
   const now=new Date().toISOString();
@@ -8,7 +19,7 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
   await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE status='pending' AND due_at_utc<=? AND ((event_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM calendar_events e WHERE e.id=reminders.event_id AND e.deleted_at IS NULL)) OR (note_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.id=reminders.note_id AND n.deleted_at IS NULL)))")
     .bind(now,now,now).run();
 
-  const due=await db.prepare("SELECT id,workspace_id,event_id,note_id,title,due_at_utc FROM reminders WHERE status='pending' AND due_at_utc<=? ORDER BY due_at_utc LIMIT 25")
+  const due=await db.prepare("SELECT id,workspace_id,event_id,note_id,title,due_at_utc,timezone FROM reminders WHERE status='pending' AND due_at_utc<=? ORDER BY due_at_utc LIMIT 25")
     .bind(now).all<DueReminder>();
 
   let deliveredCount=0;
@@ -28,8 +39,9 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
     }
     const resourceType=reminder.event_id?"event":reminder.note_id?"note":"reminder";
     const resourceId=reminder.event_id??reminder.note_id??reminder.id;
+    const dueLabel=formatReminderDueAt(reminder.due_at_utc,reminder.timezone);
     const insertNotification=db.prepare("INSERT OR IGNORE INTO notifications (id,user_id,workspace_id,notification_type,title,body,resource_type,resource_id,idempotency_key,created_at) SELECT lower(hex(randomblob(16))),wm.user_id,?,'reminder',?,?,?,?,'reminder:'||?||':'||wm.user_id,? FROM workspace_members wm WHERE wm.workspace_id=?")
-      .bind(reminder.workspace_id,"Reminder: "+reminder.title,"Due "+reminder.due_at_utc,resourceType,resourceId,reminder.id,now,reminder.workspace_id);
+      .bind(reminder.workspace_id,"Reminder: "+reminder.title,"Due: "+dueLabel,resourceType,resourceId,reminder.id,now,reminder.workspace_id);
     const markDelivered=db.prepare("UPDATE reminders SET status='delivered',delivered_at=?,updated_at=? WHERE id=? AND status='pending' AND due_at_utc<=?")
       .bind(now,now,reminder.id,now);
     const results=await db.batch([insertNotification,markDelivered]);
@@ -38,7 +50,7 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
       deliveredCount++;
       if(env){
         const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=?").bind(reminder.workspace_id).all<{user_id:string}>();
-        await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Reminder: "+reminder.title).slice(0,80),body:"Due "+reminder.due_at_utc,url:"/",tag:"reminder-"+reminder.id},"reminder")));
+        await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Reminder: "+reminder.title).slice(0,80),body:"Due: "+dueLabel,url:"/",tag:"reminder-"+reminder.id},"reminder")));
       }
     }
   }
