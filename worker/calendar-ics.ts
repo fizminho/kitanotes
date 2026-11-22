@@ -33,7 +33,7 @@ function parseDate(prop:{params:Record<string,string>;value:string}|undefined,de
  if(/Z$/.test(prop.value)){const m=prop.value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);if(!m)return null;const d=new Date(m[1]+"-"+m[2]+"-"+m[3]+"T"+m[4]+":"+m[5]+":"+m[6]+"Z");return Number.isNaN(d.getTime())?null:{utc:d.toISOString(),allDay:false};}
  const utc=localToUtc(prop.value,tz);return utc?{utc,allDay:false}:null;
 }
-function parseIcs(text:string,defaultTz="Asia/Kuala_Lumpur"):IcsEvent[] {
+export function parseIcs(text:string,defaultTz="Asia/Kuala_Lumpur"):IcsEvent[] {
  const lines=unfold(text);const blocks:string[]=[];let active:string[]|null=null;
  for(const line of lines){if(line==="BEGIN:VEVENT")active=[];else if(line==="END:VEVENT"&&active){blocks.push(active.join("\n"));active=null;}else if(active)active.push(line);}
  const result:IcsEvent[]=[];
@@ -81,7 +81,7 @@ const SCHOOL_BREAKS:Record<number,Record<"A"|"B",Array<{name:string;start:string
 function addCalendarDays(value:string,days:number):string {
  const date=new Date(value+"T00:00:00Z");date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);
 }
-function schoolHolidayEvents(state:string,from:string,to:string){
+export function schoolHolidayEvents(state:string,from:string,to:string){
  const group=GROUP_A_STATES.has(state)?"A":"B";const events=[];
  for(const [year,groups] of Object.entries(SCHOOL_BREAKS)){
   for(const period of groups[group]){
@@ -95,17 +95,92 @@ function schoolHolidayEvents(state:string,from:string,to:string){
  }
  return events;
 }
-async function holidays(request:Request):Promise<Response>{
- const url=new URL(request.url);const state=validState(url.searchParams.get("state"));if(!state)return json({error:"INVALID_STATE"},400);const from=url.searchParams.get("from")??new Date().getFullYear()+"-01-01";const to=url.searchParams.get("to")??(new Date().getFullYear()+1)+"-12-31";
- let publicEvents:Array<{id:string;title:string;description:string;startsAt:string;endsAt:string;timezone:string;allDay:boolean;holiday:boolean;holidayType:"public"}>=[];
- let holidayWiseAvailable=true;
- try{const response=await fetch("https://holidaywise.wee.my/my/"+STATE_SLUGS[state]+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error("feed");const parsed=parseIcs(await response.text());publicEvents=parsed.filter(e=>new Date(new Date(e.start).getTime()+8*60*60*1000).toISOString().slice(0,10)>=from&&new Date(new Date(e.start).getTime()+8*60*60*1000).toISOString().slice(0,10)<=to).map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true,holidayType:"public" as const}));}catch{holidayWiseAvailable=false;}
- const events=[...publicEvents,...schoolHolidayEvents(state,from,to)].sort((a,b)=>a.startsAt.localeCompare(b.startsAt));
- return json({state,events,source:"HolidayWise + KPM",sources:{holidayWise:holidayWiseAvailable,kpm:true},updatedAt:new Date().toISOString()},200,{"cache-control":"public, max-age=3600, s-maxage=21600"});
+function eventLocalDate(value:string,timezone:string):string {
+ const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(value));
+ const part=(key:string)=>parts.find(x=>x.type===key)?.value??"0000";
+ return part("year")+"-"+part("month")+"-"+part("day");
 }
+type HolidayApiEvent={id:string;title:string;description:string;startsAt:string;endsAt:string;timezone:string;allDay:boolean;holiday:boolean;holidayType:"public"|"school"};
+async function cachedHolidayEvents(db:Db|undefined,state:string,from:string,to:string,source:"public"|"school"):Promise<{events:HolidayApiEvent[];years:Set<number>}> {
+ const events:HolidayApiEvent[]=[];const years=new Set<number>();
+ if(!db)return{events,years};
+ const first=Number(from.slice(0,4)),last=Number(to.slice(0,4));
+ for(let year=first;year<=last;year++){
+  const row=await db.prepare("SELECT events_json FROM calendar_holiday_cache WHERE state=? AND holiday_year=? AND source=?").bind(state,year,source).first<{events_json:string}>();
+  if(!row)continue;
+  try{const parsed=JSON.parse(row.events_json);if(Array.isArray(parsed)){events.push(...parsed as HolidayApiEvent[]);years.add(year);}}catch{/* retain fallback when cache is malformed */}
+ }
+ return{events,years};
+}
+async function holidays(request:Request,db?:Db):Promise<Response>{
+ const url=new URL(request.url);const state=validState(url.searchParams.get("state"));if(!state)return json({error:"INVALID_STATE"},400);
+ const from=url.searchParams.get("from")??new Date().getFullYear()+"-01-01";const to=url.searchParams.get("to")??(new Date().getFullYear()+1)+"-12-31";
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(to)||from>to||Number(to.slice(0,4))-Number(from.slice(0,4))>3)return json({error:"INVALID_DATE_RANGE"},400);
+ const publicCache=await cachedHolidayEvents(db,state,from,to,"public");
+ const schoolCache=await cachedHolidayEvents(db,state,from,to,"school");
+ const requestedYears=Array.from({length:Number(to.slice(0,4))-Number(from.slice(0,4))+1},(_,i)=>Number(from.slice(0,4))+i);
+ let publicEvents:HolidayApiEvent[]=publicCache.events;
+ let holidayWiseAvailable=publicCache.years.size===requestedYears.length;
+ let holidayWiseError:string|null=null;
+ if(!holidayWiseAvailable){
+  try{
+   const response=await fetch("https://holidaywise.wee.my/my/"+STATE_SLUGS[state]+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(10000)});
+   if(!response.ok)throw new Error("HolidayWise returned HTTP "+response.status);
+   const parsed=parseIcs(await response.text());
+   if(!parsed.length)throw new Error("HolidayWise feed returned no readable calendar events");
+   const fresh=parsed.filter(e=>{const day=eventLocalDate(e.start,e.timezone);return day>=from&&day<=to;}).map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true,holidayType:"public" as const}));
+   if(fresh.length>0||publicCache.events.length===0)publicEvents=fresh;
+   holidayWiseAvailable=true;
+  }catch(error){
+   holidayWiseError=error instanceof Error?error.message:"HolidayWise feed unavailable";
+   publicEvents=publicCache.events;
+   holidayWiseAvailable=publicCache.events.length>0;
+  }
+ }
+ const schoolEvents:HolidayApiEvent[]=[];
+ for(const year of requestedYears){
+  if(schoolCache.years.has(year)){schoolEvents.push(...schoolCache.events.filter(event=>eventLocalDate(event.startsAt,event.timezone).startsWith(String(year))));}
+  else schoolEvents.push(...schoolHolidayEvents(state,from,to).filter(event=>event.title.includes(" "+year+" ")));
+ }
+ const events=[...publicEvents,...schoolEvents].filter(event=>{const day=eventLocalDate(event.startsAt,event.timezone);return day>=from&&day<=to;}).sort((a,b)=>a.startsAt.localeCompare(b.startsAt));
+ return json({state,events,source:"HolidayWise + KPM",sources:{holidayWise:holidayWiseAvailable,kpm:true,publicHolidayCount:publicEvents.length,schoolHolidayCount:schoolEvents.length,holidayWiseError},updatedAt:new Date().toISOString()},200,{"cache-control":"public, max-age=900, s-maxage=3600"});
+}
+export async function syncCalendarHolidayData(db:Db,now=new Date()):Promise<{states:number;publicEvents:number;schoolEvents:number;failedStates:string[]}> {
+ const syncedAt=now.toISOString();const currentYear=now.getUTCFullYear();let publicEvents=0,schoolEvents=0;const failedStates:string[]=[];
+ const stateEntries=Object.entries(STATE_SLUGS);
+ await Promise.all(stateEntries.map(async([state,slug])=>{
+  try{
+   const response=await fetch("https://holidaywise.wee.my/my/"+slug+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(12000)});
+   if(!response.ok)throw new Error("HTTP "+response.status);
+   const parsed=parseIcs(await response.text());if(!parsed.length)throw new Error("Empty or unreadable ICS feed");
+   const grouped=new Map<number,HolidayApiEvent[]>();
+   for(const item of parsed){
+    const year=Number(eventLocalDate(item.start,item.timezone).slice(0,4));
+    if(year<currentYear||year>currentYear+2)continue;
+    const list=grouped.get(year)??[];
+    list.push({id:"holiday-"+item.uid,title:item.title,description:item.description,startsAt:item.start,endsAt:item.end,timezone:item.timezone,allDay:item.allDay,holiday:true,holidayType:"public"});
+    grouped.set(year,list);
+   }
+   for(const [year,items] of grouped){
+    await db.prepare("INSERT INTO calendar_holiday_cache (state,holiday_year,source,events_json,synced_at) VALUES (?,?,?,?,?) ON CONFLICT(state,holiday_year,source) DO UPDATE SET events_json=excluded.events_json,synced_at=excluded.synced_at").bind(state,year,"public",JSON.stringify(items),syncedAt).run();
+    publicEvents+=items.length;
+   }
+  }catch{failedStates.push(state);}
+ }));
+ for(const state of Object.keys(STATE_SLUGS)){
+  for(const year of Object.keys(SCHOOL_BREAKS).map(Number)){
+   const items=schoolHolidayEvents(state,year+"-01-01",year+"-12-31") as HolidayApiEvent[];
+   if(!items.length)continue;
+   await db.prepare("INSERT INTO calendar_holiday_cache (state,holiday_year,source,events_json,synced_at) VALUES (?,?,?,?,?) ON CONFLICT(state,holiday_year,source) DO UPDATE SET events_json=excluded.events_json,synced_at=excluded.synced_at").bind(state,year,"school",JSON.stringify(items),syncedAt).run();
+   schoolEvents+=items.length;
+  }
+ }
+ return{states:stateEntries.length,publicEvents,schoolEvents,failedStates};
+}
+
 export async function handleCalendarIcsRequest(request:Request,env:AuthEnv):Promise<Response|null>{
  const url=new URL(request.url);
- if(url.pathname==="/api/calendar/holidays"&&request.method==="GET")return holidays(request);
+ if(url.pathname==="/api/calendar/holidays"&&request.method==="GET")return holidays(request,env.DB);
  if(!url.pathname.startsWith("/api/calendar/ics/")&&url.pathname!=="/api/calendar/preferences")return null;
  if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
  const user=await getCurrentUser(request,env);if(!user)return json({error:"UNAUTHENTICATED"},401);

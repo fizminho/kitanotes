@@ -8,7 +8,7 @@ import { deliverDueReminders } from "./reminder-cron";
 import { handleInvitationsRequest } from "./invitations";
 import { handleNotesRequest } from "./notes";
 import { handleAuthRequest } from "./auth";
-import { handleCalendarIcsRequest } from "./calendar-ics";
+import { handleCalendarIcsRequest, syncCalendarHolidayData } from "./calendar-ics";
 import { applySecurityHeaders } from "./security-headers";
 
 interface Env {
@@ -51,7 +51,9 @@ export default {
     }
     return applySecurityHeaders(response,request);
   },
-  async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void> {
-    if(env.DB) ctx.waitUntil(deliverDueReminders(env.DB,env));
+  async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void> {
+    if(!env.DB)return;
+    if(controller.cron==="*/5 * * * *")ctx.waitUntil(deliverDueReminders(env.DB,env));
+    if(controller.cron==="0 2 1 8-12 *"||controller.cron==="0 2 31 12 *")ctx.waitUntil(syncCalendarHolidayData(env.DB));
   }
 } satisfies ExportedHandler<Env>;

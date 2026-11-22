@@ -31,7 +31,7 @@ if workspace_rows != [("w1", "shared", "private"), ("w2", "shared", "shared")]:
     raise SystemExit(f"Workspace visibility/type migration produced unexpected rows: {workspace_rows}")
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences", "ai_ocr_consent", "ai_ocr_usage" , "calendar_event_imports", "user_calendar_preferences"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences", "ai_ocr_consent", "ai_ocr_usage" , "calendar_event_imports", "user_calendar_preferences", "calendar_holiday_cache"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")

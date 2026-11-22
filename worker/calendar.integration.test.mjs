@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { handleEventsRequest } from "./events.ts";
-import { handleCalendarIcsRequest } from "./calendar-ics.ts";
+import { handleCalendarIcsRequest, syncCalendarHolidayData } from "./calendar-ics.ts";
 import { handleRemindersRequest } from "./reminders.ts";
 import { handleNotificationsRequest } from "./notifications.ts";
 import { deliverDueReminders } from "./reminder-cron.ts";
@@ -13,7 +13,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql","migrations/0002_sessions.sql","migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0016_calendar_2_0.sql"]) {
+    for (const file of ["migrations/0001_initial.sql","migrations/0002_sessions.sql","migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0016_calendar_2_0.sql","migrations/0017_calendar_holiday_cache.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../"+file,import.meta.url),"utf8"));
     }
   }
@@ -210,7 +210,7 @@ test("Malaysia holiday feed is state-specific and returns all-day public holiday
 
 test("KPM school holidays follow Group A dates for Kedah",async()=>{
  const originalFetch=globalThis.fetch;
- globalThis.fetch=async()=>new Response(["BEGIN:VCALENDAR","VERSION:2.0","END:VCALENDAR"].join("\\r\\n"),{status:200,headers:{"content-type":"text/calendar"}});
+ globalThis.fetch=async()=>new Response(["BEGIN:VCALENDAR","VERSION:2.0","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
  try{
   const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=kedah&from=2027-03-01&to=2027-03-31"),{});
   const result=await response.json();const school=result.events.find(event=>event.holidayType==="school");
@@ -231,4 +231,26 @@ test("KPM school holidays remain available when the public holiday feed is unava
   assert.equal(result.events.length,1);
   assert.equal(result.events[0].holidayType,"school");
  }finally{globalThis.fetch=originalFetch;}
+});
+
+
+test("annual holiday sync caches HolidayWise public holidays and KPM school breaks",async()=>{
+ const {db}=seed();const originalFetch=globalThis.fetch;let calls=0;
+ globalThis.fetch=async input=>{
+  calls++;
+  assert.match(String(input),/^https:\/\/holidaywise\.wee\.my\/my\/[a-z]+\/nat-state\.ics$/);
+  return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
+ };
+ try{
+  const synced=await syncCalendarHolidayData(db,new Date("2026-11-23T00:00:00.000Z"));
+  assert.equal(synced.states,16);assert.equal(synced.failedStates.length,0);assert.equal(calls,16);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM calendar_holiday_cache WHERE source='public' AND holiday_year=2026").get().count,16);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM calendar_holiday_cache WHERE source='school' AND holiday_year=2026").get().count,16);
+  globalThis.fetch=async()=>{throw new Error("cache should be used");};
+  const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-01-01&to=2026-12-31"),{DB:db});
+  assert.equal(response.status,200);const result=await response.json();
+  assert.equal(result.sources.holidayWise,true);
+  assert.ok(result.events.some(event=>event.holidayType==="public"&&event.title==="Birthday of the Sultan of Selangor"));
+  assert.ok(result.events.some(event=>event.holidayType==="school"&&event.title.includes("Cuti Akhir Persekolahan 2026")));
+ }finally{globalThis.fetch=originalFetch;db.close();}
 });
