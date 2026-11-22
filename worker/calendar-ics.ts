@@ -115,7 +115,7 @@ async function cachedHolidayEvents(db:Db|undefined,state:string,from:string,to:s
 async function holidays(request:Request,db?:Db):Promise<Response>{
  const url=new URL(request.url);const state=validState(url.searchParams.get("state"));if(!state)return json({error:"INVALID_STATE"},400);
  const from=url.searchParams.get("from")??new Date().getFullYear()+"-01-01";const to=url.searchParams.get("to")??(new Date().getFullYear()+1)+"-12-31";
- if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(to)||from>to)return json({error:"INVALID_DATE_RANGE"},400);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(to)||from>to||Number(to.slice(0,4))-Number(from.slice(0,4))>3)return json({error:"INVALID_DATE_RANGE"},400);
  const publicCache=await cachedHolidayEvents(db,state,from,to,"public");
  const schoolCache=await cachedHolidayEvents(db,state,from,to,"school");
  const requestedYears=Array.from({length:Number(to.slice(0,4))-Number(from.slice(0,4))+1},(_,i)=>Number(from.slice(0,4))+i);
