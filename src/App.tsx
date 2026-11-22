@@ -82,7 +82,6 @@ export default function App() {
   const [inviteError, setInviteError] = useState("");
   const [inviteNotice, setInviteNotice] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("viewer");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteCreateError, setInviteCreateError] = useState("");
@@ -1218,7 +1217,7 @@ export default function App() {
               <p className="invite-result-copy">Invite link created. It can be used by multiple people and expires in seven days. Revoke it any time.</p>
               <label className="field-label">Reusable invitation link<input className="invite-input" readOnly value={createdInvite.invitationUrl} onFocus={event=>event.currentTarget.select()}/></label>
               <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button></footer>
-              <button className="text-action" onClick={()=>{setCreatedInvite(null);setInviteEmail("");setCopiedInvite(false);}}>Invite someone else</button>
+              <button className="text-action" onClick={()=>{setCreatedInvite(null);setCopiedInvite(false);}}>Invite someone else</button>
             </>}
             <div className="invite-list">
               <div className="invite-list-heading"><strong>Invitations</strong><span>{invitations.length}</span></div>
