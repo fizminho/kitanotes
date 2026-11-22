@@ -82,8 +82,14 @@ test("calendar events store UTC instants, retain timezone and enforce workspace 
     assert.equal(editedEvent.updatedBy,"u1");
     assert.equal(editedEvent.title,"Updated school meeting");
     assert.equal(db.sqlite.prepare("SELECT event_type FROM activity_events WHERE target_type='event' AND target_id=? ORDER BY created_at DESC LIMIT 1").get(event.id).event_type,"event.updated");
-    const range=await handleEventsRequest(request("/api/events?from=2026-11-23T00:00:00Z&to=2026-11-24T00:00:00Z",tokens.u1),env);
+    const range=await handleEventsRequest(request("/api/events?workspaceId=w1&from=2026-11-23T00:00:00Z&to=2026-11-24T00:00:00Z",tokens.u1),env);
     assert.equal((await range.json()).events.length,1);
+    const missingWorkspace=await handleEventsRequest(request("/api/events?from=2026-11-23T00:00:00Z&to=2026-11-24T00:00:00Z",tokens.u1),env);
+    assert.equal(missingWorkspace.status,400);
+    const wrongWorkspace=await handleEventsRequest(request("/api/events?workspaceId=w2&from=2026-11-23T00:00:00Z&to=2026-11-24T00:00:00Z",tokens.u1),env);
+    assert.equal(wrongWorkspace.status,404);
+    const workspaceViewer=await handleEventsRequest(request("/api/events?workspaceId=w1&from=2026-11-23T00:00:00Z&to=2026-11-24T00:00:00Z",tokens.u2),env);
+    assert.equal((await workspaceViewer.json()).events.length,1);
     const outsider=await handleEventsRequest(request("/api/events/"+event.id,tokens.u3),env);
     assert.equal(outsider.status,404);
     const viewerEdit=await handleEventsRequest(request("/api/events/"+event.id,tokens.u2,"PATCH",{version:1,title:"No access"}),env);
