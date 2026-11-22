@@ -8,7 +8,7 @@ KitaNotes is a mobile-first web application for private notes, collaboration, ca
 
 **P0 foundation, P1 identity/notes/sharing, P2 calendar/notifications and P3 AI organiser implementation are complete.** The repository now has a React/Vite interface, a Cloudflare Worker serving static assets and API routes, Google OIDC login/session code, workspace-scoped notes/categories/invitations APIs, internal calendar events, reminders, in-app notifications, D1 migrations, architecture/security docs and CI.
 
-Google OAuth credentials, a dedicated D1 database and a Gemini API key have not been provisioned, so live sign-in, persistence and Gemini calls have not been exercised. The AI organiser has consent, free-model allowlisting, daily limits and review-before-save UI, but remains disabled until a key is configured. Google Calendar sync, browser push, event editing/month-week views and production deployment remain outstanding.
+Google OAuth credentials, a dedicated D1 database and a Gemini API key have not been provisioned, so live sign-in, persistence and Gemini calls have not been exercised. The AI organiser has consent, free-model allowlisting, daily limits and review-before-save UI, but remains disabled until a key is configured. Google Calendar sync, offline data editing and production deployment remain outstanding. The PWA app shell and month/week calendar are implemented; Web Push code is ready but requires VAPID configuration and real-device verification.
 
 ## Start here
 
@@ -16,6 +16,7 @@ Google OAuth credentials, a dedicated D1 database and a Gemini API key have not 
 - [API Contract](docs/API_CONTRACT.md)
 - [Authentication setup](docs/AUTHENTICATION.md)
 - [Security baseline](docs/SECURITY.md)
+- [PWA and Web Push setup](docs/PWA_PUSH.md)
 - [AI privacy and free-only policy](docs/AI_PRIVACY.md)
 - [Deployment guide](docs/DEPLOYMENT.md)
 - [ADR-0001: Cloudflare Worker Static Assets](docs/decisions/ADR-0001-worker-static-assets.md)
@@ -27,12 +28,13 @@ Google OAuth credentials, a dedicated D1 database and a Gemini API key have not 
 
 - React + TypeScript + Vite frontend.
 - Cloudflare Worker serves static assets and API routes in one deployment.
-- Cloudflare D1 stores users, sessions, workspaces, memberships, invitations, notes, categories, events, reminders, notifications and AI usage/consent metadata.
+- Cloudflare D1 stores users, sessions, workspaces, memberships, invitations, notes, categories, events, reminders, notifications, per-user Web Push subscriptions and AI usage/consent metadata.
 - Google OpenID Connect login with state, nonce, PKCE, JWKS signature validation and hashed opaque sessions.
 - Workspace-scoped notes/categories API with role checks, same-origin mutation checks, optimistic note versions and D1-backed rate limits for OAuth/invitations.
 - Security headers (CSP, HSTS on HTTPS, frame denial, no-sniff and referrer/permissions policies) applied to API, health and static responses.
 - Gemini API free tier only, called server-side through Worker Secrets after explicit privacy consent. Hard allowlist, 10 requests/user/day, no raw prompt persistence and no paid fallback.
-- In-app notification inbox and five-minute Cron reminder delivery. Browser Web Push is not implemented.
+- In-app notification inbox and five-minute Cron reminder delivery. Optional Web Push uses VAPID + Web Crypto, generic payloads and per-device subscriptions; it remains disabled until VAPID secrets are configured.
+- PWA manifest, install prompt and offline app-shell/static-asset caching. Private API responses are never cached; offline note editing is not supported.
 - Invitation links use copy-link and Gmail compose handoff. No paid automated email provider.
 
 **No S3, no CloudFront, no paid Cloudflare plan, no paid database, no paid email and no paid Gemini fallback.** KitaNotes must fail closed at free-tier limits. Never reuse Investlah's database or secrets.
