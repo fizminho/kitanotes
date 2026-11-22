@@ -162,7 +162,8 @@ async function updateMemberRole(request: Request, env: AuthEnv, userId: string, 
   await db.prepare("UPDATE workspace_members SET role=? WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(role,workspaceId,memberId).run();
   return json({updated:true,role});
 }
-\nasync function removeMember(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
+
+async function removeMember(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const db=env.DB!;
   if (!(await ownerFor(db,workspaceId,userId))) return json({error:"OWNER_PERMISSION_REQUIRED"},403);
@@ -171,7 +172,8 @@ async function updateMemberRole(request: Request, env: AuthEnv, userId: string, 
   if(!result.meta.changes) return json({error:"MEMBER_NOT_FOUND"},404);
   return json({removed:true});
 }
-\nasync function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
+
+async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
   const result = await env.DB!.prepare(
     "SELECT w.id,w.name,w.workspace_type,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.workspace_type='personal' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
   ).bind(userId).all<{id:string;name:string;workspace_type:"personal"|"shared";role:"owner"|"editor"|"viewer"}>();
