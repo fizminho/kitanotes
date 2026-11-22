@@ -1174,7 +1174,7 @@ export default function App() {
               {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="primary-button" onClick={()=>organizeWithAi(ocrText)} disabled={aiWorking||!aiStatus.consented||new TextEncoder().encode(ocrText).byteLength>16000}>{aiWorking?"Preparing note & calendar…":"AI: prepare note & calendar"}</button><small className="ai-privacy-copy">AI will suggest what belongs in a note and which dates belong on your calendar. Review and confirm each action.</small></>}
             </div>
             {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><button className="text-action" onClick={revokeAiConsent}>Revoke AI consent</button><button className="primary-button" onClick={organizeWithAi} disabled={!aiInput.trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize text"}</button></footer>
+            <footer><button className="text-action" onClick={revokeAiConsent}>Revoke AI consent</button><button className="primary-button" onClick={()=>organizeWithAi()} disabled={!aiInput.trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize text"}</button></footer>
           </div>:<div className="ai-draft">
             <div className="ai-draft-banner"><Sparkles size={15}/> Draft only. Nothing has been saved yet.</div>
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
