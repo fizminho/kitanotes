@@ -4,7 +4,7 @@
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
-**Last updated:** 2026-11-22
+**Last updated:** 2026-11-22 (free-only architecture revision)
 
 > This is the source-of-truth planning document for KitaNotes. Update the checkboxes and decision log as implementation progresses. A checked item means it has been implemented and verified, not merely discussed.
 
@@ -34,14 +34,14 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [ ] User profile and account settings.
 - [ ] Personal notes: create, read, edit, archive and delete.
 - [ ] Shared notes / shared spaces with explicit membership.
-- [ ] Email invitations with pending, accepted, expired and revoked states.
+- [ ] Gmail-address invitations with pending, accepted, expired and revoked states; invitation delivery uses a Gmail compose handoff / copyable secure link in the zero-cost MVP.
 - [ ] Membership roles: owner, editor and viewer.
 - [ ] User-defined categories, colours and ordering.
 - [ ] Note search, category filtering and recent notes.
 - [ ] Internal calendar items and reminders, linked to notes.
 - [ ] In-app notification inbox.
 - [ ] Browser push notifications where permission is granted.
-- [ ] Email notifications for invitations and important collaboration events.
+- [ ] In-app notifications and Web Push for invitations and collaboration events. No automated outbound email dependency in the zero-cost MVP.
 - [ ] Gemini text-to-structured-note flow with preview and explicit confirmation.
 - [ ] AI-suggested categories, with user-defined categories taking precedence when appropriate.
 - [ ] Audit/activity history for sharing and material note changes.
@@ -66,36 +66,44 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - No requirement to grant Google Calendar permissions just to sign in.
 - No complex enterprise administration or billing in the MVP.
 
-## 3. Proposed architecture
+## 3. Proposed free-only architecture
 
-Keep the deployment small, serverless and cost-conscious. Reuse the deployment and secret-management patterns from the user's Investlah work, but verify the exact existing workflow and hosting resources before copying configuration.
+**Hard budget constraint: RM0 recurring infrastructure / API spend. No S3, no CloudFront, no paid Workers plan, no paid database, no paid email service and no automatic paid AI fallback.** Use free plans only and configure the account so exceeding a quota fails closed rather than creating a bill.
+
+Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worker with secrets stored as Cloudflare Worker Secrets. The prior Investlah production health check was served by a Cloudflare Worker at `investlah.binalah.com`; it was not an S3 + CloudFront deployment. Keep the same server-side secret-handling and GitHub Actions deployment principles.
 
 ### Proposed components
 
-| Layer | Proposed technology / responsibility |
-|---|---|
-| Web client | React + TypeScript + Vite; responsive PWA |
-| UI | Tailwind CSS and a consistent accessible component system |
-| Static hosting | S3 + CloudFront; HTTPS, CDN, SPA routing and custom domain |
-| API | Serverless API (Cloudflare Worker is the initial candidate); all privileged operations server-side |
-| Database | PostgreSQL; managed provider to be selected after checking existing Investlah infrastructure and cost |
-| Google identity | Google OAuth 2.0 / OpenID Connect |
-| AI | Gemini API through a protected server-side adapter |
-| Notifications | In-app inbox, Web Push and transactional email |
-| Scheduling | Durable scheduled-job mechanism for reminders; do not rely on browser timers |
-| CI/CD | GitHub Actions with separate validation and deployment jobs |
+| Layer | Free-only choice | Notes / constraints |
+|---|---|---|
+| Web client | React + TypeScript + Vite on Cloudflare Pages, or Worker Static Assets | Static asset delivery on Pages is free; choose one hosting route after inspecting Investlah workflows. |
+| API | Cloudflare Workers Free | 100,000 requests/day; 10 ms CPU per invocation. Keep handlers short and avoid CPU-heavy synchronous work. |
+| Database | Cloudflare D1 Free | SQLite; 5 million rows read/day, 100,000 rows written/day, 500 MB max per database, 5 GB total account storage; free-tier limit exhaustion causes queries to fail until reset. |
+| Identity | Google OAuth 2.0 / OpenID Connect | Gmail/Google sign-in; no Calendar scope at login. |
+| AI | Gemini API free tier only | Server-side Worker Secret; quotas and eligible models can change. No paid fallback. |
+| Reminders | Cloudflare Workers Cron Trigger | Use a small number of scheduled scans and indexed due-time queries. Workers Free supports up to 5 Cron Triggers/account. |
+| Notifications | In-app inbox + browser Web Push | Push is best-effort and requires permission; in-app inbox is durable. |
+| CI/CD | GitHub Actions + Cloudflare deploy action/CLI | Use repository/environment secrets; never expose secret values in logs or frontend builds. |
 
-**Architecture decision pending:** confirm whether the API should run on Cloudflare Workers (with PostgreSQL connectivity such as Hyperdrive) or on the same backend platform already used by Investlah. The frontend CloudFront deployment and API runtime are separate concerns. Do not assume that CloudFront itself hosts API secrets or runs backend code.
+### Free-tier ceilings to design around
+
+- Workers Free: 100,000 requests/day and 10 ms CPU time per invocation.
+- D1 Free: 5 million rows read/day, 100,000 rows written/day, 500 MB maximum per database and 5 GB total account storage. D1 free-tier queries fail after daily read/write limits are exceeded; data remains stored.
+- Workers Free supports up to 5 Cron Triggers per account.
+- Pages static asset requests are free and unlimited; any Pages Functions requests count against Workers Free request quota.
+- Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
+- A custom domain may have a separate registration/renewal cost. RM0 infrastructure does not mean a paid domain is free; use a free `*.pages.dev` / `*.workers.dev` hostname unless the user already owns a domain and accepts its existing renewal cost.
+- Free plans have quotas and provider policies, not unlimited capacity or an uptime guarantee. Enforce application-level quotas and degrade gracefully instead of upgrading automatically.
 
 ### Request flow
 
-1. Browser loads the static application from CloudFront.
+1. Browser loads the static application from Cloudflare Pages / Worker Static Assets.
 2. Google sign-in completes through the configured OAuth client and a server-validated identity flow.
-3. Browser calls the API with a short-lived authenticated session.
+3. Browser calls the Cloudflare Worker API with a secure session.
 4. API validates identity, membership and role for every protected operation.
-5. API reads/writes PostgreSQL.
+5. API reads/writes D1 using prepared statements and indexed queries.
 6. AI requests go through the backend Gemini adapter; the browser never receives the Gemini API key.
-7. Reminder jobs create durable notification records and dispatch eligible email/push notifications.
+7. Cron scans due reminders and creates durable in-app notification records; Web Push delivery is best-effort.
 
 ## 4. Authentication, invitations and access control
 
@@ -207,7 +215,7 @@ Delivery channels:
 
 1. In-app notification inbox is the durable source of truth.
 2. Web Push is best-effort and requires explicit browser permission.
-3. Email is used for invitations and configurable important updates/reminders.
+3. Invitation delivery in the zero-cost MVP uses a Gmail compose handoff / copyable secure link. Automated transactional email is excluded because the relevant Cloudflare Email Sending feature requires Workers Paid for arbitrary recipients.
 
 Add per-user preferences, quiet hours, deduplication, retry/backoff and delivery status. Never send note content in push/email by default; use a secure deep link requiring login.
 
@@ -323,24 +331,25 @@ Use UUID primary keys, foreign keys, useful indexes, UTC timestamps and transact
 ### Environments
 
 - Local development
-- Preview / staging
-- Production
+- Preview / staging (free Cloudflare preview deployments)
+- Production (Cloudflare Free)
 
 ### Frontend deployment
 
 - Build static assets with a pinned Node version and lockfile.
-- Upload versioned build output to S3.
-- Invalidate CloudFront paths after successful upload.
-- Configure SPA fallback to the application entry point without masking API errors.
-- Use separate buckets/distributions or clearly isolated prefixes for staging and production.
+- Deploy static build output to Cloudflare Pages or Worker Static Assets using the existing Investlah-style Cloudflare deployment pattern.
+- Use Cloudflare's asset caching and deployment versions; no S3 bucket or CloudFront distribution.
+- Configure SPA fallback without masking API errors.
+- Use separate Cloudflare environments / project deployments for staging and production where feasible on the free plan.
 - Configure custom domain, TLS certificate, cache policy and security headers.
 - Keep API URLs and public OAuth client ID environment-specific; neither is a secret.
 
 ### API deployment
 
 - Deploy API independently from frontend.
-- Bind Gemini key as a server-side secret.
-- Apply database migrations as a controlled release step.
+- Bind Gemini key as a Cloudflare Worker Secret (server-side only).
+- Bind Google OAuth client configuration appropriately; keep any client secret server-side.
+- Apply D1 migrations as a controlled release step.
 - Run smoke tests after deployment.
 - Support rollback to the previous frontend artifact and API version.
 - Never claim production readiness solely because GitHub Actions completed; verify the deployed health endpoint and a real authenticated smoke test.
@@ -388,8 +397,9 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P0 — Foundation and decisions
 
-- [ ] Inspect and document the exact Investlah CloudFront/S3 deployment pattern and reusable GitHub Actions.
-- [ ] Confirm API runtime and PostgreSQL hosting/connectivity.
+- [ ] Inspect and document the exact Investlah Cloudflare Worker deployment workflow and reusable GitHub Actions.
+- [ ] Confirm Cloudflare Pages versus Worker Static Assets for the frontend.
+- [ ] Confirm D1 schema, migration and quota-monitoring approach.
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [ ] Create architecture, security and data-model decision records.
 - [ ] Bootstrap frontend, API and shared contracts with pinned dependencies.
@@ -403,7 +413,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Implement users and personal workspaces.
 - [ ] Implement notes CRUD and category CRUD.
 - [ ] Implement workspace membership and owner/editor/viewer authorization.
-- [ ] Implement invitation creation, email delivery, acceptance, expiry and revocation.
+- [ ] Implement invitation creation, secure link generation, Gmail compose handoff, acceptance, expiry and revocation.
 - [ ] Add authorization and cross-workspace isolation tests.
 
 ### P2 — Calendar and notifications
@@ -412,7 +422,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Implement timezone-safe event creation and editing.
 - [ ] Implement durable reminder scheduling and idempotency.
 - [ ] Implement in-app notification inbox.
-- [ ] Implement email notifications.
+- [ ] Implement Gmail compose handoff for invitations; no automated email provider in the free-only MVP.
 - [ ] Implement PWA service worker and Web Push subscription/delivery.
 - [ ] Implement notification preferences, retries and deduplication.
 
@@ -429,7 +439,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P4 — Production hardening
 
-- [ ] Deploy frontend through CloudFront and API to selected runtime.
+- [ ] Deploy frontend and API through Cloudflare Free services only.
 - [ ] Configure domains, TLS, CORS, security headers and secrets.
 - [ ] Add database backups, restore test, migrations and rollback.
 - [ ] Add logs, metrics, health checks and error reporting.
@@ -468,18 +478,29 @@ MVP is not complete until all of these are demonstrated:
 | Decision | Current proposal | Status |
 |---|---|---|
 | Product name | KitaNotes | Proposed |
-| Frontend hosting | S3 + CloudFront | Proposed |
-| API runtime | Cloudflare Worker candidate; verify Investlah pattern | Open |
-| Database | Managed PostgreSQL | Proposed |
+| Frontend hosting | Cloudflare Pages or Worker Static Assets; no S3 / CloudFront | Proposed |
+| API runtime | Cloudflare Workers Free, following Investlah Worker pattern | Proposed |
+| Database | Cloudflare D1 Free | Proposed |
 | Authentication | Google OIDC | Proposed |
 | Calendar | Internal calendar first; Google Calendar sync optional later | Proposed |
-| Notifications | In-app + email + Web Push | Proposed |
+| Notifications | In-app + Web Push; Gmail compose handoff for invitations | Proposed |
 | AI | Gemini free-tier-only fallback | Proposed |
 | AI writes | Preview and explicit confirmation | Proposed |
 | Collaboration | Workspace membership, owner/editor/viewer | Proposed |
 | Default timezone | User preference; initial default Asia/Kuala_Lumpur | Proposed |
 
-## 16. Working rules for future implementation
+## 16. Strict zero-cost operating rules
+
+- Never enable a paid Cloudflare plan or paid add-on for KitaNotes.
+- Never configure a billing fallback, paid AI model, paid email provider or paid database.
+- Use provider quota dashboards and application-level counters to detect approaching limits.
+- Apply per-user AI rate limits, input-size limits and request throttling.
+- When Gemini free quota is exhausted, disable AI temporarily and keep manual note CRUD working.
+- When D1 or Workers limits are exhausted, return a clear temporary-capacity message; never attempt a paid upgrade.
+- Avoid attachments and large binary storage in the MVP. Keep note content text-first.
+- A custom domain is optional and its renewal is outside the free-infrastructure promise.
+
+## 17. Working rules for future implementation
 
 - Read this masterplan before starting a new implementation task.
 - Inspect the current repository before changing architecture or adding dependencies.
@@ -496,3 +517,4 @@ MVP is not complete until all of these are demonstrated:
 ## Change log
 
 - **2026-11-22:** Initial product and technical masterplan created. No application code or deployment has been implemented yet.
+- **2026-11-22:** Revised architecture to strict free-only Cloudflare Pages/Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.
