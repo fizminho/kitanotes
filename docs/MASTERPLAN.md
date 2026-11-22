@@ -35,7 +35,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [ ] Account settings and account deletion.
 - [x] Personal notes: create, read, edit, archive and soft-delete.
 - [x] Shared notes / shared spaces with explicit membership.
-- [x] Gmail-address invitations with pending, accepted, expired and revoked states; delivery uses a Gmail compose handoff / copyable secure link in the zero-cost MVP.
+- [x] Reusable seven-day workspace invitation links for anyone with the link; owner can revoke links or remove members. Legacy email-restricted invitations remain supported.
 - [x] Membership roles: owner, editor and viewer.
 - [x] User-defined categories, colours and ordering.
 - [x] Client-side note search and recent-note ordering.
@@ -48,7 +48,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] Add invitation-accepted and other collaboration activity notifications.
 - [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
 - [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
-- [x] Audit/activity history for sharing (invitations, membership, roles, ownership). Material note-change history remains open.
+- [x] Audit/activity history for sharing and content: notes/events expose creator and last-editor identity/timestamps, with create/update/delete activity records.
 - [x] Responsive mobile and desktop web experience.
 - [x] PWA install prompt, install metadata and offline application-shell/static-asset cache; private data and edits still require connectivity.
 - [x] Automated tests, CI checks and operational documentation.
@@ -56,7 +56,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 ### Later releases
 
-- [ ] Optional Google Calendar integration and two-way sync.
+- [ ] Google Calendar sync (sync direction to be confirmed; Google permission must be separately consented).
 - [ ] Real-time collaborative editing / presence.
 - [x] Consent-gated Gemini OCR with image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. Live Gemini provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
@@ -466,7 +466,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P5 — Enhancements
 
-- [ ] Optional Google Calendar sync.
+- [ ] Google Calendar sync. Confirm whether the desired behavior is one-way KitaNotes → Google Calendar or full two-way sync before choosing conflict rules.
 - [ ] Real-time collaboration.
 - [ ] Live Gemini OCR model verification and production smoke test. Image preview, client-side resizing/EXIF stripping and direct AI note/calendar handoff are implemented. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] PDF text extraction and attachment management.
@@ -550,3 +550,4 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Security audit found stale `workspace_type='personal'` lookups in notes, calendar, reminders and AI organiser default-workspace resolution after migration `0012`. Updated all to use `visibility='private'`, corrected shared-workspace quota counting, prevented deletion of private workspaces, made default private-workspace selection deterministic and added migration plus API regression coverage. Build, tests, migration validation and Worker dry-run passed in [run 45029223039](https://github.com/fizminho/kitanotes/actions/runs/45029223039).
 
 - **2026-11-22:** Added image preview and client-side image preparation (maximum 2200-pixel edge, JPEG re-encoding to strip EXIF metadata where supported) to the Gemini OCR UI. OCR output can now be sent directly to the existing AI organiser to draft a note, categories, calendar events and reminders; note and calendar actions remain separately user-confirmed. Live Gemini provider verification remains open.
+\n- **2026-11-22:** Added note/event creator and latest-editor fields, joined user names/emails into the API DTOs, and recorded content create/update/delete activity in workspace history. Added reusable seven-day open invitation links; any Google-authenticated user with a verified email can join while the link remains active. Owners can revoke links and remove members. CI validation pending.\n
