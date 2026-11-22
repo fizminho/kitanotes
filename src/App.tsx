@@ -108,6 +108,15 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) { setUnreadCount(0); return; }
+    let active = true;
+    fetch("/api/notifications?limit=1",{credentials:"same-origin"})
+      .then(async response=>{if(!response.ok)return;const result=await response.json() as {unreadCount:number};if(active)setUnreadCount(result.unreadCount);})
+      .catch(()=>undefined);
+    return ()=>{active=false;};
+  },[user]);
+
+  useEffect(() => {
     if (!inviteOpen || !user?.personalWorkspaceId) return;
     let active = true;
     setInvitationsLoading(true);
