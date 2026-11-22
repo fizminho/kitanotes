@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag, Upload, Download } from "lucide-react";
 
 type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
@@ -26,7 +26,7 @@ type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shar
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; source?:"google_calendar"|"kitanotes"; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
-type GoogleCalendarStatus = {connected:boolean;lastSyncAt:string|null;direction:"google_to_kitanotes";readOnly:boolean};
+type CalendarItem = CalendarEvent & {holiday?:boolean};
 type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
   summary:string; timezone:string;
@@ -58,7 +58,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);\n  const calendarIcsInputRef = useRef<HTMLInputElement>(null);
   const pushToast = useCallback((text:string, tone:"ok"|"error"="ok") => {
     const id = Date.now() + Math.random();
     setToasts(current => [...current.slice(-3), { id, text, tone }]);
@@ -358,40 +358,6 @@ export default function App() {
       .finally(()=>{if(active)setEventsLoading(false);});
     return ()=>{active=false;};
   },[view,user,calendarMode,calendarCursor,calendarRefresh]);
-
-  useEffect(()=>{
-    if(view!=="calendar"||!user||!activeWorkspaceId)return;
-    let active=true;
-    fetch("/api/google-calendar/status?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"})
-      .then(async response=>{if(!response.ok)throw new Error("Unable to check Google Calendar connection.");const result=await response.json() as GoogleCalendarStatus;if(active)setGoogleCalendarStatus(result);})
-      .catch(error=>{if(active)setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar status unavailable.");});
-    return ()=>{active=false;};
-  },[view,user,activeWorkspaceId]);
-
-  useEffect(()=>{
-    const params=new URLSearchParams(window.location.search);
-    const result=params.get("googleCalendar");
-    if(!result)return;
-    const workspaceId=params.get("googleCalendarWorkspace");
-    window.history.replaceState({}, "", window.location.pathname+window.location.hash);
-    const messages:Record<string,string>={signin_required:"Please sign in again to connect Google Calendar.",refresh_token_missing:"Google did not return offline access. Please connect again and approve access.",workspace_error:"You no longer have permission to connect this workspace.",error:"Google Calendar connection did not complete.",state_error:"The Google Calendar connection request expired. Please try again.",token_error:"Google could not complete the calendar connection.",scope_error:"Google Calendar read permission was not granted."};
-    if(result!=="connected"||!workspaceId){pushToast(messages[result]??"Google Calendar connection status: "+result,result==="connected"?"ok":"error");return;}
-    let active=true;
-    setGoogleCalendarBusy(true);
-    setGoogleCalendarError("");
-    fetch("/api/google-calendar/sync",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId})})
-      .then(async response=>{
-        const payload=await response.json() as {error?:string;imported?:number;updated?:number;deleted?:number;lastSyncAt?:string};
-        if(!response.ok)throw new Error(payload.error==="GOOGLE_TOKEN_REFRESH_FAILED"?"Calendar connected, but access needs to be renewed. Please reconnect.":"Calendar connected, but the first sync failed. Try Sync Google Calendar.");
-        if(!active)return;
-        if(activeWorkspaceId===workspaceId)setGoogleCalendarStatus({connected:true,lastSyncAt:payload.lastSyncAt??null,direction:"google_to_kitanotes",readOnly:true});
-        setCalendarRefresh(value=>value+1);
-        pushToast("Google Calendar connected and synced. Imported "+(payload.imported??0)+", updated "+(payload.updated??0)+", removed "+(payload.deleted??0)+" events.","ok");
-      })
-      .catch(error=>{if(active){setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar connected, but the first sync failed.");pushToast("Google Calendar connected, but the first sync failed. Open Calendar and try syncing again.","error");}})
-      .finally(()=>{if(active)setGoogleCalendarBusy(false);});
-    return ()=>{active=false;};
-  },[pushToast,activeWorkspaceId]);
 
   useEffect(() => {
     if (!notificationsOpen || !user) return;
@@ -869,38 +835,39 @@ export default function App() {
   }
 
   const calendarDays=useMemo(()=>{const start=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);if(calendarMode==="week")start.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));else start.setDate(start.getDate()-((start.getDay()+6)%7));return Array.from({length:calendarMode==="week"?7:42},(_,i)=>{const day=new Date(start);day.setDate(start.getDate()+i);return day;});},[calendarCursor,calendarMode]);
+  useEffect(()=>{
+    if(!user)return;let active=true;
+    fetch("/api/calendar/preferences",{credentials:"same-origin"}).then(async response=>{if(!response.ok)return;const result=await response.json() as {holidayState:string};if(active&&result.holidayState)setHolidayState(result.holidayState);}).catch(()=>{});
+    return()=>{active=false;};
+  },[user]);
+  useEffect(()=>{
+    if(view!=="calendar"||!user)return;let active=true;
+    const start=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);start.setDate(start.getDate()-((start.getDay()+6)%7)-2);const end=new Date(start);end.setDate(end.getDate()+46);
+    fetch("/api/calendar/holidays?state="+encodeURIComponent(holidayState)+"&from="+dateKey(start)+"&to="+dateKey(end),{credentials:"same-origin"})
+      .then(async response=>{if(!response.ok)throw new Error("Holiday calendar unavailable");const result=await response.json() as {events:CalendarItem[]};if(active)setHolidays(result.events??[]);})
+      .catch(()=>{if(active)setHolidays([]);});
+    return()=>{active=false;};
+  },[view,user,holidayState,calendarMode,calendarCursor,calendarRefresh]);
   const calendarHeading=calendarMode==="week"?calendarDays[0].toLocaleDateString(undefined,{month:"short",day:"numeric"})+" – "+calendarDays[6].toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});
   function moveCalendar(amount:number){setCalendarCursor(current=>{const next=new Date(current);if(calendarMode==="week")next.setDate(next.getDate()+amount*7);else next.setMonth(next.getMonth()+amount);return next;});}
-  function eventsForDay(day:Date){return events.filter(item=>dateKey(new Date(item.startsAt))===dateKey(day));}
+  function eventsForDay(day:Date):CalendarItem[]{return [...events.filter(item=>dateKey(new Date(item.startsAt))===dateKey(day)),...holidays.filter(item=>dateKey(new Date(item.startsAt))===dateKey(day))];}
 
-  function connectGoogleCalendar(){
-    if(!activeWorkspaceId)return;
-    if(activeWorkspace?.visibility==="shared"&&!window.confirm("Google Calendar events will be imported into this shared workspace and visible to all its members. Continue?"))return;
-    window.location.href="/auth/google/calendar/connect?workspaceId="+encodeURIComponent(activeWorkspaceId);
+  async function importCalendarIcs(file:File){
+    if(!activeWorkspaceId||calendarTransferBusy)return;setCalendarTransferBusy(true);
+    try{const ics=await file.text();const response=await fetch("/api/calendar/ics/import",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId,ics})});const result=await response.json() as {error?:string;imported?:number;updated?:number;skipped?:number};if(!response.ok)throw new Error(result.error==="NO_SUPPORTED_EVENTS"?"No supported calendar events were found in this file.":result.error==="INVALID_ICS_FILE"?"This does not look like a valid .ics calendar file.":"Unable to import this calendar.");setCalendarRefresh(value=>value+1);pushToast("Imported "+(result.imported??0)+", updated "+(result.updated??0)+" events. "+(result.skipped??0)+" unchanged.");}
+    catch(error){setEventsError(error instanceof Error?error.message:"Unable to import calendar.");}
+    finally{setCalendarTransferBusy(false);if(calendarIcsInputRef.current)calendarIcsInputRef.current.value="";}
   }
-  async function syncGoogleCalendar(){
-    if(!activeWorkspaceId||googleCalendarBusy)return;
-    setGoogleCalendarBusy(true);setGoogleCalendarError("");
-    try{
-      const response=await fetch("/api/google-calendar/sync",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId})});
-      const result=await response.json() as {error?:string;imported?:number;updated?:number;deleted?:number;skipped?:number;lastSyncAt?:string};
-      if(!response.ok)throw new Error(result.error==="GOOGLE_TOKEN_REFRESH_FAILED"?"Google Calendar access expired. Reconnect to continue.":result.error==="GOOGLE_CALENDAR_NOT_CONNECTED"?"Connect Google Calendar first.":"Google Calendar sync failed. Please try again.");
-      setGoogleCalendarStatus({connected:true,lastSyncAt:result.lastSyncAt??null,direction:"google_to_kitanotes",readOnly:true});
-      setCalendarRefresh(value=>value+1);
-      pushToast("Imported "+(result.imported??0)+", updated "+(result.updated??0)+", removed "+(result.deleted??0)+" Google Calendar events.");
-    }catch(error){setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar sync failed.");}
-    finally{setGoogleCalendarBusy(false);}
+  async function exportCalendarIcs(){
+    if(!activeWorkspaceId||calendarTransferBusy)return;setCalendarTransferBusy(true);
+    try{const response=await fetch("/api/calendar/ics/export?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"});if(!response.ok)throw new Error("Unable to export this calendar.");const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="kitanotes-calendar.ics";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);pushToast("Calendar exported as an .ics file.");}
+    catch(error){setEventsError(error instanceof Error?error.message:"Unable to export calendar.");}
+    finally{setCalendarTransferBusy(false);}
   }
-  async function disconnectGoogleCalendar(){
-    if(!activeWorkspaceId||googleCalendarBusy||!window.confirm("Disconnect Google Calendar from this workspace? Imported events will stay in KitaNotes."))return;
-    setGoogleCalendarBusy(true);setGoogleCalendarError("");
-    try{
-      const response=await fetch("/api/google-calendar/disconnect",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId})});
-      if(!response.ok)throw new Error("Unable to disconnect Google Calendar.");
-      setGoogleCalendarStatus({connected:false,lastSyncAt:null,direction:"google_to_kitanotes",readOnly:true});
-      pushToast("Google Calendar disconnected. Imported events remain in KitaNotes.");
-    }catch(error){setGoogleCalendarError(error instanceof Error?error.message:"Unable to disconnect Google Calendar.");}
-    finally{setGoogleCalendarBusy(false);}
+  async function saveHolidayState(value:string){
+    setHolidayState(value);
+    try{const response=await fetch("/api/calendar/preferences",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({holidayState:value})});if(!response.ok)throw new Error("Unable to save holiday region.");setCalendarRefresh(v=>v+1);}
+    catch(error){setEventsError(error instanceof Error?error.message:"Unable to save holiday region.");}
   }
   async function deleteEvent(event:CalendarEvent) {
     try {
@@ -1291,10 +1258,9 @@ export default function App() {
 
           {view === "calendar" && <section className="calendar-section">
             {eventsError&&<div className="inline-error">{eventsError}</div>}
-            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div><div className="google-calendar-actions">{activeWorkspace?.role!=="viewer"&&(googleCalendarStatus.connected?<><button className="secondary-button" onClick={syncGoogleCalendar} disabled={googleCalendarBusy}>{googleCalendarBusy?"Syncing…":"Sync Google Calendar"}</button><button className="text-action" onClick={()=>void disconnectGoogleCalendar()} disabled={googleCalendarBusy}>Disconnect</button></>:<button className="secondary-button" onClick={connectGoogleCalendar}>Connect Google Calendar</button>)}</div></div>
-            <p className="calendar-sync-note">Google Calendar → KitaNotes only. Imported events are visible to this workspace’s members. KitaNotes never edits Google Calendar. {googleCalendarStatus.lastSyncAt?"Last sync: "+new Date(googleCalendarStatus.lastSyncAt).toLocaleString():""} </p>
-            {googleCalendarError&&<div className="inline-error">{googleCalendarError}</div> }
-            {eventsLoading?<div className="loading-state">Loading your calendar…</div>:<div className={calendarMode==="month"?"calendar-grid month-grid":"calendar-grid week-grid"}>{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=><div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day=><div className={"calendar-day"+(day.getMonth()!==calendarCursor.getMonth()&&calendarMode==="month"?" outside":"")+(dateKey(day)===dateKey(new Date())?" today":"")} key={dateKey(day)}><div className="calendar-day-heading"><span>{day.getDate()}</span>{calendarMode==="week"&&<small>{day.toLocaleDateString(undefined,{month:"short"})}</small>}</div><div className="calendar-day-events">{eventsForDay(day).map(item=><button className="calendar-event-chip" key={item.id} onClick={()=>{if(item.source!=="google_calendar")startEditEvent(item);}} title={item.source==="google_calendar"?item.title+" · Imported from Google Calendar":item.title}><span>{item.allDay?"All day":new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</span>{item.title}</button>)}</div>{calendarMode==="week"&&eventsForDay(day).length===0&&<span className="calendar-empty-day">No events</span>}</div>)}</div>}
+            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div><div className="calendar-tools"><label className="field-label holiday-state-select">Public holidays<select className="invite-input" value={holidayState} onChange={e=>void saveHolidayState(e.target.value)}><option value="selangor">Selangor</option><option value="kuala-lumpur">Kuala Lumpur</option><option value="johor">Johor</option><option value="kedah">Kedah</option><option value="kelantan">Kelantan</option><option value="melaka">Melaka</option><option value="negeri-sembilan">Negeri Sembilan</option><option value="pahang">Pahang</option><option value="perak">Perak</option><option value="perlis">Perlis</option><option value="pulau-pinang">Pulau Pinang</option><option value="sabah">Sabah</option><option value="sarawak">Sarawak</option><option value="terengganu">Terengganu</option><option value="labuan">Labuan</option><option value="putrajaya">Putrajaya</option></select></label><input ref={calendarIcsInputRef} type="file" accept=".ics,text/calendar" hidden onChange={e=>{const file=e.target.files?.[0];if(file)void importCalendarIcs(file);}}/><button className="secondary-button" onClick={()=>calendarIcsInputRef.current?.click()} disabled={calendarTransferBusy}><Upload size={14}/> Import .ics</button><button className="secondary-button" onClick={()=>void exportCalendarIcs()} disabled={calendarTransferBusy}><Download size={14}/> Export .ics</button></div></div>
+            <p className="calendar-sync-note">Import calendars from Apple Calendar, Google Calendar or Outlook using .ics files. Public holidays for {holidayState.replace(/-/g," ")} are shown automatically.</p>
+            {eventsLoading?<div className="loading-state">Loading your calendar…</div>:<div className={calendarMode==="month"?"calendar-grid month-grid":"calendar-grid week-grid"}>{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=><div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day=><div className={"calendar-day"+(day.getMonth()!==calendarCursor.getMonth()&&calendarMode==="month"?" outside":"")+(dateKey(day)===dateKey(new Date())?" today":"")} key={dateKey(day)}><div className="calendar-day-heading"><span>{day.getDate()}</span>{calendarMode==="week"&&<small>{day.toLocaleDateString(undefined,{month:"short"})}</small>}</div><div className="calendar-day-events">{eventsForDay(day).map(item=><button className={"calendar-event-chip"+(item.holiday?" holiday-event-chip":"")} key={item.id} onClick={()=>{if(!item.holiday)startEditEvent(item);}} title={item.holiday?item.title+" · Malaysia public holiday":item.title}><span>{item.allDay?"All day":new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</span>{item.title}</button>)}</div>{calendarMode==="week"&&eventsForDay(day).length===0&&<span className="calendar-empty-day">No events</span>}</div>)}</div>}
             {!eventsLoading&&events.length===0&&<div className="calendar-empty-note">Nothing scheduled in this period. Add an event to start filling the calendar.</div>}
             <div className="calendar-agenda"><h3>Upcoming in this view</h3>{events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)).map(item=><article className="event-card" key={item.id}><div className="event-date-block"><strong>{new Date(item.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:item.timezone})}</strong><span>{new Date(item.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:item.timezone})}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{item.allDay?new Date(item.startsAt).toLocaleDateString(undefined,{dateStyle:"long",timeZone:item.timezone})+" · All day":new Date(item.startsAt).toLocaleString(undefined,{timeZone:item.timezone})+" · "+item.timezone}</p>{item.description&&<small>{item.description}</small>}{item.source==="google_calendar"&&<small className="calendar-sync-note">Imported from Google Calendar · read-only</small>}<small className="record-audit">Created by {item.createdByName||item.createdByEmail||"Unknown"} · {new Date(item.createdAt).toLocaleString()}<br/>Last updated by {item.updatedByName||item.updatedByEmail||item.createdByName||item.createdByEmail||"Unknown"} · {new Date(item.updatedAt).toLocaleString()}</small></div>{item.source!=="google_calendar"&&<><button className="mini-icon" onClick={()=>startEditEvent(item)} aria-label="Edit event"><Pencil size={15}/></button><button className="mini-icon" onClick={()=>deleteEvent(item)} aria-label="Delete event"><Archive size={15}/></button></>}</article>)}</div>
           </section>}
