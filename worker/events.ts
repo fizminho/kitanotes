@@ -68,7 +68,7 @@ async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Res
     : await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
   return json({events:result.results.map(dto),from,to});
 }
-async function createEvent(request:Request,env:EventEnv,userId:string):Promise<Response> {
+async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:ExecutionContext):Promise<Response> {
   if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const body=await readJsonBody(request);
   if(!body) return json({error:"INVALID_JSON_BODY"},400);
@@ -91,11 +91,12 @@ async function createEvent(request:Request,env:EventEnv,userId:string):Promise<R
   } catch { return json({error:"EVENT_CREATE_FAILED"},400); }
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
-  await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-created-"+id},"event")));
+  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-created-"+id},"event")));
+  if(ctx)ctx.waitUntil(pushTask);else await pushTask;
   const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
-async function eventById(request:Request,env:EventEnv,userId:string,id:string):Promise<Response> {
+async function eventById(request:Request,env:EventEnv,userId:string,id:string,ctx?:ExecutionContext):Promise<Response> {
   const db=env.DB!;
   const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
   if(!row||!(await roleFor(db,row.workspace_id,userId))) return json({error:"NOT_FOUND"},404);
@@ -112,7 +113,8 @@ async function eventById(request:Request,env:EventEnv,userId:string,id:string):P
     await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE event_id=? AND status='pending'").bind(now,now,id).run();
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.deleted','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
     const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
-    await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Cancelled: "+row.title).slice(0,80),body:("This calendar event was deleted. "+pushDescription(row.description)).slice(0,160),url:"/",tag:"event-deleted-"+id},"event")));
+    const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Cancelled: "+row.title).slice(0,80),body:("This calendar event was deleted. "+pushDescription(row.description)).slice(0,160),url:"/",tag:"event-deleted-"+id},"event")));
+  if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     return json({ok:true});
   }
   if(request.method!=="PATCH") return json({error:"METHOD_NOT_ALLOWED"},405);
@@ -133,19 +135,20 @@ async function eventById(request:Request,env:EventEnv,userId:string,id:string):P
   if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.updated','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
-  await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Updated event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-updated-"+id},"event")));
+  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Updated event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-updated-"+id},"event")));
+  if(ctx)ctx.waitUntil(pushTask);else await pushTask;
   const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
-export async function handleEventsRequest(request:Request,env:EventEnv):Promise<Response|null> {
+export async function handleEventsRequest(request:Request,env:EventEnv,ctx?:ExecutionContext):Promise<Response|null> {
   const url=new URL(request.url);
   if(!url.pathname.startsWith("/api/events")) return null;
   if(!env.DB) return json({error:"DATABASE_NOT_CONFIGURED"},503);
   const user=await getCurrentUser(request,env);
   if(!user) return json({error:"UNAUTHENTICATED"},401);
   if(url.pathname==="/api/events"&&request.method==="GET") return listEvents(request,env,user.id);
-  if(url.pathname==="/api/events"&&request.method==="POST") return createEvent(request,env,user.id);
+  if(url.pathname==="/api/events"&&request.method==="POST") return createEvent(request,env,user.id,ctx);
   const match=url.pathname.match(/^\/api\/events\/([^/]+)$/);
-  if(match) return eventById(request,env,user.id,decodeURIComponent(match[1]));
+  if(match) return eventById(request,env,user.id,decodeURIComponent(match[1]),ctx);
   return json({error:"METHOD_NOT_ALLOWED"},405);
 }
