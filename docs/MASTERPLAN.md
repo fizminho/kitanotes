@@ -255,6 +255,7 @@ KitaNotes has two distinct AI workflows. Keep their purpose, entry points and co
 ### AI Note Assistant: new input
 
 - Starts from user-entered text or OCR text extracted from a selected/captured image.
+- Writes the resulting note in the user's own voice, matching the input language. Avoids third-person descriptions such as “the user plans to” and produces a clear, ready-to-keep note.
 - Creates a draft note and may identify supported tasks, calendar events and reminders.
 - The user reviews and edits the draft before saving. Calendar events/reminders are created only after explicit confirmation.
 - OCR is an input method for this assistant, not part of AI Organizer.
