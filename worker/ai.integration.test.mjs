@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { handleAiRequest, getFreeGeminiModelCandidates, validateAiDraft } from "./ai.ts";
+import { handleNotesRequest } from "./notes.ts";
 
 class D1TestDatabase {
   constructor(){
@@ -142,5 +143,31 @@ test("per-user daily cap blocks requests before Gemini is called and consent can
     assert.equal(revoked.status,200);
     const status=await handleAiRequest(request("/api/ai/status"),env);
     assert.equal((await status.json()).consented,false);
+  }finally{globalThis.fetch=originalFetch;db.close();}
+});
+
+test("transient 503 falls through to the next allowlisted free model",async()=>{
+  const{db,env}=seed();const originalFetch=globalThis.fetch;const models=[];
+  globalThis.fetch=async url=>{models.push(String(url));if(models.length===1)return new Response(JSON.stringify({error:{message:"temporarily unavailable"}}),{status:503});return okResponse();};
+  try{
+    await handleAiRequest(request("/api/ai/consent","POST",{accepted:true}),env);
+    const response=await handleAiRequest(request("/api/ai/organize","POST",{text:"Meeting notes",timezone:"Asia/Kuala_Lumpur"}),env);
+    assert.equal(response.status,200);
+    assert.equal(models.length,2);
+    assert.ok(models.every(url=>url.includes("gemini-")));
+  }finally{globalThis.fetch=originalFetch;db.close();}
+});
+
+test("malformed model JSON falls back and total provider outage does not block manual notes",async()=>{
+  const{db,env}=seed();const originalFetch=globalThis.fetch;let calls=0;
+  globalThis.fetch=async()=>{calls++;if(calls===1)return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"not json"}]}}]}),{status:200});throw new Error("provider unavailable");};
+  try{
+    await handleAiRequest(request("/api/ai/consent","POST",{accepted:true}),env);
+    const aiResponse=await handleAiRequest(request("/api/ai/organize","POST",{text:"Meeting notes",timezone:"Asia/Kuala_Lumpur"}),env);
+    assert.equal(aiResponse.status,503);
+    assert.equal((await aiResponse.json()).paidFallback,false);
+    const manualNote=await handleNotesRequest(request("/api/notes","POST",{title:"Manual note still works",content:"AI is unavailable",workspaceId:"w1"}),env);
+    assert.equal(manualNote.status,201);
+    assert.equal(calls,4);
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
