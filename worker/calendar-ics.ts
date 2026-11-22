@@ -43,10 +43,10 @@ function parseIcs(text:string,defaultTz="Asia/Kuala_Lumpur"):IcsEvent[] {
 function escapeIcs(value:string):string { return value.replace(/\\/g,"\\\\").replace(/\r?\n/g,"\\n").replace(/,/g,"\\,").replace(/;/g,"\\;"); }
 function foldLine(value:string):string { const chunks:string[]=[];let line="";for(const char of value){if(new TextEncoder().encode(line+char).length>70){chunks.push(line);line=" "+char;}else line+=char;}chunks.push(line);return chunks.join("\r\n"); }
 function icsDate(value:string,timezone:string):string { const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(value));const part=(key:string)=>parts.find(x=>x.type===key)?.value??"0000";return part("year")+part("month")+part("day"); }
-function eventIcs(row:{id:string;title:string;description:string;starts_at_utc:string;ends_at_utc:string;all_day:number;timezone:string}):string {
+function eventIcs(row:{id:string;title:string;description:string;starts_at_utc:string;ends_at_utc:string;all_day:number;timezone:string;source_uid?:string|null}):string {
  const start=row.all_day?"DTSTART;VALUE=DATE:"+icsDate(row.starts_at_utc,row.timezone):"DTSTART:"+new Date(row.starts_at_utc).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z");
  const end=row.all_day?"DTEND;VALUE=DATE:"+icsDate(row.ends_at_utc,row.timezone):"DTEND:"+new Date(row.ends_at_utc).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z");
- return ["BEGIN:VEVENT","UID:"+row.id+"@kitanotes.binalah.com","DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z"),start,end,"SUMMARY:"+escapeIcs(row.title),"DESCRIPTION:"+escapeIcs(row.description??""),"END:VEVENT"].map(foldLine).join("\r\n");
+ return ["BEGIN:VEVENT","UID:"+(row.source_uid||row.id+"@kitanotes.binalah.com"),"DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z"),start,end,"SUMMARY:"+escapeIcs(row.title),"DESCRIPTION:"+escapeIcs(row.description??""),"END:VEVENT"].map(foldLine).join("\r\n");
 }
 const STATE_SLUGS:Record<string,string>={johor:"jhr",kedah:"kdh",kelantan:"ktn",melaka:"mlk","negeri-sembilan":"nsn",pahang:"phg",perak:"prk",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sel",terengganu:"trg","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
 function validState(value:string|null):string|null{return value&&Object.hasOwn(STATE_SLUGS,value)?value:null;}
@@ -63,7 +63,7 @@ async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
 }
 async function exportIcs(request:Request,db:Db,userId:string):Promise<Response>{
  const workspaceId=new URL(request.url).searchParams.get("workspaceId")??"";if(!workspaceId||!(await roleFor(db,workspaceId,userId)))return json({error:"NOT_FOUND"},404);
- const rows=await db.prepare("SELECT id,title,description,starts_at_utc,ends_at_utc,all_day,timezone FROM calendar_events WHERE workspace_id=? AND deleted_at IS NULL ORDER BY starts_at_utc LIMIT 1000").bind(workspaceId).all<{id:string;title:string;description:string;starts_at_utc:string;ends_at_utc:string;all_day:number;timezone:string}>();
+ const rows=await db.prepare("SELECT e.id,e.title,e.description,e.starts_at_utc,e.ends_at_utc,e.all_day,e.timezone,ci.source_uid FROM calendar_events e LEFT JOIN calendar_event_imports ci ON ci.local_event_id=e.id WHERE e.workspace_id=? AND e.deleted_at IS NULL ORDER BY e.starts_at_utc LIMIT 1000").bind(workspaceId).all<{id:string;title:string;description:string;starts_at_utc:string;ends_at_utc:string;all_day:number;timezone:string;source_uid:string|null}>();
  const content=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//KitaNotes//Calendar 2.0//EN","CALSCALE:GREGORIAN","X-WR-CALNAME:KitaNotes",...rows.results.map(eventIcs),"END:VCALENDAR"].map(foldLine).join("\r\n")+"\r\n";
  return new Response(content,{headers:{"content-type":"text/calendar; charset=utf-8",'content-disposition':'attachment; filename="kitanotes-calendar.ics"',"cache-control":"no-store","x-content-type-options":"nosniff"}});
 }
