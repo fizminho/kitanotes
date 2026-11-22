@@ -55,7 +55,9 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
     return json({ error: "INVALID_INVITATION" }, 400);
   }
   const db = env.DB!;
-  if (!(await ownerFor(db,workspaceId,userId))) return json({ error: "OWNER_PERMISSION_REQUIRED" }, 403);
+  const ownedWorkspace=await db.prepare("SELECT workspace_type FROM workspaces WHERE id=? AND owner_user_id=?").bind(workspaceId,userId).first<{workspace_type:string}>();
+  if (!ownedWorkspace) return json({ error: "OWNER_PERMISSION_REQUIRED" },403);
+  if (ownedWorkspace.workspace_type!=="shared") return json({error:"SHARED_WORKSPACE_REQUIRED"},409);
   const rate = await consumeRateLimit(db, "invitation:create:user:" + userId, 10, 60 * 60 * 1000);
   if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
   const existingMember = await db.prepare("SELECT wm.user_id FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? AND u.email_normalized=?")
