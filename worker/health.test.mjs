@@ -1,0 +1,10 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+test("health endpoint is service-specific and does not expose credentials", async () => {
+ const source=await readFile(new URL("./index.ts",import.meta.url),"utf8");
+ assert.match(source,/service:"kitanotes"/);
+ assert.match(source,/url\.pathname==="\/api\/health"/);
+ assert.match(source,/NOT_IMPLEMENTED/);
+ assert.doesNotMatch(source,/GEMINI_API_KEY|GOOGLE_CLIENT_SECRET|CLOUDFLARE_API_TOKEN/);
+});
