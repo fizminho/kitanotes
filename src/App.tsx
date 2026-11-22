@@ -220,7 +220,7 @@ export default function App() {
     if (!inviteOpen || !activeWorkspaceId) return;
     let active = true;
     setInvitationsLoading(true);
-    fetch("/api/invitations?workspaceId=" + encodeURIComponent(user.personalWorkspaceId), { credentials: "same-origin" })
+    fetch("/api/invitations?workspaceId=" + encodeURIComponent(activeWorkspaceId), { credentials: "same-origin" })
       .then(async response => {
         if (!response.ok) throw new Error("Unable to load invitations.");
         const result = await response.json() as { invitations: Invitation[] };
@@ -400,7 +400,7 @@ export default function App() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(editingNote
           ? { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, version: editingNote.version }
-          : { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, workspaceId: user?.personalWorkspaceId })
+          : { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, workspaceId: activeWorkspaceId })
       });
       const result = await response.json() as { note?: Note; error?: string };
       if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "This note changed elsewhere. Refresh and try again." : "Unable to save this note.");
@@ -451,11 +451,11 @@ export default function App() {
       for(const suggestion of aiDraft.suggestedCategories){
         if(categories.some(category=>category.name.toLowerCase()===suggestion.name.toLowerCase()))continue;
         const response=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:user.personalWorkspaceId,name:suggestion.name,color:"#766bd0",sortOrder:categories.length
+          workspaceId:activeWorkspaceId,name:suggestion.name,color:"#766bd0",sortOrder:categories.length
         })});
         if(!response.ok&&response.status!==409)throw new Error("Unable to create category: "+suggestion.name);
       }
-      const response=await fetch("/api/categories?workspaceId="+encodeURIComponent(user.personalWorkspaceId),{credentials:"same-origin"});
+      const response=await fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"});
       if(response.ok){
         const result=await response.json() as {categories:Category[]};
         setCategories(result.categories);
@@ -536,7 +536,7 @@ export default function App() {
     setAiSavingNote(true);setAiError("");
     try{
       const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        workspaceId:user.personalWorkspaceId,title:aiDraftTitle,content:aiDraftContent,categoryId:selectedCategoryId||null
+        workspaceId:activeWorkspaceId,title:aiDraftTitle,content:aiDraftContent,categoryId:selectedCategoryId||null
       })});
       const result=await response.json() as {note?:Note};
       if(!response.ok||!result.note)throw new Error("Unable to save the note draft.");
@@ -556,7 +556,7 @@ export default function App() {
         let eventId:string|undefined;
         if(!completed.has(eventKey)){
           const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-            workspaceId:user.personalWorkspaceId,title:event.title,description:event.description,
+            workspaceId:activeWorkspaceId,title:event.title,description:event.description,
             startsAt:new Date(event.startLocal).toISOString(),endsAt:new Date(event.endLocal).toISOString(),timezone:event.timezone
           })});
           const result=await response.json() as {event?:CalendarEvent};
@@ -567,7 +567,7 @@ export default function App() {
         }
         if(event.reminderLocal&&!completed.has("event-reminder:"+index)&&eventId){
           const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-            workspaceId:user.personalWorkspaceId,eventId,title:event.title,dueAt:new Date(event.reminderLocal).toISOString(),timezone:event.timezone
+            workspaceId:activeWorkspaceId,eventId,title:event.title,dueAt:new Date(event.reminderLocal).toISOString(),timezone:event.timezone
           })});
           if(!reminderResponse.ok)throw new Error("Event created, but its reminder could not be saved.");
           completed.add("event-reminder:"+index);setAiCreatedItems([...completed]);
@@ -577,7 +577,7 @@ export default function App() {
       for(const reminder of standalone){
         if(completed.has(reminder.key))continue;
         const response=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:user.personalWorkspaceId,title:reminder.title,dueAt:new Date(reminder.dueLocal).toISOString(),timezone:reminder.timezone
+          workspaceId:activeWorkspaceId,title:reminder.title,dueAt:new Date(reminder.dueLocal).toISOString(),timezone:reminder.timezone
         })});
         if(!response.ok)throw new Error("Unable to create reminder: "+reminder.title);
         completed.add(reminder.key);setAiCreatedItems([...completed]);
@@ -607,17 +607,17 @@ export default function App() {
   }
 
   async function saveEvent() {
-    if(!user?.personalWorkspaceId||!eventTitle.trim()||eventSaving)return;
+    if(!activeWorkspaceId||!eventTitle.trim()||eventSaving)return;
     setEventSaving(true);setEventsError("");
     try {
       const payload={title:eventTitle,description:eventDescription,startsAt:zonedDateTimeToIso(eventStart,eventTimezone),endsAt:zonedDateTimeToIso(eventEnd,eventTimezone),timezone:eventTimezone,linkedNoteId:eventLinkedNoteId||null};
-      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:user.personalWorkspaceId})});
+      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:activeWorkspaceId})});
       const result=await response.json() as {event?:CalendarEvent};
       if(!response.ok||!result.event)throw new Error(response.status===409?"This event changed elsewhere. Close and reopen it before saving.":"Unable to save this event.");
       setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
       if(eventReminderAt&&!editingEvent){
         const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:user.personalWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:new Date(eventReminderAt).toISOString(),timezone:eventTimezone
+          workspaceId:activeWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:new Date(eventReminderAt).toISOString(),timezone:eventTimezone
         })});
         if(!reminderResponse.ok)setEventsError("Event saved, but its reminder could not be created.");
       }
