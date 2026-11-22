@@ -775,6 +775,17 @@ export default function App() {
     }catch(error){setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar sync failed.");}
     finally{setGoogleCalendarBusy(false);}
   }
+  async function disconnectGoogleCalendar(){
+    if(!activeWorkspaceId||googleCalendarBusy||!window.confirm("Disconnect Google Calendar from this workspace? Imported events will stay in KitaNotes."))return;
+    setGoogleCalendarBusy(true);setGoogleCalendarError("");
+    try{
+      const response=await fetch("/api/google-calendar/disconnect",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId})});
+      if(!response.ok)throw new Error("Unable to disconnect Google Calendar.");
+      setGoogleCalendarStatus({connected:false,lastSyncAt:null,direction:"google_to_kitanotes",readOnly:true});
+      pushToast("Google Calendar disconnected. Imported events remain in KitaNotes.");
+    }catch(error){setGoogleCalendarError(error instanceof Error?error.message:"Unable to disconnect Google Calendar.");}
+    finally{setGoogleCalendarBusy(false);}
+  }
   async function deleteEvent(event:CalendarEvent) {
     try {
       const response=await fetch("/api/events/"+encodeURIComponent(event.id),{method:"DELETE",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({version:event.version})});
