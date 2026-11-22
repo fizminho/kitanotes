@@ -24,7 +24,7 @@ type Invitation = { id: string; email: string; role: "editor" | "viewer"; status
 type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
 type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
-type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
+type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
@@ -39,7 +39,7 @@ type AiDraft = {
 type AiStatus = {configured:boolean;consented:boolean;dailyLimit:number;dailyUsed:number;dailyRemaining:number};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
-  categoryName: string | null; createdBy: string; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
+  categoryName: string | null; createdBy: string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
 };
 
 export default function App() {
@@ -86,7 +86,7 @@ export default function App() {
   const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("viewer");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteCreateError, setInviteCreateError] = useState("");
-  const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string } | null>(null);
+  const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string|null } | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [workspaceMembers,setWorkspaceMembers]=useState<WorkspaceMember[]>([]);
@@ -805,23 +805,23 @@ export default function App() {
   }
 
   async function createInvite() {
-    if (!activeWorkspaceId || !inviteEmail.trim() || inviteSending) return;
+    if (!activeWorkspaceId || inviteSending) return;
     setInviteSending(true);
     setInviteCreateError("");
     setCreatedInvite(null);
     try {
       const response = await fetch("/api/invitations", {
         method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workspaceId: activeWorkspaceId, email: inviteEmail, role: inviteRole })
+        body: JSON.stringify({ workspaceId: activeWorkspaceId, openLink:true, role: inviteRole })
       });
-      const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string; error?: string };
-      if (!response.ok || !result.invitationUrl || !result.gmailComposeUrl) {
+      const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string|null; error?: string };
+      if (!response.ok || !result.invitationUrl) {
         const message = result.error === "ALREADY_A_MEMBER" ? "This person is already a workspace member."
           : result.error === "INVITATION_ALREADY_PENDING" ? "There is already a pending invitation for this email."
           : "Unable to create this invitation.";
         throw new Error(message);
       }
-      setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl });
+      setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl??null });
       setInviteRefresh(value => value + 1);
     } catch (error) {
       setInviteCreateError(error instanceof Error ? error.message : "Unable to create this invitation.");
@@ -929,9 +929,9 @@ export default function App() {
         const revoked = await fetch("/api/invitations/" + encodeURIComponent(invitation.id), { method: "DELETE", credentials: "same-origin" });
         if (!revoked.ok) throw new Error("Unable to replace this invitation.");
       }
-      const response = await fetch("/api/invitations", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: activeWorkspaceId, email: invitation.email, role: invitation.role }) });
-      const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string };
-      if (!response.ok || !result.invitationUrl || !result.gmailComposeUrl) throw new Error("Unable to create a new invitation link.");
+      const response = await fetch("/api/invitations", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: activeWorkspaceId, openLink:true, role: invitation.role }) });
+      const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string|null };
+      if (!response.ok || !result.invitationUrl) throw new Error("Unable to create a new invitation link.");
       setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl });
       setManageTab("invite"); setInviteRefresh(value => value + 1);
     } catch (error) { setInviteCreateError(error instanceof Error ? error.message : "Unable to create a new invitation link."); }
@@ -1077,7 +1077,7 @@ export default function App() {
           </section>}
           {inviteToken && <section className="invite-panel">
             <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
-              <p>Accept this invitation using the Google account whose email address received it.</p></div>
+              <p>Anyone with this invitation link can join after signing in with Google.</p></div>
             {user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
               : authStatus === "signed_out" ? <a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Sign in to accept</a>
               : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>}
@@ -1211,13 +1211,13 @@ export default function App() {
 
           {manageTab==="invite"&&activeWorkspace.role==="owner"&&<>
             {!createdInvite ? <>
-              <label className="field-label">Google email address<input className="invite-input" type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="name@gmail.com" maxLength={254}/></label>
+              <p className="invite-list-note">Create a reusable link. Anyone who has it can join this workspace after Google sign-in. You can remove members or revoke the link at any time.</p>
               <label className="field-label">Permission<select className="invite-input" value={inviteRole} onChange={event => setInviteRole(event.target.value as "editor" | "viewer")}><option value="viewer">Viewer · can read notes</option><option value="editor">Editor · can read and edit notes</option></select></label>
-              <footer><span>We create a secure one-time link. You send it yourself using Gmail.</span><button className="primary-button" onClick={createInvite} disabled={!inviteEmail.trim() || inviteSending}>{inviteSending ? "Creating…" : "Create invitation"}</button></footer>
+              <footer><span>Anyone with the link can join as the selected role.</span><button className="primary-button" onClick={createInvite} disabled={inviteSending}>{inviteSending ? "Creating…" : "Create invite link"}</button></footer>
             </> : <>
-              <p className="invite-result-copy">Invitation created. It expires in seven days. KitaNotes has not sent an email.</p>
-              <label className="field-label">One-time invitation link<input className="invite-input" readOnly value={createdInvite.invitationUrl} onFocus={event=>event.currentTarget.select()}/></label>
-              <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button><a className="primary-button" href={createdInvite.gmailComposeUrl} target="_blank" rel="noopener noreferrer">Open Gmail draft</a></footer>
+              <p className="invite-result-copy">Invite link created. It can be used by multiple people and expires in seven days. Revoke it any time.</p>
+              <label className="field-label">Reusable invitation link<input className="invite-input" readOnly value={createdInvite.invitationUrl} onFocus={event=>event.currentTarget.select()}/></label>
+              <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button></footer>
               <button className="text-action" onClick={()=>{setCreatedInvite(null);setInviteEmail("");setCopiedInvite(false);}}>Invite someone else</button>
             </>}
             <div className="invite-list">
@@ -1226,7 +1226,7 @@ export default function App() {
                 <div><strong>{invitation.email}</strong><small>{invitation.role} · {invitation.status} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></div>
                 <div className="invite-member-actions">{(invitation.status==="pending"||invitation.status==="expired"||invitation.status==="revoked")&&<button className="text-action" onClick={()=>regenerateInvite(invitation)} disabled={inviteSending}>{invitation.status==="pending"?"New link":"Re-invite"}</button>}{invitation.status==="pending"&&<button className="text-action" onClick={() => revokeInvitation(invitation.id)}>Revoke</button>}</div>
               </div>)}
-              <p className="invite-list-note">Invitation links can only be used by the invited Google account. A link is shown once, so use New link if you lose it.</p>
+              <p className="invite-list-note">Anyone with an active link can join. The owner can revoke a link or remove a member at any time.</p>
             </div>
           </>}
 
