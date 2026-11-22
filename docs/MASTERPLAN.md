@@ -68,7 +68,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 ### Later releases
 
-- [ ] Calendar 2.0: iCalendar import/export, duplicate-safe UID mapping, regional Malaysia public holidays and user-selectable state. Initial implementation is in progress.
+- [x] Calendar 2.0: iCalendar import/export, duplicate-safe UID mapping, Malaysia public/state holidays, KPM school breaks for 2026/2027 and user-selectable state. Festival/observance feed integration and recurring iCalendar expansion remain open.
 - [ ] Real-time collaborative editing / presence.
 - [x] Image OCR with gallery selection and camera capture, image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. No separate terms checkbox; each request is user initiated. Live provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
@@ -129,7 +129,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 
 - Import and export RFC 5545 `.ics` calendars for Apple Calendar, Google Calendar, Outlook and compatible apps.
 - Track imported UIDs per workspace to prevent duplicate events on repeated imports.
-- Show Malaysia national and state public holidays for the user's selected state, defaulting to Selangor, using a public iCalendar feed.
+- Show Malaysia national/state public holidays for the user's selected state (default Selangor) using HolidayWise, plus KPM school-break periods for 2026/2027 using the selected state's Group A/B calendar.
 - Do not request Google Calendar API scopes or maintain Google Calendar OAuth connections.
 
 ### Google sign-in
@@ -210,7 +210,7 @@ MVP calendar is an internal KitaNotes calendar. This avoids requiring calendar p
 ### Reminder behavior
 
 - Store event instants in UTC and retain the IANA timezone used to interpret local input.
-- Support user-selected reminders such as at event time, 10 minutes, 1 hour or 1 day before.
+- Default new calendar events to one day before; allow the user to change or clear the reminder. Preserve explicitly edited reminder times and event timezones.
 - Use durable scheduled jobs / a due-reminder query with idempotency keys.
 - Create one notification per recipient according to workspace membership and notification preferences.
 - Handle edits, cancellations, daylight-saving transitions and past-due reminders.
@@ -597,3 +597,4 @@ MVP is not complete until all of these are demonstrated:
 \n- **2026-11-22:** Added note/event creator and latest-editor fields, joined user names/emails into the API DTOs, and recorded content create/update/delete activity in workspace history. Added reusable seven-day open invitation links; any Google-authenticated user with a verified email can join while the link remains active. Owners can revoke links and remove members. CI validation pending.\n
 - **2026-11-22:** Expanded Web Push to calendar event create/update/delete, shared-note update/delete and workspace join/leave/removal/role-change events. Added per-activity preference switches and migration `0015_notification_activity_preferences.sql`. Payloads remain generic, exclude the actor, and respect global/category preferences and quiet hours. CI build, all tests, SQLite migration validation and Worker bundle validation passed in run [45041602852](https://github.com/fizminho/kitanotes/actions/runs/45041602852). VAPID provisioning, migration application to production D1 and real-iPhone delivery verification remain open.
 \n- **2026-11-22:** Added an iPhone-friendly browser-based VAPID generator at `/vapid-generator.html`; keys are generated in the browser with Web Crypto and are not transmitted or stored. Updated Cloudflare variable/secret setup and release verification docs. Production VAPID provisioning, migration verification and iPhone delivery remain pending.\n
+- **2026-11-23:** Completed the first Calendar 2.0 rollout slice: public/state holiday feed, KPM school breaks for 2026/2027 by Group A/B, multi-day calendar display, public-holiday/school-holiday agenda labels, and one-day-before default reminders for new events. Festival/observance feed integration remains open until its exact source feed can be verified. CI build, tests, SQLite migration validation and Wrangler dry-run passed in [run 45050699046](https://github.com/fizminho/kitanotes/actions/runs/45050699046).
