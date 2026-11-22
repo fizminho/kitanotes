@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { handleEventsRequest } from "./events.ts";
+import { handleCalendarIcsRequest } from "./calendar-ics.ts";
 import { handleRemindersRequest } from "./reminders.ts";
 import { handleNotificationsRequest } from "./notifications.ts";
 import { deliverDueReminders } from "./reminder-cron.ts";
@@ -12,7 +13,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql","migrations/0002_sessions.sql","migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql"]) {
+    for (const file of ["migrations/0001_initial.sql","migrations/0002_sessions.sql","migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0016_calendar_2_0.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../"+file,import.meta.url),"utf8"));
     }
   }
@@ -174,4 +175,35 @@ test("notification preference updates reject cross-origin requests",async()=>{
     }),env);
     assert.equal(response.status,403);
   }finally{db.close();}
+});
+
+
+test("iCalendar import is idempotent and export returns valid VEVENTs",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  const ics=["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:school-meeting-1@example.test","DTSTART;TZID=Asia/Kuala_Lumpur:20261201T090000","DTEND;TZID=Asia/Kuala_Lumpur:20261201T100000","SUMMARY:School meeting","DESCRIPTION:Meet teacher","END:VEVENT","BEGIN:VEVENT","UID:public-holiday-1@example.test","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Sultan of Selangor Birthday","END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const importRequest=()=>new Request("https://kitanotes.test/api/calendar/ics/import",{method:"POST",headers:{cookie:"__Host-kitanotes_session="+tokens.u1,origin:"https://kitanotes.test","content-type":"application/json"},body:JSON.stringify({workspaceId:"w1",ics})});
+  const first=await handleCalendarIcsRequest(importRequest(),env);assert.equal(first.status,200);const payload=await first.json();assert.equal(payload.imported,2);assert.equal(payload.updated,0);
+  const second=await handleCalendarIcsRequest(importRequest(),env);assert.equal(second.status,200);assert.equal((await second.json()).imported,0);
+  const count=db.sqlite.prepare("SELECT COUNT(*) AS count FROM calendar_events WHERE workspace_id='w1'").get().count;assert.equal(count,2);
+  const exportResponse=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/ics/export?workspaceId=w1",{headers:{cookie:"__Host-kitanotes_session="+tokens.u1}}),env);
+  assert.equal(exportResponse.status,200);const exported=await exportResponse.text();assert.ok(exported.includes("BEGIN:VCALENDAR"));assert.ok(exported.includes("SUMMARY:School meeting"));assert.ok(exported.includes("VALUE=DATE:20261211"));
+  const roundTrip=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/ics/import",{method:"POST",headers:{cookie:"__Host-kitanotes_session="+tokens.u1,origin:"https://kitanotes.test","content-type":"application/json"},body:JSON.stringify({workspaceId:"w1",ics:exported})}),env);
+  assert.equal(roundTrip.status,200);assert.equal((await roundTrip.json()).imported,0);assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM calendar_events WHERE workspace_id='w1'").get().count,2);
+  const preference=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/preferences",{headers:{cookie:"__Host-kitanotes_session="+tokens.u1}}),env);assert.equal((await preference.json()).holidayState,"selangor");
+  const save=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/preferences",{method:"PUT",headers:{cookie:"__Host-kitanotes_session="+tokens.u1,origin:"https://kitanotes.test","content-type":"application/json"},body:JSON.stringify({holidayState:"johor"})}),env);assert.equal(save.status,200);assert.equal((await save.json()).holidayState,"johor");
+ }finally{db.close();}
+});
+
+
+test("Malaysia holiday feed is state-specific and returns all-day public holidays",async()=>{
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async input=>{
+  assert.equal(String(input),"https://holidaywise.wee.my/my/sel/nat-state.ics");
+  return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
+ };
+ try{
+  const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-12-01&to=2026-12-31"),{});
+  assert.equal(response.status,200);const result=await response.json();assert.equal(result.events.length,1);assert.equal(result.events[0].title,"Birthday of the Sultan of Selangor");assert.equal(result.events[0].allDay,true);
+ }finally{globalThis.fetch=originalFetch;}
 });

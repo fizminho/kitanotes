@@ -49,4 +49,8 @@ For local development, copy `.dev.vars.example` to `.dev.vars`, replace the plac
 ## D1 prerequisites
 
 Apply `migrations/0001_initial.sql` and `migrations/0002_sessions.sql` to a dedicated KitaNotes D1 database before testing sign-in. Replace the placeholder database ID in `wrangler.toml` with the actual KitaNotes database ID. Never reuse Investlah's D1 database.
-\n\n## Optional Google Calendar authorization\n\nGoogle sign-in remains limited to `openid email profile`. Calendar import starts a separate OAuth consent flow and requests only `https://www.googleapis.com/auth/calendar.events.readonly`. Register `https://kitanotes.binalah.com/auth/google/calendar/callback` as an authorized redirect URI in the Google OAuth web client. The callback uses PKCE and a short-lived one-time state record.\n
+
+
+## Calendar interoperability
+
+KitaNotes uses the iCalendar (`.ics`) format for calendar import and export. It does not request Google Calendar API permissions; users export events from Apple Calendar, Google Calendar or Outlook and import the `.ics` file into a KitaNotes workspace.

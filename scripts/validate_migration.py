@@ -31,7 +31,7 @@ if workspace_rows != [("w1", "shared", "private"), ("w2", "shared", "shared")]:
     raise SystemExit(f"Workspace visibility/type migration produced unexpected rows: {workspace_rows}")
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences", "ai_ocr_consent", "ai_ocr_usage", "google_calendar_oauth_states", "google_calendar_connections", "google_calendar_event_map"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences", "ai_ocr_consent", "ai_ocr_usage" , "calendar_event_imports", "user_calendar_preferences"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
@@ -43,7 +43,7 @@ for table in ("notes", "calendar_events"):
         raise SystemExit(f"{table} is missing creator/editor audit columns")
 source_columns = {row[1] for row in db.execute("PRAGMA table_info(calendar_events)")}
 if not {"source_created_by", "source_created_at", "source_updated_by", "source_updated_at"}.issubset(source_columns):
-    raise SystemExit("calendar_events is missing Google Calendar source audit columns")
+    raise SystemExit("calendar_events is missing imported-source audit columns")
 
 db.execute("INSERT INTO categories (id,workspace_id,name,created_by_user_id,created_at,updated_at) VALUES ('c2','w2','Private','u2','now','now')")
 

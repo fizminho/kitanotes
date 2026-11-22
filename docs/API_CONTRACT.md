@@ -41,51 +41,12 @@ Every workspace has `type:"shared"`; `visibility` is the access boundary (`priva
 
 Timestamps must include an explicit UTC offset or `Z`; the API stores UTC instants and retains the IANA timezone for display. End must be after start. A linked note must belong to the same workspace.
 
-## Google Calendar import\n\n- `GET /auth/google/calendar/connect?workspaceId=`: begin a separate Google OAuth consent flow for an owner/editor. Requests only read-only `calendar.events.readonly`; it is not part of normal sign-in.\n- `GET /auth/google/calendar/callback`: PKCE-protected callback. Requires the signed-in KitaNotes session and a short-lived one-time state.\n- `GET /api/google-calendar/status?workspaceId=`: return whether the current user connected their primary Google Calendar to this workspace and the last sync time.\n- `POST /api/google-calendar/sync`: body `{ workspaceId }`; manually imports and incrementally updates events from Google Calendar into KitaNotes. Google cancellations soft-delete the corresponding imported KitaNotes event.\n- `POST /api/google-calendar/disconnect`: body `{ workspaceId }`; revokes the Google refresh token where possible and removes the stored encrypted token. Imported KitaNotes events remain.\n\nImported events are tagged as `source:"google_calendar"` and are read-only in KitaNotes to prevent local edits from being overwritten by the next Google sync. Their original Google creator and source-created/source-updated timestamps are retained separately from the KitaNotes importer audit identity. KitaNotes never creates, edits or deletes events in Google Calendar. Refresh tokens are encrypted at rest with AES-GCM. Apply migration `0014_google_calendar_import.sql` and register `https://kitanotes.binalah.com/auth/google/calendar/callback` as an authorized redirect URI before enabling this feature.\n\n## Reminders
+## Calendar 2.0
 
-- `GET /api/reminders?workspaceId=&limit=50`: list reminders in accessible workspaces.
-- `POST /api/reminders`: create a reminder. Body: `{ title, dueAt, timezone, workspaceId?, eventId?, noteId? }`.
-- `DELETE /api/reminders/:id`: cancel a pending reminder.
+- `POST /api/calendar/ics/import`: body `{ workspaceId, ics }`; imports supported VEVENTs into a workspace. Requires owner/editor access and same-origin request. Stable iCalendar UIDs are tracked per workspace so repeated imports update matching events rather than creating duplicates. Recurring rules are not expanded.
+- `GET /api/calendar/ics/export?workspaceId=`: downloads the workspace's active events as an RFC 5545 `.ics` file. Any workspace member may export; event details follow workspace access.
+- `GET /api/calendar/preferences`: returns the user's selected Malaysia holiday state (defaults to Selangor).
+- `PUT /api/calendar/preferences`: body `{ holidayState }`; saves the user's selected state.
+- `GET /api/calendar/holidays?state=selangor&from=YYYY-MM-DD&to=YYYY-MM-DD`: reads the selected state's public/state holiday feed from HolidayWise. This is a public read-only feed; no Google Calendar OAuth permission is requested.
 
-## Notifications
-
-- `GET /api/notifications?limit=50&unreadOnly=1`: return the signed-in user's in-app inbox and unread count.
-- `POST /api/notifications/:id/read`: mark one notification read.
-- `POST /api/notifications/read-all`: mark all of the current user's notifications read.
-
-A free Cloudflare Cron Trigger runs every five minutes. Due reminders create idempotent in-app notifications for workspace members. Deleted linked notes/events cancel pending reminders. This MVP does not send email or browser push notifications.
-
-## Gemini OCR
-
-- `POST /api/ai/ocr/consent`: body `{ accepted: true }`; records separate, revocable image-processing consent.
-- `DELETE /api/ai/ocr/consent`: revoke OCR consent.
-- `POST /api/ai/ocr`: raw JPEG, PNG or WebP bytes with the matching `Content-Type`; requires authentication, same-origin request and current OCR consent. Maximum image size is 2 MiB. Returns editable extracted text only; it does not create notes or events.
-
-OCR uses the configured free-tier Gemini model allowlist, a 5-request per-user UTC-day quota and a separate 3-request-per-user-per-minute burst limit. Images and extracted text are not persisted by the OCR handler. No user-supplied URL is fetched and no paid fallback is allowed. The frontend requires explicit consent, lets users edit extracted text and hands it to the existing organiser; the organiser still requires its own separate consent and explicit save confirmation. A rendered image preview and client-side EXIF stripping are not yet implemented.
-
-## AI organiser
-
-- `GET /api/ai/status`: return key configuration status, consent status and local daily usage. Never returns the key.
-- `POST /api/ai/consent`: body `{ accepted: true }`; stores explicit consent and policy version.
-- `DELETE /api/ai/consent`: revoke consent.
-- `POST /api/ai/organize`: body `{ text, timezone, workspaceId? }`; returns a validated note/category/event/reminder/task draft. Requires consent and an owner/editor workspace role.
-
-The AI endpoint does not persist prompts or drafts. It stores only consent metadata and a per-user UTC daily request count. It enforces a 16 KiB input limit and 10 requests per user per UTC day. All model candidates are filtered through the free-tier allowlist; paid fallback is disabled. See [AI privacy policy](AI_PRIVACY.md).
-
-## Categories
-
-- `GET /api/categories?workspaceId=`: list active categories in accessible workspaces.
-- `POST /api/categories`: create category. Body: `{ name, color?, sortOrder?, workspaceId? }`.
-- `PATCH /api/categories/:id`: update name, hex color or sort order.
-- `DELETE /api/categories/:id`: archive the category. Notes retain their category reference.
-
-## Authorization and validation
-
-- Reads require active workspace membership.
-- Mutations require owner or editor role; viewers are read-only.
-- Mutations require a same-origin `Origin` header to mitigate CSRF.
-- Note title is limited to 200 characters; content to 50,000 characters; JSON request bodies to 64 KiB.
-- Category name is limited to 50 characters; colors must be six-digit hex.
-- Category assignment must point to a category in the same workspace.
-- Note updates use optimistic concurrency through `version`.
-- Workspace invitations and verified-email acceptance are implemented. New shared-note notifications are created by a D1 trigger. Integration tests use a SQLite-backed D1 adapter. Production Google login, note persistence and two-account collaboration have been exercised, but the latest workspace visibility migrations and code still require a current-release production smoke test.
+Existing Google Calendar-imported events remain in the workspace as editable KitaNotes events. The retired OAuth connection and event-map tables are dropped by migration `0016_calendar_2_0.sql`.

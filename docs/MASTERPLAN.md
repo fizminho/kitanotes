@@ -4,7 +4,7 @@
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
-**Last updated:** 2026-11-22 (Google Calendar read-only import foundation)
+**Last updated:** 2026-11-23 (Calendar 2.0 implementation)
 
 > This is the source-of-truth planning document for KitaNotes. Update the checkboxes and decision log as implementation progresses. A checked item means it has been implemented and verified, not merely discussed.
 
@@ -68,7 +68,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 ### Later releases
 
-- [x] Google Calendar one-way import foundation: separately consented read-only access, encrypted refresh token, per-workspace connection and incremental sync into KitaNotes. Production migration, Google OAuth redirect URI configuration and live account smoke test remain open.
+- [ ] Calendar 2.0: iCalendar import/export, duplicate-safe UID mapping, regional Malaysia public holidays and user-selectable state. Initial implementation is in progress.
 - [ ] Real-time collaborative editing / presence.
 - [x] Image OCR with gallery selection and camera capture, image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. No separate terms checkbox; each request is user initiated. Live provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
@@ -125,15 +125,19 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 6. AI requests go through the backend Gemini adapter; the browser never receives the Gemini API key.
 7. Cron scans due reminders and creates durable in-app notification records; optional Web Push is best-effort and never carries private note content.
 
-## 4. Authentication, invitations and access control\n\n### Google Calendar import\n\n- Direction is Google Calendar → KitaNotes only. KitaNotes never writes changes back to Google Calendar.\n- Request the read-only `calendar.events.readonly` scope only after a user explicitly connects a workspace.\n- Encrypt refresh tokens at rest with AES-GCM using a key derived from the Worker `SESSION_SECRET`; never expose tokens to the browser.\n- Store per-user/per-workspace sync cursors and event mappings so repeated manual syncs update imported events rather than duplicating them.\n- Start with manual Sync now; no background calendar polling.\n- Configure the additional Google OAuth redirect URI `https://kitanotes.binalah.com/auth/google/calendar/callback` in the existing OAuth web client before production use.\n- Apply migration `0014_google_calendar_import.sql` before deploying the Worker code.
+## 4. Authentication, invitations and access control\n\n### Calendar 2.0
+
+- Import and export RFC 5545 `.ics` calendars for Apple Calendar, Google Calendar, Outlook and compatible apps.
+- Track imported UIDs per workspace to prevent duplicate events on repeated imports.
+- Show Malaysia national and state public holidays for the user's selected state, defaulting to Selangor, using a public iCalendar feed.
+- Do not request Google Calendar API scopes or maintain Google Calendar OAuth connections.
 
 ### Google sign-in
 
 - Use Google OpenID Connect and validate issuer, audience, signature, expiry and nonce/state.
 - Use Google's immutable `sub` as the identity key. Email is a mutable contact/ invitation attribute.
 - Require a verified email for invitation matching and delivery.
-- Keep login scopes minimal: `openid`, `email`, `profile`. Google Calendar is a separate opt-in flow using read-only `calendar.events.readonly`; it must never be requested during ordinary sign-in.
-- Google Calendar scopes must be separately requested only when the user enables calendar sync.
+- Keep login scopes minimal: `openid`, `email`, `profile`. Calendar interoperability uses `.ics` files and does not request Google Calendar API permissions.
 - Use secure, HttpOnly, SameSite cookies for the application session where supported.
 - Protect OAuth callback and state-changing requests against CSRF.
 - Never store Google client secrets or Gemini keys in frontend source, Vite environment variables, public build artifacts or Git.
