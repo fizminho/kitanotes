@@ -408,10 +408,10 @@ The layout is a target, not a mandate to create empty directories immediately. K
 ### P1 — Identity and secure collaboration
 
 - [ ] Configure Google OAuth clients for development/staging/production.
-- [x] Implement Google OIDC ID-token signature/claim validation, state, nonce, PKCE and opaque hashed D1 sessions; token validation and login initiation have unit tests. Full callback/session lifecycle remains unverified until credentials and D1 are provisioned.
-- [x] Implement user upsert and personal workspace/member creation in the Google login callback. Live database verification remains pending.
-- [x] Implement workspace-scoped notes CRUD, soft delete/archive, categories CRUD/archive, role checks, same-origin mutation checks, bounded JSON parsing and optimistic note versions. Endpoint integration tests remain outstanding.
-- [x] Implement workspace membership role checks for owner/editor/viewer on note and category reads/writes. Cross-account integration tests remain outstanding.
+- [x] Implement Google OIDC ID-token signature/claim validation, state, nonce, PKCE and opaque hashed D1 sessions; offline D1 + mocked Google callback, personal workspace, session and logout integration tests pass. Real Google credentials/cloud D1 verification remains pending.
+- [x] Implement and integration-test user upsert plus personal workspace/member creation in the Google login callback against SQLite-backed D1 test adapter. Live cloud D1 verification remains pending.
+- [x] Implement and integration-test workspace-scoped notes CRUD, soft delete/archive, categories CRUD/archive, role checks, same-origin mutation checks, bounded JSON parsing and optimistic note versions.
+- [x] Implement and integration-test workspace membership role checks for owner/editor/viewer and cross-workspace note/category isolation.
 - [ ] Implement invitation creation, secure link generation, Gmail compose handoff, acceptance, expiry and revocation.
 - [ ] Add authorization and cross-workspace isolation tests.
 
