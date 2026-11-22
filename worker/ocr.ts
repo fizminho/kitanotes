@@ -24,21 +24,6 @@ async function consumeImage(request:Request):Promise<Uint8Array|null>{
  try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>MAX_IMAGE_BYTES){await reader.cancel();return null;}chunks.push(part.value);}}catch{return null;}
  const result=new Uint8Array(size);let offset=0;for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}return result;
 }
-async function consent(request:Request,env:Env,userId:string):Promise<Response>{
- if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
- if(request.method==="POST"){
-  const body=await readJsonBody(request);
-  if(body?.accepted!==true)return json({error:"EXPLICIT_OCR_CONSENT_REQUIRED"},400);
-  const now=new Date().toISOString();
-  await env.DB!.prepare("INSERT INTO ai_ocr_consent(user_id,accepted_at,policy_version) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET accepted_at=excluded.accepted_at,policy_version=excluded.policy_version").bind(userId,now,POLICY).run();
-  return json({consented:true,policyVersion:POLICY});
- }
- if(request.method==="DELETE"){
-  await env.DB!.prepare("DELETE FROM ai_ocr_consent WHERE user_id=?").bind(userId).run();
-  return json({consented:false});
- }
- return json({error:"METHOD_NOT_ALLOWED"},405);
-}
 async function recognize(request:Request,env:Env,userId:string):Promise<Response>{
  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
  if(!env.GEMINI_API_KEY)return json({error:"AI_NOT_CONFIGURED"},503);
@@ -78,7 +63,6 @@ export async function handleOcrRequest(request:Request,env:Env):Promise<Response
  const url=new URL(request.url);if(!url.pathname.startsWith("/api/ai/ocr"))return null;
  if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
  const user=await getCurrentUser(request,env);if(!user)return json({error:"UNAUTHENTICATED"},401);
- if(url.pathname==="/api/ai/ocr/consent")return consent(request,env,user.id);
  if(url.pathname==="/api/ai/ocr"&&request.method==="POST")return recognize(request,env,user.id);
  return json({error:"METHOD_NOT_ALLOWED"},405);
 }
