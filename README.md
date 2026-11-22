@@ -10,7 +10,7 @@ KitaNotes is a mobile-first web application for private notes, collaboration, ca
 
 The current code includes the React/Vite PWA, Cloudflare Worker API, D1 migrations through `0012`, internal calendar/reminders, in-app notifications, optional Web Push, Gemini text organisation and a consent-gated Gemini OCR capture/edit workflow. Live Gemini provider verification and Web Push delivery are not confirmed. Account settings/deletion, backups/restore testing, operational monitoring and production smoke-test automation remain open. Offline editing is not supported.
 
-## What's new in 0.2
+## Feature history and UX improvements
 
 - **Bug fixes:** editing a calendar event always failed (broken date regex); stray `\n` text rendered in the AI and event dialogs; notes from every workspace were loaded and never refetched when switching workspaces; "Shared with me" was a dead placeholder; the composer always claimed notes were saved to a personal workspace.
 - **Features:** category filter chips, sort (recent / oldest / A–Z), archive view with restore and delete, toast feedback, dark mode, keyboard shortcuts (`/` or Ctrl/⌘+K search, Ctrl/⌘+Enter save, Esc close), word counter, view-only handling for viewer role, and a real shared-spaces list.
