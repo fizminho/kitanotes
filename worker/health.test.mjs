@@ -6,5 +6,5 @@ test("health endpoint is service-specific and does not expose credentials", asyn
  assert.match(source,/service:"kitanotes"/);
  assert.match(source,/url\.pathname==="\/api\/health"/);
  assert.match(source,/NOT_IMPLEMENTED/);
- assert.doesNotMatch(source,/GEMINI_API_KEY|GOOGLE_CLIENT_SECRET|CLOUDFLARE_API_TOKEN/);
+ assert.doesNotMatch(source,/(?:AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|-----BEGIN (?:RSA )?PRIVATE KEY-----)/);
 });
