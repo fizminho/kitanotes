@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>KitaNotes VAPID key generator</title>
+  <link rel="stylesheet" href="/vapid-generator.css">
+  <script type="module" src="/vapid-generator.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">KitaNotes · Push setup</p>
+    <h1>Generate VAPID keys</h1>
+    <p class="intro">Create the application-server keys needed for Web Push. Key generation happens locally in this browser. Nothing is uploaded or sent to KitaNotes.</p>
+    <section class="notice" aria-label="Security notice">
+      <strong>Keep the private key private.</strong>
+      Copy it directly into Cloudflare as a Worker Secret. Never share it in chat, GitHub, screenshots or a public document.
+    </section>
+    <button id="generate" type="button">Generate a new key pair</button>
+    <p id="status" role="status" aria-live="polite">No keys generated yet.</p>
+    <section class="field">
+      <label for="publicKey">VAPID_PUBLIC_KEY <span>Worker variable</span></label>
+      <textarea id="publicKey" readonly rows="3" autocomplete="off" spellcheck="false"></textarea>
+      <button type="button" data-copy="publicKey" disabled>Copy public key</button>
+    </section>
+    <section class="field">
+      <label for="privateKey">VAPID_PRIVATE_KEY <span>Worker Secret</span></label>
+      <textarea id="privateKey" readonly rows="2" autocomplete="off" spellcheck="false"></textarea>
+      <button type="button" data-copy="privateKey" disabled>Copy private key</button>
+    </section>
+    <section class="field">
+      <label for="subject">VAPID_SUBJECT <span>Worker variable</span></label>
+      <input id="subject" type="text" inputmode="email" autocomplete="off" value="mailto:">
+      <p class="hint">Replace this with a contact email you control, for example mailto:you@example.com.</p>
+      <button id="copySubject" type="button" disabled>Copy subject</button>
+    </section>
+    <section class="notice secondary">
+      <strong>Important</strong>
+      Generating another key pair invalidates subscriptions created with the previous public key. Generate once, configure Cloudflare, then enable push on your devices.
+    </section>
+    <a href="/">Back to KitaNotes</a>
+  </main>
+</body>
+</html>
