@@ -6,12 +6,13 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 
 - `GET /auth/google`: start Google OIDC login (state, nonce and PKCE).
 - `GET /auth/google/callback`: validate Google identity, upsert user, create personal workspace and issue session cookie.
+- `GET /api/auth/status`: return whether D1 and Google OAuth configuration are present; exposes no secret values.
 - `GET /api/auth/me`: return `{ authenticated: true, user }` or HTTP 401.
 - `POST /api/auth/logout`: revoke current session. Requires a same-origin `Origin` header.
 
 ## Notes
 
-- `GET /api/notes?q=&workspaceId=&limit=50`: list active, unarchived notes visible to the current user. Omitting workspace ID lists notes across all workspaces where the user is a member. Search matches title and content.
+- `GET /api/notes?q=&workspaceId=&limit=50&archived=0`: list active notes visible to the current user. Set `archived=1` to list archived notes. Omitting workspace ID lists notes across all workspaces where the user is a member. Search matches title and content.
 - `POST /api/notes`: create a note. Body: `{ title, content, workspaceId?, categoryId? }`. Omitting workspace ID selects the user's personal workspace.
 - `GET /api/notes/:id`: retrieve a note only if the user is a member of its workspace.
 - `PATCH /api/notes/:id`: update title/content/category or archive state. Body includes the current integer `version`; a stale version returns HTTP 409.
