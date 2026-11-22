@@ -38,7 +38,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] Membership roles: owner, editor and viewer.
 - [x] User-defined categories, colours and ordering.
 - [x] Client-side note search and recent-note ordering.\n- [ ] Category filtering and saved views.
-- [x] Internal calendar events and reminders; API supports linking them to notes.\n- [ ] Add note-link selection to the calendar UI.
+- [x] Internal calendar events and reminders; API supports linking them to notes.\n- [x] Add note-link selection to the calendar UI.
 - [x] In-app notification inbox.
 - [ ] Browser push notifications where permission is granted.
 - [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.\n- [ ] Add invitation-accepted and other collaboration activity notifications.
