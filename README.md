@@ -24,7 +24,13 @@ KitaNotes is planned as a mobile-first web application where people can sign in 
 
 ## Planned stack
 
-React + TypeScript + Vite, S3 + CloudFront for static hosting, a serverless API, PostgreSQL, Google OpenID Connect, Gemini and in-app/email/Web Push notifications. Final API runtime and database provider remain open pending infrastructure review.
+React + TypeScript + Vite on Cloudflare Pages (or Worker Static Assets), Cloudflare Workers Free API, Cloudflare D1 Free, Google OpenID Connect, Gemini free tier and in-app/Web Push notifications. No S3, CloudFront, paid database, paid Worker plan or paid AI fallback. Invitation delivery in the zero-cost MVP uses a copyable secure link and Gmail compose handoff rather than paid automated transactional email.
+
+## Zero-cost constraints
+
+- Workers Free and D1 Free quotas are hard ceilings; the app must fail gracefully when exhausted.
+- Gemini uses free-tier models only. No paid fallback or automatic billing escalation.
+- Custom-domain registration/renewal may still cost money; use the free Cloudflare hostname if RM0 including domain is required.
 
 ## Development
 
