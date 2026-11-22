@@ -58,7 +58,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 - [ ] Optional Google Calendar integration and two-way sync.
 - [ ] Real-time collaborative editing / presence.
-- [x] Consent-gated Gemini OCR image-to-text flow with editable output and handoff to the existing organiser. Image preview, client-side EXIF stripping and live provider verification remain open. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [x] Consent-gated Gemini OCR with image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. Live Gemini provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
 - [ ] Recurring events and advanced reminder rules.
 - [ ] Shared templates and reusable note formats.
@@ -468,7 +468,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 - [ ] Optional Google Calendar sync.
 - [ ] Real-time collaboration.
-- [ ] OCR image preview, client-side resizing/EXIF stripping and live Gemini model verification. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [ ] Live Gemini OCR model verification and production smoke test. Image preview, client-side resizing/EXIF stripping and direct AI note/calendar handoff are implemented. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] PDF text extraction and attachment management.
 - [ ] Recurring events and richer task management.
 - [ ] Offline editing and conflict resolution.
@@ -548,3 +548,5 @@ MVP is not complete until all of these are demonstrated:
 
 - **2026-11-22:** Production verification completed for the core workspace release. User confirmed `/api/health` responds, Google sign-in and private-note persistence work, Private ↔ Shared switching works, Invite Member appears for shared workspaces, notes remain after switching back to private, and D1 migrations `0011` and `0012` are applied. The exact deployed source revision and remaining production paths are still unverified.
 - **2026-11-22:** Security audit found stale `workspace_type='personal'` lookups in notes, calendar, reminders and AI organiser default-workspace resolution after migration `0012`. Updated all to use `visibility='private'`, corrected shared-workspace quota counting, prevented deletion of private workspaces, made default private-workspace selection deterministic and added migration plus API regression coverage. Build, tests, migration validation and Worker dry-run passed in [run 45029223039](https://github.com/fizminho/kitanotes/actions/runs/45029223039).
+
+- **2026-11-22:** Added image preview and client-side image preparation (maximum 2200-pixel edge, JPEG re-encoding to strip EXIF metadata where supported) to the Gemini OCR UI. OCR output can now be sent directly to the existing AI organiser to draft a note, categories, calendar events and reminders; note and calendar actions remain separately user-confirmed. Live Gemini provider verification remains open.
