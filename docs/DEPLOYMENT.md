@@ -8,12 +8,12 @@ The repository is configured for a single Cloudflare Worker serving the Vite sta
 
 1. Create a dedicated Cloudflare Worker named `kitanotes` under the intended account.
 2. Create a dedicated D1 database named `kitanotes-db` on the Free plan.
-3. Add the resulting D1 database ID to `wrangler.toml` under a `[[d1_databases]]` binding named `DB`.
-4. Apply migrations with Wrangler against that database only.
+3. Replace the explicit all-zero placeholder database ID in `wrangler.toml` with the resulting KitaNotes D1 database ID under the `DB` binding.
+4. Apply migrations with Wrangler against that database only: `npx wrangler d1 migrations apply kitanotes-db --remote`.
 5. Configure GitHub Actions secrets/variables for a narrowly scoped Cloudflare API token and account ID.
-6. Configure Google OAuth credentials for the exact KitaNotes hostname and keep any client secret in Worker secrets.
+6. Configure Google OAuth credentials for the exact KitaNotes hostname and add `https://YOUR-HOST/auth/google/callback` as an authorised redirect URI. Set `GOOGLE_CLIENT_ID` and `APP_BASE_URL` as Worker vars; set `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` with `wrangler secret put`.
 7. Add the Gemini API key as a Worker secret only after the AI adapter is implemented and free-tier quota is checked.
-8. Add the deploy workflow after the above prerequisites are met.
+8. Add the deploy workflow after the above prerequisites are met. Do not deploy with the placeholder D1 ID.
 
 Do not reuse Investlah's D1 database ID, OAuth client, Gemini key, Worker name or custom domain binding.
 
@@ -28,7 +28,7 @@ npx wrangler deploy --dry-run
 npm run cf:dev
 ```
 
-`npm run cf:dev` builds first and starts Wrangler locally. The current health endpoint is `/api/health`; non-health API routes return 501.
+`npm run cf:dev` builds first and starts Wrangler locally. The health endpoint is `/api/health`. Google auth routes and notes/categories API handlers are implemented, but require a provisioned D1 database and Google OAuth credentials to run. Unimplemented API areas return HTTP 501.
 
 ## Cost guardrails
 
