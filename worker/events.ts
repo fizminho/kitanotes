@@ -79,7 +79,7 @@ async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Re
   const db=env.DB!;
   const workspaceId=await writeWorkspace(db,userId,body.workspaceId);
   if(!workspaceId) return json({error:"WORKSPACE_FORBIDDEN"},403);
-  const linkedNoteId=body.linkedNoteId===undefined||body.linkedNoteId===null||body.linkedNoteId===""?null:cleanText(body.linkedNoteId,64);
+  const linkedNoteId=body.linkedNoteId===undefined||body.linkedNoteId===null||body.linkedNoteId===""?null:(typeof body.linkedNoteId==="string"?cleanText(body.linkedNoteId,64):undefined);
   if(linkedNoteId===undefined||!(await noteInWorkspace(db,linkedNoteId,workspaceId))) return json({error:"INVALID_LINKED_NOTE"},400);
   const id=crypto.randomUUID(); const now=new Date().toISOString();
   try {
@@ -116,7 +116,7 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
   const ends=body.endsAt===undefined?row.ends_at_utc:toUtc(body.endsAt);
   const timezone=body.timezone===undefined?row.timezone:validTimezone(body.timezone);
   const allDay=body.allDay===undefined?Boolean(row.all_day):body.allDay;
-  const linkedNoteId=body.linkedNoteId===undefined?row.linked_note_id:(body.linkedNoteId===null||body.linkedNoteId===""?null:cleanText(body.linkedNoteId,64));
+  const linkedNoteId=body.linkedNoteId===undefined?row.linked_note_id:(body.linkedNoteId===null||body.linkedNoteId===""?null:(typeof body.linkedNoteId==="string"?cleanText(body.linkedNoteId,64):undefined));
   if(!Number.isInteger(version)||version!==row.version||!title||description===null||!starts||!ends||ends<=starts||!timezone||typeof allDay!=="boolean"||linkedNoteId===undefined||!(await noteInWorkspace(db,linkedNoteId,row.workspace_id))) return json({error:"INVALID_OR_STALE_EVENT",currentVersion:row.version},409);
   const now=new Date().toISOString();
   const result=await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,linked_note_id=?,version=version+1,updated_at=? WHERE id=? AND version=? AND deleted_at IS NULL")
