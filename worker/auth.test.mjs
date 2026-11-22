@@ -42,7 +42,7 @@ test("auth status does not expose configuration values", async () => {
 
 test("Google login start uses state, nonce, PKCE and secure HttpOnly cookie", async () => {
   const response = await handleAuthRequest(new Request("https://kitanotes.test/auth/google"), {
-    DB: {},
+    DB: { prepare: () => ({ bind: () => ({ first: async () => ({ request_count: 1 }) }) }) },
     GOOGLE_CLIENT_ID: "public-client-id",
     GOOGLE_CLIENT_SECRET: "test-secret",
     SESSION_SECRET: "x".repeat(48)
