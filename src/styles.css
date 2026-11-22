@@ -179,3 +179,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .organizer-proposal>span>span{font-size:13px;font-weight:600}
 .organizer-proposal>small{flex:0 0 auto;font-size:10px;color:var(--muted,#777)}
 .organizer-proposal.applied{opacity:.65}
+
+
+/* Note toolbar: keep the native sort label readable at every breakpoint. */
+.toolbar .filter-button:has(.sort-select){font-size:11px;gap:8px;min-width:174px;justify-content:space-between;padding:0 10px}
+.toolbar .sort-select{display:block;flex:1;min-width:0;width:100%;max-width:100%;font-size:11px;line-height:1.2;color:#55596b;background:transparent}
+@media(max-width:760px){
+  .toolbar .filter-button:has(.sort-select){font-size:11px;min-width:154px;flex:0 0 auto;gap:6px}
+  .toolbar .sort-select{font-size:11px;min-width:0}
+}
