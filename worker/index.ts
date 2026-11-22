@@ -48,7 +48,7 @@ export default {
         ?? await handleAuthRequest(request,env)
         ?? await handleNotesRequest(request,env,ctx)
         ?? await handleInvitationsRequest(request,env)
-        ?? await handleEventsRequest(request,env)
+        ?? await handleEventsRequest(request,env,ctx)
         ?? await handleRemindersRequest(request,env)
         ?? await handleNotificationsRequest(request,env)
         ?? await handlePushRequest(request,env)
