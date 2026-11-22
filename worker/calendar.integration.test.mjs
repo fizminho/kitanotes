@@ -106,9 +106,9 @@ test("cron delivers idempotent in-app reminders to workspace members",async()=>{
     const delivered=await deliverDueReminders(db);
     assert.equal(delivered,1);
     assert.equal(db.sqlite.prepare("SELECT status FROM reminders WHERE id='r1'").get().status,"delivered");
-    assert.equal(db.sqlite.prepare("undefined AND notification_type='reminder'").get().count,2);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE workspace_id='w1' AND notification_type='reminder'").get().count,2);
     assert.equal(await deliverDueReminders(db),0);
-    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE workspace_id='w1'").get().count,2);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE workspace_id='w1' AND notification_type='reminder'").get().count,2);
 
     const inbox=await handleNotificationsRequest(request("/api/notifications",tokens.u1),env);
     const inboxPayload=await inbox.json();
