@@ -192,3 +192,16 @@ test("iCalendar import is idempotent and export returns valid VEVENTs",async()=>
   const save=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/preferences",{method:"PUT",headers:{cookie:"__Host-kitanotes_session="+tokens.u1,origin:"https://kitanotes.test","content-type":"application/json"},body:JSON.stringify({holidayState:"johor"})}),env);assert.equal(save.status,200);assert.equal((await save.json()).holidayState,"johor");
  }finally{db.close();}
 });
+
+
+test("Malaysia holiday feed is state-specific and returns all-day public holidays",async()=>{
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async input=>{
+  assert.equal(String(input),"https://holidaywise.wee.my/my/sel/nat-state.ics");
+  return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
+ };
+ try{
+  const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-12-01&to=2026-12-31"),{});
+  assert.equal(response.status,200);const result=await response.json();assert.equal(result.events.length,1);assert.equal(result.events[0].title,"Birthday of the Sultan of Selangor");assert.equal(result.events[0].allDay,true);
+ }finally{globalThis.fetch=originalFetch;}
+});
