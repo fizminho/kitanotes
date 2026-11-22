@@ -674,7 +674,7 @@ export default function App() {
         method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
         body: JSON.stringify({ token: inviteToken })
       });
-      const result = await response.json() as { accepted?: boolean; error?: string };
+      const result = await response.json() as { accepted?: boolean; workspaceId?: string; role?: "editor" | "viewer"; error?: string };
       if (!response.ok || !result.accepted) {
         const message = result.error === "INVITATION_EMAIL_MISMATCH"
           ? "This invitation was sent to a different Google email. Sign out and use the invited account."
@@ -686,6 +686,12 @@ export default function App() {
       setInviteStatus("accepted");
       setInviteNotice("Invitation accepted. The shared workspace is now available.");
       setInviteToken(null);
+      const workspaceResponse = await fetch("/api/workspaces", { credentials: "same-origin" });
+      if (workspaceResponse.ok) {
+        const workspaceResult = await workspaceResponse.json() as { workspaces: Workspace[] };
+        setWorkspaces(workspaceResult.workspaces);
+        if (result.workspaceId && workspaceResult.workspaces.some(item => item.id === result.workspaceId)) setActiveWorkspaceId(result.workspaceId);
+      }
       const notesResponse = await fetch("/api/notes", { credentials: "same-origin" });
       if (notesResponse.ok) {
         const noteResult = await notesResponse.json() as { notes: Note[] };
