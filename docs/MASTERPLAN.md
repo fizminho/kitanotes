@@ -31,22 +31,28 @@ The product should feel simple for ordinary users while enforcing strong privacy
 ### MVP — required
 
 - [x] Implement Google sign-in (OpenID Connect); identify users by stable Google subject ID, not email alone. Live Google OAuth verification remains open.
-- [x] Basic user profile from verified Google claims.\n- [ ] Account settings and account deletion.
+- [x] Basic user profile from verified Google claims.
+- [ ] Account settings and account deletion.
 - [x] Personal notes: create, read, edit, archive and soft-delete.
 - [x] Shared notes / shared spaces with explicit membership.
 - [x] Gmail-address invitations with pending, accepted, expired and revoked states; delivery uses a Gmail compose handoff / copyable secure link in the zero-cost MVP.
 - [x] Membership roles: owner, editor and viewer.
 - [x] User-defined categories, colours and ordering.
-- [x] Client-side note search and recent-note ordering.\n- [ ] Category filtering and saved views.
-- [x] Internal calendar events and reminders; API supports linking them to notes.\n- [x] Add note-link selection to the calendar UI.
+- [x] Client-side note search and recent-note ordering.
+- [ ] Category filtering and saved views.
+- [x] Internal calendar events and reminders; API supports linking them to notes.
+- [x] Add note-link selection to the calendar UI.
 - [x] In-app notification inbox.
 - [ ] Browser push notifications where permission is granted.
-- [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.\n- [ ] Add invitation-accepted and other collaboration activity notifications.
+- [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.
+- [ ] Add invitation-accepted and other collaboration activity notifications.
 - [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
 - [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
 - [ ] Audit/activity history for sharing and material note changes.
-- [x] Responsive mobile and desktop web experience.\n- [ ] PWA installability and offline support.
-- [x] Automated tests, CI checks and operational documentation.\n- [ ] Production deployment workflow and smoke tests.
+- [x] Responsive mobile and desktop web experience.
+- [ ] PWA installability and offline support.
+- [x] Automated tests, CI checks and operational documentation.
+- [ ] Production deployment workflow and smoke tests.
 
 ### Later releases
 
@@ -91,7 +97,8 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 - D1 Free: 5 million rows read/day, 100,000 rows written/day, 500 MB maximum per database and 5 GB total account storage. D1 free-tier queries fail after daily read/write limits are exceeded; data remains stored.
 - Workers Free supports up to 5 Cron Triggers per account.
 - Pages static asset requests are free and unlimited; any Pages Functions requests count against Workers Free request quota.
-- Gemini free-tier content may be used by Google to improve products. The AI organiser requires explicit consent and the [AI privacy policy](AI_PRIVACY.md) must be shown before sending any text.\n- Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
+- Gemini free-tier content may be used by Google to improve products. The AI organiser requires explicit consent and the [AI privacy policy](AI_PRIVACY.md) must be shown before sending any text.
+- Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
 - A custom domain may have a separate registration/renewal cost. RM0 infrastructure does not mean a paid domain is free; use a free `*.workers.dev` hostname unless the user already owns a domain and accepts its existing renewal cost.
 - Free plans have quotas and provider policies, not unlimited capacity or an uptime guarantee. Enforce application-level quotas and degrade gracefully instead of upgrading automatically.
 
@@ -525,4 +532,5 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 migrations, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
 - **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories/invitation APIs, connected the notes and sharing UI, and added CSP/security headers. Added API, authentication and security documentation. Offline D1-backed auth, notes, invitation, calendar, reminder and notification integration tests pass in CI. Live Google login and cloud D1 persistence remain blocked on dedicated external resources/credentials.
 - **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
-- **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.\n- **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
+- **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
+- **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
