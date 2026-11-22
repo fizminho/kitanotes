@@ -1,6 +1,5 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 
-type Db=NonNullable<AuthEnv["DB"]>;
 type NotificationRow={id:string;workspace_id:string|null;notification_type:string;title:string;body:string;resource_type:string|null;resource_id:string|null;created_at:string;read_at:string|null};
 function json(data:unknown,status=200):Response{return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}});}
 function sameOrigin(request:Request):boolean{return request.headers.get("origin")===new URL(request.url).origin;}
