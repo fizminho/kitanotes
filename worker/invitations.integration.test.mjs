@@ -184,7 +184,10 @@ test("making a shared workspace private removes members and revokes pending invi
     const listedBody=await listed.json();
     assert.equal(listedBody.workspaces.find(item=>item.id==="w1").type,"shared");
     assert.equal(listedBody.workspaces.find(item=>item.id==="w1").visibility,"private");
-    assert.equal((await listed.json()).workspaces.find(item=>item.id==="w1").type,"shared");
+    assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"shared");
+    const reShared=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"make_shared"}),env);
+    assert.equal(reShared.status,200);
+    assert.equal(db.sqlite.prepare("SELECT visibility FROM workspaces WHERE id='w1'").get().visibility,"shared");
     assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"shared");
     const blocked=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"again@example.com",role:"viewer"}),env);
     assert.equal(blocked.status,409);
