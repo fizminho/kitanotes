@@ -1,3 +1,4 @@
+import { handleInvitationsRequest } from "./invitations";
 import { handleNotesRequest } from "./notes";
 import { handleAuthRequest } from "./auth";
 interface Env { ASSETS: Fetcher; DB?: D1Database; APP_ENV?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string; SESSION_SECRET?: string; APP_BASE_URL?: string; }
@@ -9,6 +10,8 @@ export default { async fetch(request:Request,env:Env):Promise<Response> {
  if(authResponse) return authResponse;
  const notesResponse=await handleNotesRequest(request,env);
  if(notesResponse) return notesResponse;
+ const invitationResponse=await handleInvitationsRequest(request,env);
+ if(invitationResponse) return invitationResponse;
  if(url.pathname.startsWith("/api/")) return json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
  const response = await env.ASSETS.fetch(request);
  const headers = new Headers(response.headers);
