@@ -84,7 +84,8 @@ test("Google Calendar imports incrementally into KitaNotes and imported events a
         items: [{ id: "google-event-1", status: "confirmed", summary: title, description: "From Google",
           start: { dateTime: "2026-11-24T09:00:00+08:00", timeZone: "Asia/Kuala_Lumpur" },
           end: { dateTime: "2026-11-24T10:00:00+08:00", timeZone: "Asia/Kuala_Lumpur" },
-          created: "2026-11-20T10:00:00.000Z", creator: { email: "organizer@example.com", displayName: "Google Organizer" }, updated: "2026-11-22T10:00:00.000Z" }],
+          created: "2026-11-20T10:00:00.000Z", creator: { email: "organizer@example.com", displayName: "Google Organizer" }, updated: "2026-11-22T10:00:00.000Z" },
+          ...(syncCount === 1 ? [{ id: "google-all-day", status: "confirmed", summary: "All-day event", start: { date: "2026-11-25" }, end: { date: "2026-11-26" }, created: "2026-11-20T10:00:00.000Z", updated: "2026-11-22T10:00:00.000Z" }] : [])],
         nextSyncToken: "sync-cursor-" + syncCount
       }), { status: 200 });
     }
@@ -114,7 +115,7 @@ test("Google Calendar imports incrementally into KitaNotes and imported events a
     assert.equal(firstSync.status, 200);
     const firstPayload = await firstSync.json();
     assert.equal(firstPayload.ok, true);
-    assert.equal(firstPayload.imported, 1);
+    assert.equal(firstPayload.imported, 2);
     assert.equal(firstPayload.updated, 0);
     assert.equal(firstPayload.deleted, 0);
     assert.equal(firstPayload.skipped, 0);
@@ -126,6 +127,10 @@ test("Google Calendar imports incrementally into KitaNotes and imported events a
     assert.equal(firstEvent.source_created_by, "Google Organizer");
     assert.equal(firstEvent.source_created_at, "2026-11-20T10:00:00.000Z");
     assert.equal(firstEvent.source_updated_by, "Google Calendar");
+    const allDay = db.sqlite.prepare("SELECT starts_at_utc,ends_at_utc,all_day FROM calendar_events WHERE workspace_id=? AND title=?").get(workspaceId,"All-day event");
+    assert.equal(allDay.all_day, 1);
+    assert.equal(allDay.starts_at_utc, "2026-11-24T16:00:00.000Z");
+    assert.equal(allDay.ends_at_utc, "2026-11-25T15:59:59.999Z");
 
     const secondSync = await handleGoogleCalendarRequest(syncRequest(), env);
     assert.equal(secondSync.status, 200);
