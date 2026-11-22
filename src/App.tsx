@@ -643,9 +643,12 @@ export default function App() {
           :"AI is temporarily unavailable. Your original text has not been changed.";
         throw new Error(message);
       }
+      let availableCategories=categories;
+      const categoryResponse=await fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"});
+      if(categoryResponse.ok){const categoryResult=await categoryResponse.json() as {categories:Category[]};availableCategories=categoryResult.categories;setCategories(availableCategories);}
       setAiDraft(result.draft);setAiDraftTitle(result.draft.note.title);setAiDraftContent(result.draft.note.content);
       const recommendation=result.draft.categorySuggestion;
-      const existingCategory=recommendation?categories.find(category=>category.name.toLowerCase()===recommendation.name.toLowerCase()):undefined;
+      const existingCategory=recommendation?availableCategories.find(category=>category.name.toLowerCase()===recommendation.name.toLowerCase()):undefined;
       setSelectedCategoryId(existingCategory?.id??(recommendation?.createNew?"__ai_new_category__":""));
       if(result.usage&&aiStatus)setAiStatus({...aiStatus,dailyUsed:result.usage.dailyUsed,dailyRemaining:result.usage.dailyRemaining});
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to organise this text.");}
