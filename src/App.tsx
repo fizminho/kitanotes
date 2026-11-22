@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil } from "lucide-react";
 
 type View = "notes" | "calendar" | "shared";
-type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null };
+type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
@@ -25,6 +25,13 @@ export default function App() {
   const [inviteStatus, setInviteStatus] = useState<"idle" | "accepting" | "accepted" | "error">("idle");
   const [inviteError, setInviteError] = useState("");
   const [inviteNotice, setInviteNotice] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("viewer");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteCreateError, setInviteCreateError] = useState("");
+  const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string } | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
 
   useEffect(() => {
     if (inviteToken) window.history.replaceState({}, "", "/");
@@ -185,7 +192,7 @@ export default function App() {
           {inviteNotice && <div className="invite-success-banner"><Check size={16}/>{inviteNotice}</div>}
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "notes" && user && <button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}
+            {view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setCreatedInvite(null); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
@@ -214,6 +221,23 @@ export default function App() {
           <div className="ai-hint"><span className="ai-icon"><Sparkles size={17} /></span><div><strong>A little help from AI</strong><p>Turn a brain dump into tidy notes, tasks and reminders. Coming in a later step.</p></div><span className="coming-soon">COMING SOON</span></div>
         </div>
       </section>
+
+      {inviteOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setInviteOpen(false); }}>
+        <section className="composer invite-composer" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+          <header><div><span className="eyebrow">SHARE YOUR WORKSPACE</span><h2 id="invite-title">Invite someone</h2></div><button className="icon-button" onClick={() => setInviteOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          {!createdInvite ? <>
+            <label className="field-label">Google email address<input className="invite-input" type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="name@gmail.com" maxLength={254}/></label>
+            <label className="field-label">Permission<select className="invite-input" value={inviteRole} onChange={event => setInviteRole(event.target.value as "editor" | "viewer")}><option value="viewer">Viewer · can read notes</option><option value="editor">Editor · can read and edit notes</option></select></label>
+            {inviteCreateError && <p className="invite-error">{inviteCreateError}</p>}
+            <footer><span>We'll create a secure link. You send it yourself using Gmail.</span><button className="primary-button" onClick={createInvite} disabled={!inviteEmail.trim() || inviteSending}>{inviteSending ? "Creating…" : "Create invitation"}</button></footer>
+          </> : <>
+            <p className="invite-result-copy">Invitation created. It expires in seven days. KitaNotes has not sent an email.</p>
+            <label className="field-label">One-time invitation link<input className="invite-input" readOnly value={createdInvite.invitationUrl}/></label>
+            {inviteCreateError && <p className="invite-error">{inviteCreateError}</p>}
+            <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button><a className="primary-button" href={createdInvite.gmailComposeUrl} target="_blank" rel="noopener noreferrer">Open Gmail draft</a></footer>
+          </>}
+        </section>
+      </div>}
 
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
