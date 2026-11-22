@@ -168,7 +168,7 @@ export default function App() {
       const result=await response.json() as {workspaces:Workspace[]};
       if(!active)return;
       setWorkspaces(result.workspaces);
-      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===activeWorkspaceId)?.id??result.workspaces[0]?.id??""));
+      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
     }).catch(()=>{if(active)setWorkspaces([]);});
     return()=>{active=false;};
   },[user]);
