@@ -20,6 +20,7 @@ type Invitation = { id: string; email: string; role: "editor" | "viewer"; status
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
+type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
   summary:string; timezone:string;
   note:{title:string;content:string};
@@ -95,6 +96,11 @@ export default function App() {
   const [pushSubscribed,setPushSubscribed]=useState(false);
   const [pushBusy,setPushBusy]=useState(false);
   const [pushError,setPushError]=useState("");
+  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+  const [notificationPrefsLoading,setNotificationPrefsLoading]=useState(false);
+  const [notificationPrefsSaving,setNotificationPrefsSaving]=useState(false);
+  const [notificationPrefsError,setNotificationPrefsError]=useState("");
+  const [notificationPrefsSaved,setNotificationPrefsSaved]=useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiConsentChecked, setAiConsentChecked] = useState(false);
@@ -252,6 +258,18 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
+    if(!user){setNotificationPrefs({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});return;}
+    let active=true;setNotificationPrefsLoading(true);
+    fetch("/api/notifications/preferences",{credentials:"same-origin"}).then(async response=>{
+      if(!response.ok)throw new Error("Unable to load notification preferences.");
+      const result=await response.json() as {preferences:NotificationPreferences};
+      if(active)setNotificationPrefs(result.preferences);
+    }).catch(error=>{if(active)setNotificationPrefsError(error instanceof Error?error.message:"Unable to load notification preferences.");})
+      .finally(()=>{if(active)setNotificationPrefsLoading(false);});
+    return()=>{active=false;};
+  },[user]);
+
+  useEffect(()=>{
     const supported="serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
     setPushSupported(supported);
     if(!supported||!user)return;
@@ -315,6 +333,18 @@ export default function App() {
     try{const response=await fetch("/api/push/test",{method:"POST",credentials:"same-origin"});if(!response.ok)throw new Error("Unable to send a test notification.");}
     catch(error){setPushError(error instanceof Error?error.message:"Unable to send a test notification.");}
     finally{setPushBusy(false);}
+  }
+
+  async function saveNotificationPreferences(){
+    if(notificationPrefsSaving)return;
+    setNotificationPrefsSaving(true);setNotificationPrefsError("");setNotificationPrefsSaved(false);
+    try{
+      const response=await fetch("/api/notifications/preferences",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(notificationPrefs)});
+      const result=await response.json() as {preferences?:NotificationPreferences;error?:string};
+      if(!response.ok||!result.preferences)throw new Error(result.error==="INVALID_NOTIFICATION_PREFERENCES"?"Check the quiet-hours times and timezone.":"Unable to save notification preferences.");
+      setNotificationPrefs(result.preferences);setNotificationPrefsSaved(true);
+    }catch(error){setNotificationPrefsError(error instanceof Error?error.message:"Unable to save notification preferences.");}
+    finally{setNotificationPrefsSaving(false);}
   }
 
   const visibleNotes = useMemo(() => {
@@ -720,6 +750,18 @@ export default function App() {
             <header><strong>Notifications</strong><div className="notification-actions">{pushSupported&&user&&<button className="text-action" onClick={pushSubscribed?disablePush:enablePush} disabled={pushBusy}>{pushBusy?"Working…":pushSubscribed?"Disable push":"Enable push"}</button>}{pushSubscribed&&<button className="text-action" onClick={testPush} disabled={pushBusy}>Test</button>}<button className="text-action" onClick={markAllNotificationsRead} disabled={unreadCount===0}>Mark all read</button></div></header>
             {pushError&&<p className="invite-error">{pushError}</p>}
             {notificationError&&<p className="invite-error">{notificationError}</p>}
+            {user&&<div className="notification-settings">
+              <div className="notification-settings-heading"><strong>Delivery preferences</strong><span>In-app notifications are always kept in your inbox.</span></div>
+              {notificationPrefsLoading?<p>Loading preferences…</p>:<>
+                <label><input type="checkbox" checked={notificationPrefs.pushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,pushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}}/> Enable push delivery</label>
+                <label><input type="checkbox" checked={notificationPrefs.reminderPushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,reminderPushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Event and reminder alerts</label>
+                <label><input type="checkbox" checked={notificationPrefs.sharedNotePushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,sharedNotePushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> New shared-note alerts</label>
+                <div className="quiet-hours-fields"><label>Quiet hours start<input type="time" value={notificationPrefs.quietHoursStart??""} onChange={event=>{setNotificationPrefs(value=>({...value,quietHoursStart:event.target.value||null}));setNotificationPrefsSaved(false);}}/></label><label>Quiet hours end<input type="time" value={notificationPrefs.quietHoursEnd??""} onChange={event=>{setNotificationPrefs(value=>({...value,quietHoursEnd:event.target.value||null}));setNotificationPrefsSaved(false);}}/></label></div>
+                <label className="timezone-setting">Timezone<input value={notificationPrefs.timezone} maxLength={64} onChange={event=>{setNotificationPrefs(value=>({...value,timezone:event.target.value}));setNotificationPrefsSaved(false);}} placeholder="Asia/Kuala_Lumpur"/></label>
+                <div className="notification-settings-footer"><span>{notificationPrefsSaved?"Preferences saved.":"Quiet hours pause push only. Your inbox is unaffected."}</span><button className="secondary-button" onClick={saveNotificationPreferences} disabled={notificationPrefsSaving}>{notificationPrefsSaving?"Saving…":"Save preferences"}</button></div>
+              </>}
+              {notificationPrefsError&&<p className="invite-error">{notificationPrefsError}</p>}
+            </div>}
             {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=><button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><small>{new Date(notification.createdAt).toLocaleString()}</small></button>)}
           </section>}
           {inviteToken && <section className="invite-panel">
