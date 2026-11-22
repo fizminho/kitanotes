@@ -663,6 +663,7 @@ export default function App() {
             categoryId=match.id;
           }else if(!created.ok||!payload.category)throw new Error("Could not create category "+proposal.categoryName+".");
           else{available=[...available,payload.category];categoryId=payload.category.id;}
+          if(!categoryId)throw new Error("Could not resolve category "+proposal.categoryName+".");
           categoryIds.set(proposal.categoryName.toLowerCase(),categoryId);
         }
         const note=notes.find(item=>item.id===proposal.noteId);
