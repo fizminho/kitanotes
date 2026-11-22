@@ -851,8 +851,9 @@ export default function App() {
       if(!response.ok)throw new Error("Unable to make workspace private.");
             setWorkspaceMembers(current=>current.filter(member=>member.role==="owner"));
       setInvitations(current=>current.map(item=>item.status==="pending"?{...item,status:"revoked"}:item));
+      await refreshWorkspaces(activeWorkspaceId);
       setInviteOpen(false);
-      setInviteNotice("All other members were removed and pending invitations revoked. Notes were kept.");
+      setInviteNotice("This space is now private. Other members lost access, pending invitations were revoked, and notes were kept.");
     }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to make workspace private.");}
     finally{setWorkspaceActionBusy(false);}
   }
