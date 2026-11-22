@@ -1,6 +1,6 @@
-# KitaNotes Gemini OCR — Design and Implementation Plan
+# KitaNotes AI Note Assistant and OCR — Design and Implementation Plan
 
-**Status:** Core backend and frontend capture/preview/preparation/edit/AI-organiser handoff implemented; live provider verification remains open  
+**Status:** Core backend and frontend capture/preview/preparation/edit/AI Note Assistant handoff implemented; live provider verification remains open  
 **Priority:** P5 enhancement; backend foundation started after notification preferences  
 **Budget:** RM0 recurring spend; Gemini free tier only  
 **Related:** [Masterplan](MASTERPLAN.md), [AI privacy policy](AI_PRIVACY.md)
@@ -9,20 +9,20 @@
 
 - The image picker offers separate **Choose from gallery** and **Take a photo** actions.
 - The user initiates OCR by pressing **Extract text from image**. No separate terms-acceptance checkbox or stored OCR-consent gate is required.
-- The organiser shows a concise notice that selected text/images are sent to an external AI service for processing. Provider/free-tier details remain in the privacy documentation, not in the UI.
-- OCR output can be passed directly into note organisation. The organiser recommends an existing category or proposes a new one, which is created only when the user confirms saving.
-- One **Save note & calendar** action saves the note, suggested events and reminders. The organiser closes automatically only after all requested writes succeed; partial failures remain visible and retryable.
+- The AI Note Assistant shows a concise notice that selected text/images are sent to an external AI service for processing. Provider/free-tier details remain in the privacy documentation, not in the UI.
+- OCR output can be passed directly into the AI Note Assistant. The AI Note Assistant recommends a category for the new draft; AI Organizer is responsible for categorising existing notes, which is created only when the user confirms saving.
+- One **Save note & calendar** action saves the note, suggested events and reminders. The AI Note Assistant closes automatically only after all requested writes succeed; partial failures remain visible and retryable.
 - Event and reminder local date-times are converted using the timezone returned with each AI suggestion, not the browser's implicit timezone.
 
 ## 1. Goal
 
-Add an image-to-text workflow inspired by the OCR experience in Bayarlah. A user can select or capture a photo of a document, receipt, handwritten note or whiteboard. Gemini extracts readable text, and KitaNotes can optionally convert that text into a structured note, category, tasks and calendar/reminder suggestions.
+Add an image-to-text workflow inspired by the OCR experience in Bayarlah. A user can select or capture a photo of a document, receipt, handwritten note or whiteboard. The OCR service extracts readable text, and the AI Note Assistant can optionally convert that text into a structured note, tasks and calendar/reminder suggestions. AI Organizer is a separate feature for recategorising notes that already exist.
 
-OCR must be an optional input method for the existing AI organiser, not a separate path that bypasses its safety and confirmation rules.
+OCR must be an optional input method for the AI Note Assistant, not a separate path that bypasses its safety and confirmation rules.
 
 ## 2. User flow
 
-1. User opens Scan with AI from the note composer.
+1. User opens AI Note Assistant from the workspace actions.
 2. User captures an image with the camera or selects an image from the device.
 3. The browser retains the selected file locally, shows a preview, and lets the user replace it. Before upload, it resizes oversized images to a maximum 2200-pixel edge, re-encodes as JPEG and strips embedded EXIF metadata where browser decoding is supported.
 4. Before the first OCR request, show a clear disclosure that the image will be sent to Google's Gemini API under the free-tier privacy terms. Require explicit OCR consent; existing text-AI consent must not silently imply consent to image processing.
@@ -31,7 +31,7 @@ OCR must be an optional input method for the existing AI organiser, not a separa
 7. Worker sends the image to the configured Gemini free-tier model using the existing server-side provider adapter and model allowlist.
 8. Gemini returns extracted text only. Validate response shape and enforce a maximum extracted-text length.
 9. Show extracted text in an editable preview. User may correct OCR mistakes before continuing.
-10. User may pass the corrected text into the existing structured-note organiser. That produces the normal note/category/task/event draft.
+10. User may pass the corrected text into the AI Note Assistant. That produces the normal note/category/task/event draft.
 11. Nothing is saved and no reminder/event is created until the user explicitly confirms the corresponding action.
 
 ## 3. Supported first-release scope
@@ -77,7 +77,7 @@ Implemented endpoint: POST /api/ai/ocr. Consent endpoints: POST/DELETE /api/ai/o
 - Extend the existing provider abstraction with an image-input operation rather than adding a second Gemini client or hardcoding a model in the route.
 - Use only models explicitly configured and verified to accept image input on the free tier.
 - Keep model names configurable because model availability and free quotas change.
-- Use the same fallback rules as the existing AI organiser: bounded retry for transient errors, skip unavailable models, stop on invalid credentials/request, and never escalate to a paid tier.
+- Use the same fallback rules as the AI Note Assistant: bounded retry for transient errors, skip unavailable models, stop on invalid credentials/request, and never escalate to a paid tier.
 - Request plain extracted text, not executable instructions or automatic actions.
 - Treat text found inside an image as untrusted user content. It must not override system instructions or trigger tools/actions.
 - Validate output type and length; reject empty, malformed or unexpectedly structured responses.
@@ -96,7 +96,7 @@ Implemented endpoint: POST /api/ai/ocr. Consent endpoints: POST/DELETE /api/ai/o
 - OCR has its own per-user daily usage counter and request-size limit.
 - A quota-exhausted response must explain that OCR can be tried again after the quota resets.
 - If all free models are unavailable, offer manual text entry or retry later.
-- OCR failure must not block manual note creation or the existing text-only Gemini flow.
+- OCR failure must not block manual note creation or the AI Note Assistant text flow.
 - Do not configure billing, paid models or automatic paid API escalation.
 - Do not persist failed image payloads for retry.
 
@@ -133,7 +133,7 @@ Implemented endpoint: POST /api/ai/ocr. Consent endpoints: POST/DELETE /api/ai/o
 
 1. [x] User can capture/select a supported image and preview it before upload.
 2. OCR runs only after explicit image-processing consent.
-3. Extracted text is editable and can be passed to the existing Gemini organiser.
+3. Extracted text is editable and can be passed to the AI Note Assistant.
 4. No note, category, event or reminder is created automatically.
 5. OCR uses only configured Gemini free-tier models and never triggers paid billing.
 6. Image bytes and extracted content are not persisted or logged by KitaNotes.
