@@ -9,7 +9,7 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [vars]
-APP_ENV = "production"
+APP_ENV = "development"
 
 # D1 is intentionally not bound until a KitaNotes-specific database is created.
 # Never reuse the magic-screen / Investlah database_id.
