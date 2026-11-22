@@ -931,7 +931,7 @@ export default function App() {
       const response = await fetch("/api/invitations", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: activeWorkspaceId, openLink:true, role: invitation.role }) });
       const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string|null };
       if (!response.ok || !result.invitationUrl) throw new Error("Unable to create a new invitation link.");
-      setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl });
+      setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl??null });
       setManageTab("invite"); setInviteRefresh(value => value + 1);
     } catch (error) { setInviteCreateError(error instanceof Error ? error.message : "Unable to create a new invitation link."); }
     finally { setInviteSending(false); }
