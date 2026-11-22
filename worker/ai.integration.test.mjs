@@ -54,6 +54,18 @@ test("free model allowlist excludes paid or unknown models",()=>{
   assert.deepEqual(getFreeGeminiModelCandidates("gemini-2.5-flash-lite",""),["gemini-2.5-flash-lite","gemini-3.1-flash-lite","gemini-3-flash-preview","gemini-2.5-flash"]);
 });
 
+test("AI category recommendation reuses an existing category or flags a new one",()=>{
+  const existing=validateAiDraft(validDraft,"Asia/Kuala_Lumpur",["Work"]);
+  assert.deepEqual(existing.categorySuggestion,{name:"Work",reason:"Project planning",createNew:false});
+  const create=validateAiDraft(validDraft,"Asia/Kuala_Lumpur",[]);
+  assert.deepEqual(create.categorySuggestion,{name:"Work",reason:"Project planning",createNew:true});
+  const exact=structuredClone(validDraft);
+  exact.categorySuggestion={name:"family",reason:"Family plans",createNew:false};
+  const matched=validateAiDraft(exact,"Asia/Kuala_Lumpur",["Family"]);
+  assert.equal(matched.categorySuggestion.name,"Family");
+  assert.equal(matched.categorySuggestion.createNew,false);
+});
+
 test("draft validator rejects invalid local dates and preserves timezone",()=>{
   const valid=validateAiDraft(validDraft,"Asia/Kuala_Lumpur");
   assert.equal(valid.timezone,"Asia/Kuala_Lumpur");
@@ -71,14 +83,10 @@ test("workspace AI draft validator accepts only safe names and unique categories
   assert.equal(validateWorkspaceAiDraft({name:"Family",categories:[{name:"Plans"},{name:"plans"}]}),null);
 });
 
-test("workspace AI requires consent and only returns a proposal without creating a workspace",async()=>{
+test("workspace AI returns a proposal without a separate terms checkbox or creating a workspace",async()=>{
   const{db,env}=seed();const originalFetch=globalThis.fetch;let calls=0;
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({name:"Family HQ",categories:[{name:"Plans",description:"Shared plans"},{name:"School",description:"School notes"}]})}]}}]}),{status:200});};
   try{
-    const blocked=await handleAiRequest(request("/api/ai/workspace","POST",{purpose:"Family planning"}),env);
-    assert.equal(blocked.status,428);
-    assert.equal(calls,0);
-    await handleAiRequest(request("/api/ai/consent","POST",{accepted:true}),env);
     const response=await handleAiRequest(request("/api/ai/workspace","POST",{purpose:"A shared place for family plans and school information"}),env);
     assert.equal(response.status,200);
     const payload=await response.json();
@@ -89,20 +97,20 @@ test("workspace AI requires consent and only returns a proposal without creating
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
-test("AI requires explicit privacy consent before sending any text",async()=>{
+test("AI organiser can be used without a separate persistent terms acceptance",async()=>{
   const{db,env}=seed();
   const originalFetch=globalThis.fetch;let calls=0;
   globalThis.fetch=async()=>{calls++;return okResponse();};
   try{
     const response=await handleAiRequest(request("/api/ai/organize","POST",{text:"A note with a private detail",timezone:"Asia/Kuala_Lumpur"}),env);
-    assert.equal(response.status,428);
-    assert.equal(calls,0);
+    assert.equal(response.status,200);
+    assert.equal(calls,1);
     const status=await handleAiRequest(request("/api/ai/status"),env);
-    assert.equal((await status.json()).consented,false);
+    assert.equal((await status.json()).configured,true);
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
-test("consented organiser falls back from a missing model to the next free model",async()=>{
+test("organiser falls back from a missing model to the next available model",async()=>{
   const{db,env}=seed();
   const originalFetch=globalThis.fetch;const models=[];
   globalThis.fetch=async(url,init)=>{
@@ -127,7 +135,7 @@ test("consented organiser falls back from a missing model to the next free model
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
-test("quota exhaustion stays free-only and never escalates to a paid model",async()=>{
+test("quota exhaustion never escalates to a paid model",async()=>{
   const{db,env}=seed();const originalFetch=globalThis.fetch;const models=[];
   globalThis.fetch=async url=>{models.push(String(url));return new Response(JSON.stringify({error:{message:"RESOURCE_EXHAUSTED quota exceeded"}}),{status:429,headers:{"retry-after":"30"}});};
   try{
@@ -155,7 +163,7 @@ test("invalid API key errors stop immediately instead of trying fallback models"
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
-test("per-user daily cap blocks requests before Gemini is called and consent can be revoked",async()=>{
+test("per-user daily cap blocks requests and legacy consent can still be revoked",async()=>{
   const{db,env}=seed();const originalFetch=globalThis.fetch;let calls=0;
   globalThis.fetch=async()=>{calls++;return okResponse();};
   try{
@@ -168,7 +176,7 @@ test("per-user daily cap blocks requests before Gemini is called and consent can
     const revoked=await handleAiRequest(request("/api/ai/consent","DELETE"),env);
     assert.equal(revoked.status,200);
     const status=await handleAiRequest(request("/api/ai/status"),env);
-    assert.equal((await status.json()).consented,false);
+    assert.equal((await status.json()).configured,true);
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
