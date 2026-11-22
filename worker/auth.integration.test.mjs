@@ -87,8 +87,10 @@ test("Google callback creates user/workspace/session and logout revokes it", asy
     const user = db.sqlite.prepare("SELECT id,email,display_name FROM users WHERE google_sub=?").get("google-sub-123");
     assert.equal(user.email, "person@example.com");
     assert.equal(user.display_name, "Kita Tester");
-    const workspace = db.sqlite.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'").get(user.id);
+    const workspace = db.sqlite.prepare("SELECT id,workspace_type,visibility FROM workspaces WHERE owner_user_id=? AND visibility='private'").get(user.id);
     assert.ok(workspace);
+    assert.equal(workspace.workspace_type,"shared");
+    assert.equal(workspace.visibility,"private");
     assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").get(workspace.id,user.id).role, "owner");
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM sessions WHERE user_id=?").get(user.id).count, 1);
 
