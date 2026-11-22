@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { handleAiRequest, getFreeGeminiModelCandidates, validateAiDraft } from "./ai.ts";
+import { handleAiRequest, getFreeGeminiModelCandidates, validateAiDraft, validateWorkspaceAiDraft } from "./ai.ts";
 import { handleNotesRequest } from "./notes.ts";
 
 class D1TestDatabase {
@@ -61,6 +61,32 @@ test("draft validator rejects invalid local dates and preserves timezone",()=>{
   const invalid=structuredClone(validDraft);
   invalid.events[0].startLocal="2026-02-31T10:00";
   assert.equal(validateAiDraft(invalid,"Asia/Kuala_Lumpur"),null);
+});
+
+test("workspace AI draft validator accepts only safe names and unique categories",()=>{
+  const draft=validateWorkspaceAiDraft({name:"Family HQ",categories:[{name:"Plans",description:"Shared plans"},{name:"School",description:"School notes"}]});
+  assert.equal(draft.name,"Family HQ");
+  assert.equal(draft.categories.length,2);
+  assert.equal(validateWorkspaceAiDraft({name:"",categories:[]}),null);
+  assert.equal(validateWorkspaceAiDraft({name:"Family",categories:[{name:"Plans"},{name:"plans"}]}),null);
+});
+
+test("workspace AI requires consent and only returns a proposal without creating a workspace",async()=>{
+  const{db,env}=seed();const originalFetch=globalThis.fetch;let calls=0;
+  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({name:"Family HQ",categories:[{name:"Plans",description:"Shared plans"},{name:"School",description:"School notes"}]})}]}}]}),{status:200});};
+  try{
+    const blocked=await handleAiRequest(request("/api/ai/workspace","POST",{purpose:"Family planning"}),env);
+    assert.equal(blocked.status,428);
+    assert.equal(calls,0);
+    await handleAiRequest(request("/api/ai/consent","POST",{accepted:true}),env);
+    const response=await handleAiRequest(request("/api/ai/workspace","POST",{purpose:"A shared place for family plans and school information"}),env);
+    assert.equal(response.status,200);
+    const payload=await response.json();
+    assert.equal(payload.draft.name,"Family HQ");
+    assert.equal(payload.requiresUserConfirmation,true);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM workspaces WHERE visibility='shared'").get().count,0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM ai_request_usage").get().count,1);
+  }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
 test("AI requires explicit privacy consent before sending any text",async()=>{
