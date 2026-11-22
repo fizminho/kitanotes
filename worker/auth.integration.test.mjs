@@ -47,7 +47,7 @@ test("Google callback creates user/workspace/session and logout revokes it", asy
   }));
   const signingInput = jwtHeader + "." + jwtClaims;
   const idToken = signingInput + "." + sign("RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
-  const encodedState = base64url(JSON.stringify({ state, nonce, verifier, issuedAt: Date.now() }));
+  const encodedState = base64url(JSON.stringify({ state, nonce, verifier, returnTo: "/invite/accept?token=invite-token-123", issuedAt: Date.now() }));
   const signature = createHmac("sha256", secret).update(encodedState).digest("base64url");
   const stateCookie = "__Host-kitanotes_oauth=" + encodedState + "." + signature;
   const originalFetch = globalThis.fetch;
@@ -79,7 +79,7 @@ test("Google callback creates user/workspace/session and logout revokes it", asy
     });
     const response = await handleAuthRequest(callback, env);
     assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "https://kitanotes.test/");
+    assert.equal(response.headers.get("location"), "https://kitanotes.test/invite/accept?token=invite-token-123");
     const setCookie = response.headers.get("set-cookie") ?? "";
     const sessionMatch = setCookie.match(/__Host-kitanotes_session=([^;,]+)/);
     assert.ok(sessionMatch, "session cookie should be issued");
