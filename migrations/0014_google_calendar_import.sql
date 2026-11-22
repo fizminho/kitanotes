@@ -1,3 +1,8 @@
+ALTER TABLE calendar_events ADD COLUMN source_created_by TEXT;
+ALTER TABLE calendar_events ADD COLUMN source_created_at TEXT;
+ALTER TABLE calendar_events ADD COLUMN source_updated_by TEXT;
+ALTER TABLE calendar_events ADD COLUMN source_updated_at TEXT;
+
 CREATE TABLE IF NOT EXISTS google_calendar_oauth_states (
   state_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
