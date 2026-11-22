@@ -155,7 +155,6 @@ export default function App() {
   const [aiCreatingItems, setAiCreatingItems] = useState(false);
   const [aiNoteSaved, setAiNoteSaved] = useState(false);
   const [aiItemsCreated, setAiItemsCreated] = useState(false);
-  const [aiCategoriesCreated, setAiCategoriesCreated] = useState(false);
   const [aiCreatedItems, setAiCreatedItems] = useState<string[]>([]);
 
   useEffect(()=>{
@@ -206,16 +205,16 @@ export default function App() {
 
   async function generateWorkspaceWithAi() {
     if(!workspacePurpose.trim()||workspaceAiBusy)return;
-    if(!aiStatus?.configured){setWorkspaceAiError("Gemini is not configured on the server yet. You can still create a workspace manually.");return;}
+    if(!aiStatus?.configured){setWorkspaceAiError("AI is not configured on the server yet. You can still create a workspace manually.");return;}
     setWorkspaceAiBusy(true);setWorkspaceAiError("");
     try{
       const response=await fetch("/api/ai/workspace",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({purpose:workspacePurpose.trim()})});
       const result=await response.json() as {draft?:WorkspaceAiDraft;usage?:{dailyUsed:number;dailyRemaining:number};error?:string};
       if(!response.ok||!result.draft){
-        const message=result.error==="AI_NOT_CONFIGURED"?"Gemini is not configured on the server yet."
-          :result.error==="AI_DAILY_FREE_LIMIT_REACHED"||result.error==="AI_FREE_QUOTA_EXHAUSTED"?"The free Gemini limit has been reached. Try again after the quota resets."
+        const message=result.error==="AI_NOT_CONFIGURED"?"AI is not configured on the server yet."
+          :result.error==="AI_DAILY_FREE_LIMIT_REACHED"||result.error==="AI_FREE_QUOTA_EXHAUSTED"?"AI is temporarily unavailable due to usage limits. Try again later."
           :result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 shared workspace limit."
-          :"Gemini could not prepare this workspace. You can retry or create it manually.";
+          :"AI could not prepare this workspace. You can retry or create it manually.";
         throw new Error(message);
       }
       setWorkspaceAiDraft(result.draft);setWorkspaceName(result.draft.name);
@@ -594,29 +593,6 @@ export default function App() {
     finally{setCategorySaving(false);}
   }
 
-  async function createAiCategories() {
-    if(!aiDraft||!activeWorkspaceId||aiCategoriesCreated)return;
-    setCategorySaving(true);setAiError("");
-    try{
-      for(const suggestion of aiDraft.suggestedCategories){
-        if(categories.some(category=>category.name.toLowerCase()===suggestion.name.toLowerCase()))continue;
-        const response=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:activeWorkspaceId,name:suggestion.name,color:"#766bd0",sortOrder:categories.length
-        })});
-        if(!response.ok&&response.status!==409)throw new Error("Unable to create category: "+suggestion.name);
-      }
-      const response=await fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"});
-      if(response.ok){
-        const result=await response.json() as {categories:Category[]};
-        setCategories(result.categories);
-        const first=aiDraft.suggestedCategories.map(item=>result.categories.find(category=>category.name.toLowerCase()===item.name.toLowerCase())).find(Boolean);
-        if(first)setSelectedCategoryId(first.id);
-      }
-      setAiCategoriesCreated(true);
-    }catch(error){setAiError(error instanceof Error?error.message:"Unable to create suggested categories.");}
-    finally{setCategorySaving(false);}
-  }
-
   async function prepareImageForOcr(file:File):Promise<File> {
     if(!("createImageBitmap" in window))return file;
     const bitmap=await createImageBitmap(file);
@@ -654,7 +630,7 @@ export default function App() {
   async function organizeWithAi(textOverride?:string) {
     const sourceText=(textOverride??aiInput).trim();
     if(!sourceText||aiWorking||!aiStatus?.configured)return;
-    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCategoriesCreated(false);setAiCreatedItems([]);
+    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCreatedItems([]);
     try{
       const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
         text:sourceText,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:activeWorkspaceId
@@ -733,7 +709,7 @@ export default function App() {
           if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
           eventId=result.event.id;completed.add(eventKey);setEvents(current=>[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));setAiCreatedItems([...completed]);
         }else{
-          eventId=events.find(item=>item.title===event.title&&item.startsAt===new Date(event.startLocal).toISOString())?.id;
+          eventId=events.find(item=>item.title===event.title&&item.startsAt===zonedDateTimeToIso(event.startLocal,event.timezone))?.id;
         }
         if(event.reminderLocal&&!completed.has("event-reminder:"+index)&&eventId){
           const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
@@ -1274,7 +1250,7 @@ export default function App() {
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
             <label className="field-label">Note title<input className="invite-input" value={aiDraftTitle} onChange={event=>setAiDraftTitle(event.target.value)} maxLength={200}/></label>
             <label className="field-label">Note content<textarea className="ai-input" value={aiDraftContent} onChange={event=>setAiDraftContent(event.target.value)} rows={6} maxLength={50000}/></label>
-            {aiDraft.categorySuggestion&&<div className="ai-category-recommendation"><div><strong>Recommended category</strong><span>{aiDraft.categorySuggestion.name}</span><small>{aiDraft.categorySuggestion.reason||"Based on the note content."}</small></div><badge className="not-used">{aiDraft.categorySuggestion.createNew?"New category":"Existing category"}</badge></div>}
+            {aiDraft.categorySuggestion&&<div className="ai-category-recommendation"><div><strong>Recommended category</strong><span>{aiDraft.categorySuggestion.name}</span><small>{aiDraft.categorySuggestion.reason||"Based on the note content."}</small></div><span className="ai-category-kind">{aiDraft.categorySuggestion.createNew?"New category":"Existing category"}</span></div>}
             <label className="field-label">Save note in category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}{aiDraft.categorySuggestion?.createNew&&<option value="__ai_new_category__">Create new: {aiDraft.categorySuggestion.name}</option>}</select></label>
             {aiDraft.events.length>0&&<div className="ai-draft-section"><strong>Calendar events</strong>{aiDraft.events.map((event,index)=><div key={index}><b>{event.title}</b><small>{event.startLocal} to {event.endLocal} ({event.timezone}){event.reminderLocal?" · reminder "+event.reminderLocal:""}</small></div>)}</div>}
             {aiDraft.reminders.length>0&&<div className="ai-draft-section"><strong>Reminders</strong>{aiDraft.reminders.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal} ({item.timezone})</small></div>)}</div>}
