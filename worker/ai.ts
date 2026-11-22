@@ -8,11 +8,11 @@ const DAILY_LIMIT=10;
 const MAX_INPUT_BYTES=16*1024;
 const ALLOWED_FREE_MODELS=new Set([
   "gemini-3.1-flash-lite",
+  "gemini-3.5-flash-lite",
   "gemini-3.6-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash"
+  "gemini-3.5-flash"
 ]);
-const DEFAULT_MODELS=["gemini-3.1-flash-lite","gemini-2.5-flash-lite","gemini-2.5-flash"];
+const DEFAULT_MODELS=["gemini-3.1-flash-lite","gemini-3.5-flash-lite","gemini-3.6-flash","gemini-3.5-flash"];
 
 function json(data:unknown,status=200):Response {
   return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff","referrer-policy":"no-referrer"}});
