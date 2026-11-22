@@ -112,7 +112,13 @@ test("Google Calendar imports incrementally into KitaNotes and imported events a
     });
     const firstSync = await handleGoogleCalendarRequest(syncRequest(), env);
     assert.equal(firstSync.status, 200);
-    assert.deepEqual(await firstSync.json(), { ok: true, imported: 1, updated: 0, deleted: 0, skipped: 0, lastSyncAt: (await firstSync.clone().json()).lastSyncAt, reset: false });
+    const firstPayload = await firstSync.json();
+    assert.equal(firstPayload.ok, true);
+    assert.equal(firstPayload.imported, 1);
+    assert.equal(firstPayload.updated, 0);
+    assert.equal(firstPayload.deleted, 0);
+    assert.equal(firstPayload.skipped, 0);
+    assert.equal(firstPayload.reset, false);
     const firstEvent = db.sqlite.prepare("SELECT id,title,created_by_user_id,updated_by_user_id FROM calendar_events WHERE workspace_id=?").get(workspaceId);
     assert.equal(firstEvent.title, "Imported appointment");
     assert.equal(firstEvent.created_by_user_id, userId);
