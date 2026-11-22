@@ -34,7 +34,7 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
    const payload=await buildPushPayload({data:{title:data.title.slice(0,80),body:data.body.slice(0,160),url:data.url??"/",tag:data.tag??"kitanotes"},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
-   const response=await fetch(row.endpoint,payload);
+   const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
    if(response.status===404||response.status===410){await db.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(row.id).run();continue;}
    if(response.ok)await db.prepare("UPDATE push_subscriptions SET last_success_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),row.id).run();
   } catch { /* Push is best-effort; the in-app inbox remains authoritative. */ }
