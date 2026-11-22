@@ -1,4 +1,5 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
+import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
 type CalendarEnv = AuthEnv & { GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string };
@@ -133,9 +134,8 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
   const connection = await db.prepare("SELECT id,calendar_id,refresh_token_ciphertext,sync_token FROM google_calendar_connections WHERE user_id=? AND workspace_id=?")
     .bind(userId, workspaceId).first<{ id: string; calendar_id: string; refresh_token_ciphertext: string | null; sync_token: string | null }>();
   if (!connection?.refresh_token_ciphertext) return json({ error: "GOOGLE_CALENDAR_NOT_CONNECTED" }, 409);
-  const rate = await db.prepare("SELECT COUNT(*) AS count FROM activity_events WHERE actor_user_id=? AND event_type='google_calendar.synced' AND created_at>?")
-    .bind(userId, new Date(Date.now() - 60_000).toISOString()).first<{ count: number }>();
-  if ((rate?.count ?? 0) >= 3) return json({ error: "SYNC_RATE_LIMITED" }, 429);
+  const rate = await consumeRateLimit(db, "google-calendar:sync:" + userId, 3, 60_000);
+  if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
   let token: string;
   try { token = await accessToken(env, { refresh_token_ciphertext: connection.refresh_token_ciphertext }); }
   catch { return json({ error: "GOOGLE_TOKEN_REFRESH_FAILED", message: "Reconnect Google Calendar to continue." }, 502); }
@@ -213,6 +213,14 @@ async function disconnect(request: Request, env: CalendarEnv, userId: string): P
   const body = await request.json().catch(() => null) as { workspaceId?: unknown } | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
   if (!workspaceId || !(await workspaceRole(env.DB!, workspaceId, userId))) return json({ error: "NOT_FOUND" }, 404);
+  const connection = await env.DB!.prepare("SELECT refresh_token_ciphertext FROM google_calendar_connections WHERE user_id=? AND workspace_id=?")
+    .bind(userId, workspaceId).first<{ refresh_token_ciphertext: string | null }>();
+  if (connection?.refresh_token_ciphertext && env.SESSION_SECRET) {
+    try {
+      const token = await decryptToken(connection.refresh_token_ciphertext, env.SESSION_SECRET);
+      await fetch("https://oauth2.googleapis.com/revoke", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }) });
+    } catch { /* local token removal still proceeds */ }
+  }
   await env.DB!.prepare("UPDATE google_calendar_connections SET refresh_token_ciphertext=NULL,sync_token=NULL,last_sync_at=NULL,updated_at=? WHERE user_id=? AND workspace_id=?")
     .bind(new Date().toISOString(), userId, workspaceId).run();
   return json({ ok: true });
