@@ -516,8 +516,9 @@ MVP is not complete until all of these are demonstrated:
 
 ## Change log
 
-- **2026-11-22:** Initial product and technical masterplan created. No application code or deployment has been implemented yet.
+- **2026-11-22:** Initial product and technical masterplan created.
 - **2026-11-22:** Revised architecture to strict free-only Cloudflare Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.
 - **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.
 - **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 migrations, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
-- **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories/invitation APIs, connected the notes and sharing UI, and added CSP/security headers. Added API, authentication and security documentation. Offline D1-backed auth, notes, invitation, calendar, reminder and notification integration tests pass in CI. Live Google login and cloud D1 persistence remain blocked on dedicated external resources/credentials.\n- **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
+- **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories/invitation APIs, connected the notes and sharing UI, and added CSP/security headers. Added API, authentication and security documentation. Offline D1-backed auth, notes, invitation, calendar, reminder and notification integration tests pass in CI. Live Google login and cloud D1 persistence remain blocked on dedicated external resources/credentials.
+- **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
