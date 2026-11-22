@@ -4,7 +4,7 @@
 
 When a signed-in user chooses an AI action and submits text or an image, KitaNotes sends only the content needed for that request:
 
-- The text pasted into the AI organiser.
+- The text pasted into AI Note Assistant.
 - The specific image selected for OCR.
 - A workspace purpose/description entered into the AI-assisted workspace creator, when the user explicitly chooses the suggestion action.
 - The user's IANA timezone and a server-generated reference timestamp for note organisation.
@@ -38,8 +38,9 @@ Free-tier model availability and quotas can change. Recheck Google's pricing/mod
 - D1 stores daily request counts. Legacy consent fields remain for compatibility but are no longer required to use the AI actions.
 - The response is a draft. The user confirms the combined save action before KitaNotes creates the note, events and reminders.
 - Workspace planning also returns a draft only. The user must confirm the workspace name and category suggestions before KitaNotes creates the workspace or its categories. The raw workspace purpose and AI draft are not persisted by the AI endpoint.
-- AI note organisation recommends one category. It reuses an existing category when it matches; otherwise the recommended category is created only when the user confirms saving the note.
-- AI note organisation recommends one category. It reuses an existing category when it matches; otherwise the selected new category is created only when the user confirms saving the note.
+- AI Note Assistant recommends a category for the new note draft. AI Organizer separately proposes categories for selected existing notes and changes them only after user confirmation.
+- AI Note Assistant recommends one category for a new note. It reuses an existing category when it matches; otherwise the selected new category is created only when the user confirms saving the note.
+- AI Organizer analyses up to 30 selected existing notes per request. It proposes category assignments only; existing notes are updated only after the user reviews and applies the plan. Note title and content are preserved.
 - Dates are returned as local date/time strings with the supplied IANA timezone. Ambiguous dates should produce clarifying questions rather than guessed events.
 - AI outages or quota exhaustion do not affect manual note, calendar, or reminder features.
 
