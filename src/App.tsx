@@ -257,6 +257,91 @@ export default function App() {
     }
   }
 
+  async function enableAi() {
+    if(!aiConsentChecked||aiConsentSaving)return;
+    setAiConsentSaving(true);setAiError("");
+    try{
+      const response=await fetch("/api/ai/consent",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({accepted:true})});
+      if(!response.ok)throw new Error("Unable to save AI consent.");
+      setAiStatus(current=>current?{...current,consented:true}:null);
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to save AI consent.");}
+    finally{setAiConsentSaving(false);}
+  }
+
+  async function revokeAiConsent() {
+    const response=await fetch("/api/ai/consent",{method:"DELETE",credentials:"same-origin"});
+    if(response.ok)setAiStatus(current=>current?{...current,consented:false}:null);
+  }
+
+  async function organizeWithAi() {
+    if(!aiInput.trim()||aiWorking||!aiStatus?.consented)return;
+    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);
+    try{
+      const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+        text:aiInput,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:user?.personalWorkspaceId
+      })});
+      const result=await response.json() as {draft?:AiDraft;usage?:{dailyLimit:number;dailyUsed:number;dailyRemaining:number};error?:string};
+      if(!response.ok||!result.draft){
+        const message=result.error==="AI_FREE_QUOTA_EXHAUSTED"||result.error==="AI_DAILY_FREE_LIMIT_REACHED"?"The free AI limit is reached. Try again after the quota resets."
+          :result.error==="AI_NOT_CONFIGURED"?"Gemini is not configured yet."
+          :result.error==="AI_CONSENT_REQUIRED"?"Please review and accept the AI privacy notice first."
+          :result.error==="AI_INVALID_MODEL_RESPONSE"?"Gemini returned an invalid draft. Please retry with clearer text."
+          :"AI is temporarily unavailable. Your original text has not been changed.";
+        throw new Error(message);
+      }
+      setAiDraft(result.draft);setAiDraftTitle(result.draft.note.title);setAiDraftContent(result.draft.note.content);
+      if(result.usage&&aiStatus)setAiStatus({...aiStatus,dailyUsed:result.usage.dailyUsed,dailyRemaining:result.usage.dailyRemaining});
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to organise this text.");}
+    finally{setAiWorking(false);}
+  }
+
+  async function saveAiNote() {
+    if(!aiDraft||!user?.personalWorkspaceId||aiSavingNote)return;
+    setAiSavingNote(true);setAiError("");
+    try{
+      const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+        workspaceId:user.personalWorkspaceId,title:aiDraftTitle,content:aiDraftContent
+      })});
+      const result=await response.json() as {note?:Note};
+      if(!response.ok||!result.note)throw new Error("Unable to save the note draft.");
+      setNotes(current=>[result.note!,...current]);setAiNoteSaved(true);
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to save the note draft.");}
+    finally{setAiSavingNote(false);}
+  }
+
+  async function createAiItems() {
+    if(!aiDraft||!user?.personalWorkspaceId||aiCreatingItems||aiItemsCreated)return;
+    setAiCreatingItems(true);setAiError("");
+    try{
+      const createdEvents:CalendarEvent[]=[];
+      for(const event of aiDraft.events){
+        const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+          workspaceId:user.personalWorkspaceId,title:event.title,description:event.description,
+          startsAt:new Date(event.startLocal).toISOString(),endsAt:new Date(event.endLocal).toISOString(),timezone:event.timezone
+        })});
+        const result=await response.json() as {event?:CalendarEvent};
+        if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
+        createdEvents.push(result.event);
+        if(event.reminderLocal){
+          const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+            workspaceId:user.personalWorkspaceId,eventId:result.event.id,title:event.title,dueAt:new Date(event.reminderLocal).toISOString(),timezone:event.timezone
+          })});
+          if(!reminderResponse.ok)throw new Error("Event created, but its reminder could not be saved.");
+        }
+      }
+      const standalone=[...aiDraft.reminders.map(item=>({title:item.title,dueLocal:item.dueLocal,timezone:item.timezone})),...aiDraft.tasks.filter(item=>item.dueLocal).map(item=>({title:item.title,dueLocal:item.dueLocal!,timezone:aiDraft.timezone}))];
+      for(const reminder of standalone){
+        const response=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+          workspaceId:user.personalWorkspaceId,title:reminder.title,dueAt:new Date(reminder.dueLocal).toISOString(),timezone:reminder.timezone
+        })});
+        if(!response.ok)throw new Error("Unable to create reminder: "+reminder.title);
+      }
+      setEvents(current=>[...current,...createdEvents].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
+      setAiItemsCreated(true);
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to create suggested events or reminders.");}
+    finally{setAiCreatingItems(false);}
+  }
+
   function startNewEvent() {
     setEventTitle("");
     setEventDescription("");
