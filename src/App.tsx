@@ -73,7 +73,8 @@ export default function App() {
   const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string } | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [workspaceMembers,setWorkspaceMembers]=useState<WorkspaceMember[]>([]);\n  const [workspaceActionBusy,setWorkspaceActionBusy]=useState(false);
+  const [workspaceMembers,setWorkspaceMembers]=useState<WorkspaceMember[]>([]);
+  const [workspaceActionBusy,setWorkspaceActionBusy]=useState(false);
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
