@@ -5,6 +5,7 @@ type View = "notes" | "calendar" | "shared";
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
+type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type AiDraft = {
@@ -34,6 +35,12 @@ export default function App() {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categoryName, setCategoryName] = useState("");
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryError, setCategoryError] = useState("");
   const [saving, setSaving] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get("token"));
   const [inviteStatus, setInviteStatus] = useState<"idle" | "accepting" | "accepted" | "error">("idle");
@@ -79,6 +86,7 @@ export default function App() {
   const [aiCreatingItems, setAiCreatingItems] = useState(false);
   const [aiNoteSaved, setAiNoteSaved] = useState(false);
   const [aiItemsCreated, setAiItemsCreated] = useState(false);
+  const [aiCategoriesCreated, setAiCategoriesCreated] = useState(false);
   const [aiCreatedItems, setAiCreatedItems] = useState<string[]>([]);
 
   useEffect(() => {
@@ -140,6 +148,15 @@ export default function App() {
       .catch(()=>undefined);
     return ()=>{active=false;};
   },[user]);
+
+  useEffect(() => {
+    if (!user?.personalWorkspaceId) { setCategories([]); return; }
+    let active=true;
+    fetch("/api/categories?workspaceId="+encodeURIComponent(user.personalWorkspaceId),{credentials:"same-origin"})
+      .then(async response=>{if(!response.ok)throw new Error("Unable to load categories.");const result=await response.json() as {categories:Category[]};if(active)setCategories(result.categories);})
+      .catch(()=>undefined);
+    return ()=>{active=false;};
+  },[user?.personalWorkspaceId]);
 
   useEffect(() => {
     if (!user) { setAiStatus(null); return; }
