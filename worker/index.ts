@@ -38,8 +38,8 @@ export default {
         ?? await handleRemindersRequest(request,env)
         ?? await handleNotificationsRequest(request,env)
         ?? await handlePushRequest(request,env)
-        ?? await handleAiRequest(request,env)
-        ?? await handleOcrRequest(request,env);
+        ?? await handleOcrRequest(request,env)
+        ?? await handleAiRequest(request,env);
       if(!response && url.pathname.startsWith("/api/")) {
         response=json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
       }
