@@ -92,7 +92,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 - Workers Free supports up to 5 Cron Triggers per account.
 - Pages static asset requests are free and unlimited; any Pages Functions requests count against Workers Free request quota.
 - Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
-- A custom domain may have a separate registration/renewal cost. RM0 infrastructure does not mean a paid domain is free; use a free `*.pages.dev` / `*.workers.dev` hostname unless the user already owns a domain and accepts its existing renewal cost.
+- A custom domain may have a separate registration/renewal cost. RM0 infrastructure does not mean a paid domain is free; use a free `*.workers.dev` hostname unless the user already owns a domain and accepts its existing renewal cost.
 - Free plans have quotas and provider policies, not unlimited capacity or an uptime guarantee. Enforce application-level quotas and degrade gracefully instead of upgrading automatically.
 
 ### Request flow
@@ -398,11 +398,11 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 - [x] Inspect and document the exact Investlah Cloudflare Worker deployment workflow and reusable GitHub Actions. See ADR-0001.
 - [x] Confirm Worker Static Assets for the frontend and API. See ADR-0001.
-- [ ] Create and verify the initial D1 workspace/notes migration with SQLite validation in CI. D1 resource provisioning and quota monitoring remain open.
+- [x] Create and verify the initial D1 workspace/notes migration with SQLite validation in CI. D1 resource provisioning and quota monitoring remain open.
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [x] Create architecture and data-model decision records (ADR-0001 through ADR-0004). Security-specific design review remains open.
 - [x] Bootstrap React/Vite frontend and minimal Worker API shell with pinned direct dependencies. Shared contracts remain outstanding.
-- [ ] Verify TypeScript build, Node regression tests, SQLite migration validation and Wrangler dry-run in CI.
+- [x] Verify TypeScript build, Node regression tests, SQLite migration validation and Wrangler dry-run in CI. Successful run: [44996387087](https://github.com/fizminho/kitanotes/actions/runs/44996387087).
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
