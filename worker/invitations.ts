@@ -223,9 +223,9 @@ async function leaveWorkspace(request: Request, env: AuthEnv, userId: string, wo
 }
 async function deleteWorkspace(request: Request, env: AuthEnv, userId: string, workspaceId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
-  const workspace=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared'").bind(workspaceId,userId).first<{id:string}>();
+  const workspace=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(workspaceId,userId).first<{id:string}>();
   if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
-  await env.DB!.prepare("DELETE FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared'").bind(workspaceId,userId).run();
+  await env.DB!.prepare("DELETE FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(workspaceId,userId).run();
   return json({deleted:true});
 }
 
@@ -262,7 +262,7 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
     const body = await readJsonBody(request);
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     if (!name || name.length > 60) return json({ error: "INVALID_WORKSPACE_NAME" },400);
-    const count = await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspaces WHERE owner_user_id=? AND workspace_type='shared'").bind(user.id).first<{total:number}>();
+    const count = await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspaces WHERE owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(user.id).first<{total:number}>();
     if ((count?.total ?? 0) >= 30) return json({ error: "WORKSPACE_LIMIT_REACHED" },409);
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
