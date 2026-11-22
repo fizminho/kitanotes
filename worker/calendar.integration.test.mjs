@@ -219,3 +219,16 @@ test("KPM school holidays follow Group A dates for Kedah",async()=>{
   assert.equal(school.endsAt,"2027-03-13T16:00:00.000Z");
  }finally{globalThis.fetch=originalFetch;}
 });
+
+test("KPM school holidays remain available when the public holiday feed is unavailable",async()=>{
+ const originalFetch=globalThis.fetch;
+ globalThis.fetch=async()=>new Response("unavailable",{status:503});
+ try{
+  const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-12-01&to=2026-12-31"),{});
+  assert.equal(response.status,200);const result=await response.json();
+  assert.equal(result.sources.holidayWise,false);
+  assert.equal(result.sources.kpm,true);
+  assert.equal(result.events.length,1);
+  assert.equal(result.events[0].holidayType,"school");
+ }finally{globalThis.fetch=originalFetch;}
+});
