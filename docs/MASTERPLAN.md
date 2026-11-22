@@ -4,7 +4,7 @@
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
-**Last updated:** 2026-11-22 (Google Calendar read-only import foundation)
+**Last updated:** 2026-11-23 (Calendar 2.0 implementation)
 
 > This is the source-of-truth planning document for KitaNotes. Update the checkboxes and decision log as implementation progresses. A checked item means it has been implemented and verified, not merely discussed.
 
@@ -68,7 +68,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 ### Later releases
 
-- [x] Google Calendar one-way import foundation: separately consented read-only access, encrypted refresh token, per-workspace connection and incremental sync into KitaNotes. Production migration, Google OAuth redirect URI configuration and live account smoke test remain open.
+- [ ] Calendar 2.0: iCalendar import/export, duplicate-safe UID mapping, regional Malaysia public holidays and user-selectable state. Initial implementation is in progress.
 - [ ] Real-time collaborative editing / presence.
 - [x] Image OCR with gallery selection and camera capture, image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. No separate terms checkbox; each request is user initiated. Live provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
