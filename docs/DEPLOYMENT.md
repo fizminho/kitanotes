@@ -95,3 +95,4 @@ After each successful deployment (including the current workspace-visibility rel
 5. Test notes and invitation access using two Google test accounts.
 
 A green build is not proof that live authentication, database persistence or reminders work. Mark production verification complete only after the corresponding live tests pass.
+\n\n## Google Calendar OAuth setup\n\nBefore enabling Google Calendar import, add this exact authorized redirect URI to the existing Google OAuth 2.0 Web application client:\n\n`https://kitanotes.binalah.com/auth/google/calendar/callback`\n\nThe existing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` Worker configuration are reused. Apply D1 migration `0014_google_calendar_import.sql` before deploying the Worker code. The new scope is requested only after the user chooses Connect Google Calendar.\n
