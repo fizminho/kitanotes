@@ -53,6 +53,7 @@ async function startConnect(request: Request, env: CalendarEnv): Promise<Respons
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   if (!workspaceId || !["owner", "editor"].includes((await workspaceRole(env.DB, workspaceId, user.id)) ?? "")) return json({ error: "WORKSPACE_FORBIDDEN" }, 403);
+  await env.DB.prepare("DELETE FROM google_calendar_oauth_states WHERE expires_at<=?").bind(new Date().toISOString()).run();
   const state = randomToken();
   const verifier = randomToken(48);
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -147,7 +148,6 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
   for (let page = 0; page < 20; page++) {
     const params = new URLSearchParams({ maxResults: "2500", showDeleted: "true", singleEvents: "true" });
     if (syncToken) params.set("syncToken", syncToken);
-    else params.set("timeMin", new Date(Date.now() - 365 * 86400000).toISOString());
     if (pageToken) params.set("pageToken", pageToken);
     let response = await fetch("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(connection.calendar_id) + "/events?" + params.toString(), { headers: { authorization: "Bearer " + token } });
     if (response.status === 410 && syncToken && !reset) {
