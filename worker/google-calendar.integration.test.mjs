@@ -84,7 +84,7 @@ test("Google Calendar imports incrementally into KitaNotes and imported events a
         items: [{ id: "google-event-1", status: "confirmed", summary: title, description: "From Google",
           start: { dateTime: "2026-11-24T09:00:00+08:00", timeZone: "Asia/Kuala_Lumpur" },
           end: { dateTime: "2026-11-24T10:00:00+08:00", timeZone: "Asia/Kuala_Lumpur" },
-          updated: "2026-11-22T10:00:00.000Z" }],
+          created: "2026-11-20T10:00:00.000Z", creator: { email: "organizer@example.com", displayName: "Google Organizer" }, updated: "2026-11-22T10:00:00.000Z" }],
         nextSyncToken: "sync-cursor-" + syncCount
       }), { status: 200 });
     }
@@ -119,10 +119,13 @@ test("Google Calendar imports incrementally into KitaNotes and imported events a
     assert.equal(firstPayload.deleted, 0);
     assert.equal(firstPayload.skipped, 0);
     assert.equal(firstPayload.reset, false);
-    const firstEvent = db.sqlite.prepare("SELECT id,title,created_by_user_id,updated_by_user_id FROM calendar_events WHERE workspace_id=?").get(workspaceId);
+    const firstEvent = db.sqlite.prepare("SELECT id,title,created_by_user_id,updated_by_user_id,source_created_by,source_created_at,source_updated_by,source_updated_at FROM calendar_events WHERE workspace_id=?").get(workspaceId);
     assert.equal(firstEvent.title, "Imported appointment");
     assert.equal(firstEvent.created_by_user_id, userId);
     assert.equal(firstEvent.updated_by_user_id, userId);
+    assert.equal(firstEvent.source_created_by, "Google Organizer");
+    assert.equal(firstEvent.source_created_at, "2026-11-20T10:00:00.000Z");
+    assert.equal(firstEvent.source_updated_by, "Google Calendar");
 
     const secondSync = await handleGoogleCalendarRequest(syncRequest(), env);
     assert.equal(secondSync.status, 200);
