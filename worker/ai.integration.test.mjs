@@ -26,7 +26,7 @@ class D1TestDatabase {
 function seed(){
   const db=new D1TestDatabase();const now=new Date().toISOString();
   db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('u1','sub1','one@example.com','one@example.com',1,?,?)").run(now,now);
-  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','Personal','u1','personal',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('w1','Private','u1','shared','private',?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('s1','u1',?,'2099-01-01T00:00:00.000Z',?)").run(createHash("sha256").update("ai-session").digest("base64url"),now);
   return{db,env:{DB:db,GEMINI_API_KEY:"test-key",GEMINI_MODEL:"gemini-3.1-flash-lite",GEMINI_MODEL_FALLBACKS:"gemini-3-flash-preview,gemini-2.5-flash-lite,gemini-2.5-flash"}};
