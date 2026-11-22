@@ -5,6 +5,15 @@
 **Budget:** RM0 recurring spend; Gemini free tier only  
 **Related:** [Masterplan](MASTERPLAN.md), [AI privacy policy](AI_PRIVACY.md)
 
+## Current UI and processing behaviour (2026-11-22)
+
+- The image picker offers separate **Choose from gallery** and **Take a photo** actions.
+- The user initiates OCR by pressing **Extract text from image**. No separate terms-acceptance checkbox or stored OCR-consent gate is required.
+- The organiser shows a concise notice that selected text/images are sent to an external AI service for processing. Provider/free-tier details remain in the privacy documentation, not in the UI.
+- OCR output can be passed directly into note organisation. The organiser recommends an existing category or proposes a new one, which is created only when the user confirms saving.
+- One **Save note & calendar** action saves the note, suggested events and reminders. The organiser closes automatically only after all requested writes succeed; partial failures remain visible and retryable.
+- Event and reminder local date-times are converted using the timezone returned with each AI suggestion, not the browser's implicit timezone.
+
 ## 1. Goal
 
 Add an image-to-text workflow inspired by the OCR experience in Bayarlah. A user can select or capture a photo of a document, receipt, handwritten note or whiteboard. Gemini extracts readable text, and KitaNotes can optionally convert that text into a structured note, category, tasks and calendar/reminder suggestions.
