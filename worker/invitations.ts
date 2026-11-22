@@ -151,7 +151,7 @@ async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
 
 export async function handleInvitationsRequest(request: Request, env: AuthEnv): Promise<Response | null> {
   const url = new URL(request.url);
-  if (!url.pathname.startsWith("/api/invitations")) return null;
+  if (url.pathname !== "/api/workspaces" && !url.pathname.startsWith("/api/invitations")) return null;
   if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" },503);
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
