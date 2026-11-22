@@ -343,7 +343,9 @@ export default function App() {
 
   useEffect(() => {
     if (view !== "calendar" || !user) return;
+    if (!activeWorkspaceId) { setEvents([]); setEventsLoading(false); return; }
     let active = true;
+    setEvents([]);
     setEventsLoading(true);
     setEventsError("");
     const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
@@ -352,7 +354,7 @@ export default function App() {
     else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
     const from = new Date(rangeStart.getTime()-86400000).toISOString();
     const to = new Date(rangeEnd.getTime()+86400000).toISOString();
-    fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"})
+    fetch("/api/events?workspaceId="+encodeURIComponent(activeWorkspaceId)+"&from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"})
       .then(async response => {
         if(!response.ok) throw new Error("Unable to load calendar events.");
         const result = await response.json() as {events:CalendarEvent[]};
@@ -361,7 +363,7 @@ export default function App() {
       .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
       .finally(()=>{if(active)setEventsLoading(false);});
     return ()=>{active=false;};
-  },[view,user,calendarMode,calendarCursor,calendarRefresh]);
+  },[view,user,activeWorkspaceId,calendarMode,calendarCursor,calendarRefresh]);
 
   useEffect(() => {
     if (!notificationsOpen || !user) return;
