@@ -43,3 +43,11 @@ test("quiet hours handle same-day windows and disabled ranges", () => {
   assert.equal(isWithinQuietHours(prefs,new Date("2026-11-22T10:00:00.000Z")),false);
   assert.equal(isWithinQuietHours({...prefs,quiet_hours_start:null,quiet_hours_end:null},new Date("2026-11-22T04:00:00.000Z")),false);
 });
+
+test("disabled per-user push preference prevents any subscription lookup", async () => {
+  const queries=[];
+  const db={prepare(sql){queries.push(sql);return{bind(){return{first:async()=>({push_enabled:0,reminder_push_enabled:1,shared_note_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"}),all:async()=>{throw new Error("Subscriptions must not be queried");}};}};}};
+  await sendPushToUser(db,{VAPID_PUBLIC_KEY:"public",VAPID_PRIVATE_KEY:"private",VAPID_SUBJECT:"mailto:test@example.com"},"user-1",{title:"Reminder",body:"Private"}, "reminder");
+  assert.equal(queries.length,1);
+  assert.match(queries[0],/notification_preferences/);
+});
