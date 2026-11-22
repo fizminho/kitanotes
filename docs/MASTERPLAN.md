@@ -1,6 +1,6 @@
 # KitaNotes — Product & Technical Masterplan
 
-**Status:** P0 foundation in progress  
+**Status:** Core P0–P3 application code implemented; live Cloudflare/Google provisioning and production verification remain open  
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
@@ -30,23 +30,23 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 ### MVP — required
 
-- [ ] Google sign-in (OpenID Connect); identify users by stable Google subject ID, not email alone.
-- [ ] User profile and account settings.
-- [ ] Personal notes: create, read, edit, archive and delete.
-- [ ] Shared notes / shared spaces with explicit membership.
-- [ ] Gmail-address invitations with pending, accepted, expired and revoked states; invitation delivery uses a Gmail compose handoff / copyable secure link in the zero-cost MVP.
-- [ ] Membership roles: owner, editor and viewer.
-- [ ] User-defined categories, colours and ordering.
-- [ ] Note search, category filtering and recent notes.
-- [ ] Internal calendar items and reminders, linked to notes.
-- [ ] In-app notification inbox.
+- [x] Implement Google sign-in (OpenID Connect); identify users by stable Google subject ID, not email alone. Live Google OAuth verification remains open.
+- [x] Basic user profile from verified Google claims.\n- [ ] Account settings and account deletion.
+- [x] Personal notes: create, read, edit, archive and soft-delete.
+- [x] Shared notes / shared spaces with explicit membership.
+- [x] Gmail-address invitations with pending, accepted, expired and revoked states; delivery uses a Gmail compose handoff / copyable secure link in the zero-cost MVP.
+- [x] Membership roles: owner, editor and viewer.
+- [x] User-defined categories, colours and ordering.
+- [x] Client-side note search and recent-note ordering.\n- [ ] Category filtering and saved views.
+- [x] Internal calendar events and reminders; API supports linking them to notes.\n- [ ] Add note-link selection to the calendar UI.
+- [x] In-app notification inbox.
 - [ ] Browser push notifications where permission is granted.
-- [ ] In-app notifications and Web Push for invitations and collaboration events. No automated outbound email dependency in the zero-cost MVP.
-- [ ] Gemini text-to-structured-note flow with preview and explicit confirmation.
-- [ ] AI-suggested categories, with user-defined categories taking precedence when appropriate.
+- [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.\n- [ ] Add invitation-accepted and other collaboration activity notifications.
+- [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
+- [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
 - [ ] Audit/activity history for sharing and material note changes.
-- [ ] Responsive PWA experience for mobile and desktop.
-- [ ] Automated tests, CI checks, deployment workflow and operational documentation.
+- [x] Responsive mobile and desktop web experience.\n- [ ] PWA installability and offline support.
+- [x] Automated tests, CI checks and operational documentation.\n- [ ] Production deployment workflow and smoke tests.
 
 ### Later releases
 
@@ -82,7 +82,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 | Identity | Google OAuth 2.0 / OpenID Connect | Gmail/Google sign-in; no Calendar scope at login. |
 | AI | Gemini API free tier only | Server-side Worker Secret; quotas and eligible models can change. No paid fallback. |
 | Reminders | Cloudflare Workers Cron Trigger | Use a small number of scheduled scans and indexed due-time queries. Workers Free supports up to 5 Cron Triggers/account. |
-| Notifications | In-app inbox + browser Web Push | Push is best-effort and requires permission; in-app inbox is durable. |
+| Notifications | In-app inbox | Durable D1 inbox; Web Push is a later enhancement and is not configured. |
 | CI/CD | GitHub Actions + Cloudflare deploy action/CLI | Use repository/environment secrets; never expose secret values in logs or frontend builds. |
 
 ### Free-tier ceilings to design around
@@ -91,7 +91,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 - D1 Free: 5 million rows read/day, 100,000 rows written/day, 500 MB maximum per database and 5 GB total account storage. D1 free-tier queries fail after daily read/write limits are exceeded; data remains stored.
 - Workers Free supports up to 5 Cron Triggers per account.
 - Pages static asset requests are free and unlimited; any Pages Functions requests count against Workers Free request quota.
-- Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
+- Gemini free-tier content may be used by Google to improve products. The AI organiser requires explicit consent and the [AI privacy policy](AI_PRIVACY.md) must be shown before sending any text.\n- Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
 - A custom domain may have a separate registration/renewal cost. RM0 infrastructure does not mean a paid domain is free; use a free `*.workers.dev` hostname unless the user already owns a domain and accepts its existing renewal cost.
 - Free plans have quotas and provider policies, not unlimited capacity or an uptime guarantee. Enforce application-level quotas and degrade gracefully instead of upgrading automatically.
 
