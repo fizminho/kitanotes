@@ -13,3 +13,7 @@ test("uses a near-future reminder when the one-day-before time has already passe
 test("returns an empty value for an invalid event start",()=>{
   assert.equal(defaultReminderDateTime("not-a-date"),"");
 });
+
+test("falls back to Malaysia time for an invalid event timezone",()=>{
+  assert.equal(defaultReminderDateTime("2026-11-25T09:30","Not/A_Timezone",new Date("2026-11-23T00:00:00.000Z")),"2026-11-24T09:30");
+});
