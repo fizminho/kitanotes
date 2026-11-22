@@ -7,12 +7,12 @@ import { handleAiRequest, getFreeGeminiModelCandidates, validateAiDraft, validat
 import { handleNotesRequest } from "./notes.ts";
 
 
-test("AI note prompt writes in the user's voice and matches the input language",()=>{
+test("AI note prompt writes in the user's voice and always uses English",()=>{
   const prompt=buildPrompt("user planned to fishing at xxx","Asia/Kuala_Lumpur","2026-11-22T07:00:00.000Z",[]);
   assert.match(prompt,/write the note as if you are the user/i);
   assert.match(prompt,/never describe the user in third person/i);
   assert.match(prompt,/I am planning to go fishing at xxx/i);
-  assert.match(prompt,/Generated content is always English; English stays English/i);
+  assert.match(prompt,/Write all notes, titles, summaries, event details, reminders and other user-facing generated content in clear, natural English/i);
 });
 
 class D1TestDatabase {
