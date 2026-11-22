@@ -42,3 +42,16 @@ Never commit the private key or paste it into a chat or frontend environment var
 ## Scope boundaries
 
 This release caches only the application shell and static assets. It does not cache private API responses, permit offline note editing, or promise delivery while a device is offline or push permission is denied.
+
+## Per-user notification preferences
+
+Migration `0009_notification_preferences.sql` adds user-scoped delivery settings exposed through:
+
+- `GET /api/notifications/preferences`
+- `PUT /api/notifications/preferences`
+
+Users can independently enable/disable push delivery, reminder pushes and new shared-note pushes. The durable in-app inbox is not affected by these switches.
+
+Quiet hours use the user's IANA timezone (default `Asia/Kuala_Lumpur`) and a local start/end time. Overnight windows such as 22:00–07:00 are supported. During quiet hours, reminder and shared-note push attempts are suppressed; they are not queued for later delivery. The corresponding in-app notification remains available in the inbox. Test pushes bypass quiet hours and category switches but still respect the global push-enabled switch.
+
+Invalid time ranges, mismatched start/end values and unsupported timezone identifiers are rejected by the API. Preference updates require an authenticated session and same-origin request.
