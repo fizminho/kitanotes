@@ -40,7 +40,7 @@ function eventIcs(row:{id:string;title:string;description:string;starts_at_utc:s
  const end=row.all_day?"DTEND;VALUE=DATE:"+icsDate(row.ends_at_utc,row.timezone):"DTEND:"+new Date(row.ends_at_utc).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z");
  return ["BEGIN:VEVENT","UID:"+row.id+"@kitanotes.binalah.com","DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z"),start,end,"SUMMARY:"+escapeIcs(row.title),"DESCRIPTION:"+escapeIcs(row.description??""),"END:VEVENT"].map(foldLine).join("\r\n");
 }
-const STATE_SLUGS:Record<string,string>={johor:"joh",kedah:"ked",kelantan:"kel",melaka:"mel","negeri-sembilan":"ns",pahang:"pah",perak:"per",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sel",terengganu:"ter","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
+const STATE_SLUGS:Record<string,string>={johor:"jhr",kedah:"kdh",kelantan:"ktn",melaka:"mlk","negeri-sembilan":"nsn",pahang:"phg",perak:"prk",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sel",terengganu:"trg","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
 function validState(value:string|null):string|null{return value&&Object.hasOwn(STATE_SLUGS,value)?value:null;}
 async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);const body=await readJsonBody(request);if(!body||typeof body.ics!=="string"||body.ics.length>2_000_000)return json({error:"INVALID_ICS_FILE"},400);
