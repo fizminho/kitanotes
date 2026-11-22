@@ -51,6 +51,15 @@ Timestamps must include an explicit UTC offset or `Z`; the API stores UTC instan
 
 A free Cloudflare Cron Trigger runs every five minutes. Due reminders create idempotent in-app notifications for workspace members. Deleted linked notes/events cancel pending reminders. This MVP does not send email or browser push notifications.
 
+## AI organiser
+
+- `GET /api/ai/status`: return key configuration status, consent status and local daily usage. Never returns the key.
+- `POST /api/ai/consent`: body `{ accepted: true }`; stores explicit consent and policy version.
+- `DELETE /api/ai/consent`: revoke consent.
+- `POST /api/ai/organize`: body `{ text, timezone, workspaceId? }`; returns a validated note/category/event/reminder/task draft. Requires consent and an owner/editor workspace role.
+
+The AI endpoint does not persist prompts or drafts. It stores only consent metadata and a per-user UTC daily request count. It enforces a 16 KiB input limit and 10 requests per user per UTC day. All model candidates are filtered through the free-tier allowlist; paid fallback is disabled. See [AI privacy policy](AI_PRIVACY.md).
+
 ## Categories
 
 - `GET /api/categories?workspaceId=`: list active categories in accessible workspaces.
