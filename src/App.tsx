@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag } from "lucide-react";
 
 type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
-type ManageTab = "people" | "invite" | "activity" | "settings";
+type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
 type SortMode = "updated" | "oldest" | "title";
 type Toast = { id:number; text:string; tone:"ok"|"error" };
 type View = "notes" | "calendar" | "shared";
