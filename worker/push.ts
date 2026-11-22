@@ -55,7 +55,8 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
   if(!validSubscription(subscription))return json({error:"INVALID_PUSH_SUBSCRIPTION"},400);
   const id=await subscriptionId(subscription.endpoint);const now=new Date().toISOString();
   const count=await env.DB.prepare("SELECT COUNT(*) AS count FROM push_subscriptions WHERE user_id=?").bind(user.id).first<{count:number}>();
-  const existing=await env.DB.prepare("SELECT id FROM push_subscriptions WHERE endpoint=?").bind(subscription.endpoint).first<{id:string}>();
+  const existing=await env.DB.prepare("SELECT id,user_id FROM push_subscriptions WHERE endpoint=?").bind(subscription.endpoint).first<{id:string;user_id:string}>();
+  if(existing&&existing.user_id!==user.id)return json({error:"SUBSCRIPTION_ALREADY_REGISTERED"},409);
   if(Number(count?.count??0)>=10&&!existing)return json({error:"SUBSCRIPTION_LIMIT_REACHED"},429);
   await env.DB.prepare("INSERT INTO push_subscriptions (id,user_id,endpoint,subscription_json,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,subscription_json=excluded.subscription_json,updated_at=excluded.updated_at")
    .bind(id,user.id,subscription.endpoint,JSON.stringify(subscription),now,now).run();
