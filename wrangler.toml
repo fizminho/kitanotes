@@ -13,6 +13,8 @@ run_worker_first = true
 APP_ENV = "production"
 GOOGLE_CLIENT_ID = "762562595362-p71q7ujjuuni41s6ouo9g0gim6rfnv6o.apps.googleusercontent.com"
 APP_BASE_URL = "https://kitanotes.binalah.com"
+VAPID_PUBLIC_KEY = "BL7RfpyV-QFLr_Q-o7G54ZGjgcAKm3Zf5kxFVs4r_VlFE5KVEwMRcKxIgezKUl6zuHPx1kgftje1ziZm0MwhKH4"
+VAPID_SUBJECT = "mailto:96muhdhafiz@gmail.com"
 
 [[d1_databases]]
 binding = "DB"
