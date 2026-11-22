@@ -59,6 +59,12 @@ else:
     raise SystemExit("Negative rate-limit request count was accepted")
 
 db.execute("INSERT INTO push_subscriptions (id,user_id,endpoint,subscription_json,created_at,updated_at) VALUES ('p1','u1','https://fcm.googleapis.com/push/one','{}','now','now')")
+try:
+    db.execute("INSERT INTO push_subscriptions (id,user_id,endpoint,subscription_json,created_at,updated_at) VALUES ('p2','u2','https://fcm.googleapis.com/push/one','{}','now','now')")
+except sqlite3.IntegrityError:
+    pass
+else:
+    raise SystemExit("Duplicate push endpoint was accepted")
 visible_push_to_u2 = db.execute("SELECT id FROM push_subscriptions WHERE user_id='u2'").fetchall()
 if visible_push_to_u2:
     raise SystemExit("Push subscription query exposed another user's device")
