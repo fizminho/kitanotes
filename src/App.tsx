@@ -803,9 +803,9 @@ export default function App() {
     setEditingEvent(null);
     setEventTitle("");
     setEventDescription("");
-    const start=localDateTime(new Date(Date.now()+25*3600000));
+    const start=dateTimeInputFor(new Date(Date.now()+25*3600000),eventTimezone);
     setEventStart(start);
-    setEventEnd(localDateTime(new Date(Date.now()+26*3600000)));
+    setEventEnd(dateTimeInputFor(new Date(Date.now()+26*3600000),eventTimezone));
     setEventReminderAt(defaultReminderDateTime(start,eventTimezone));
     setEventReminderAuto(true);
     setEventLinkedNoteId("");
