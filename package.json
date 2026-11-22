@@ -10,7 +10,7 @@
     "cf:dev": "npm run build && wrangler dev",
     "cf:deploy": "npm run build && wrangler deploy",
     "cf:typegen": "wrangler types",
-    "test": "node --test worker/*.test.mjs"
+    "test": "node --experimental-strip-types --test worker/*.test.mjs"
   },
   "dependencies": {
     "lucide-react": "0.468.0",
