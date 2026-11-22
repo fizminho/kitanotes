@@ -1,4 +1,4 @@
-import { getCurrentUser, type AuthEnv } from "./auth";
+import { getCurrentUser, type AuthEnv } from "./auth.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
 type Role = "owner" | "editor" | "viewer";
