@@ -239,8 +239,10 @@ export default function App() {
       let categoriesAdded=0;
       if(workspaceAiDraft?.categories.length){
         for(const [index,category] of workspaceAiDraft.categories.entries()){
-          const categoryResponse=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:created.id,name:category.name,color:"#766bd0",sortOrder:index})});
-          if(categoryResponse.ok)categoriesAdded++;else if(categoryResponse.status!==409)break;
+          try{
+            const categoryResponse=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:created.id,name:category.name,color:"#766bd0",sortOrder:index})});
+            if(categoryResponse.ok||categoryResponse.status===409)categoriesAdded++;else break;
+          }catch{break;}
         }
       }
       setWorkspaceModalOpen(false);setWorkspaceAiDraft(null);setWorkspacePurpose("");setWorkspaceName("");
