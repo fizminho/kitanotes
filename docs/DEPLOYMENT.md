@@ -46,7 +46,7 @@ Secrets:
 - `GOOGLE_CLIENT_SECRET`
 - `SESSION_SECRET`
 - `GEMINI_API_KEY` (optional; only if enabling Gemini features)
-- VAPID keys (optional; only if enabling Web Push)
+- `VAPID_PRIVATE_KEY` (optional Secret; VAPID private JWK `d` value)\n- `VAPID_PUBLIC_KEY` (optional plain-text variable)\n- `VAPID_SUBJECT` (optional plain-text variable such as `mailto:you@example.com`)
 
 Never commit secret values, put them in `VITE_*` variables, or paste them into chat.
 
@@ -92,7 +92,7 @@ After each successful deployment (including the current workspace-visibility rel
 2. Check the D1 database's migration history and confirm migrations `0001` through `0012` are applied, especially `0011_workspace_visibility.sql` and `0012_unified_workspace_type.sql`.
 3. Open `https://kitanotes.binalah.com/api/health` and verify a healthy response.
 4. Test Google sign-in and verify the callback creates a D1-backed session.
-5. Test notes and invitation access using two Google test accounts.
+5. Test notes and invitation access using two Google test accounts.\n6. For Web Push, verify the Worker has all three VAPID bindings, `/api/push/public-key` reports `enabled: true`, D1 migration `0015_notification_activity_preferences.sql` is applied, and a real-device test notification arrives.
 
 A green build is not proof that live authentication, database persistence or reminders work. Mark production verification complete only after the corresponding live tests pass.
-\n\n## Google Calendar OAuth setup\n\nBefore enabling Google Calendar import, add this exact authorized redirect URI to the existing Google OAuth 2.0 Web application client:\n\n`https://kitanotes.binalah.com/auth/google/calendar/callback`\n\nThe existing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` Worker configuration are reused. Apply D1 migration `0014_google_calendar_import.sql` before deploying the Worker code. The new scope is requested only after the user chooses Connect Google Calendar.\n
+\n\n## Google Calendar OAuth setup\n\nBefore enabling Google Calendar import, add this exact authorized redirect URI to the existing Google OAuth 2.0 Web application client:\n\n`https://kitanotes.binalah.com/auth/google/calendar/callback`\n\nThe existing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` Worker configuration are reused. Apply D1 migration `0014_google_calendar_import.sql` before deploying the Worker code. The new scope is requested only after the user chooses Connect Google Calendar.\n\n## Web Push key provisioning\n\nFor an iPhone-only setup, open `https://kitanotes.binalah.com/vapid-generator.html` after deploying the browser generator. Generate one key pair and copy the values directly into **Workers & Pages → kitanotes → Settings → Variables and Secrets**. Keep the private key as a Secret. The generator runs locally in the browser and does not transmit the key pair. See [PWA_PUSH.md](PWA_PUSH.md) for the full checklist.\n
