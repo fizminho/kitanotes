@@ -419,7 +419,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P2 — Calendar and notifications
 
-- [x] Implement internal calendar event API and UI, including note linking, timezone storage, create/list/delete and version-checked API editing.
+- [x] Implement internal calendar event API with note-link support, timezone storage, create/list/delete UI and version-checked API editing.
 - [x] Implement timezone-safe event/reminder input validation with explicit UTC offsets and IANA timezone retention.
 - [x] Implement durable reminder scheduling, idempotent five-minute Cron delivery and automatic cancellation when linked notes/events are deleted.
 - [x] Implement in-app notification inbox API/UI, unread count, mark-read and mark-all-read.
