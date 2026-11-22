@@ -34,7 +34,7 @@ Never commit the private key or paste it into a chat or frontend environment var
 - Subscriptions are stored per authenticated user and endpoint. Each user can register up to 10 devices.
 - The Worker accepts only HTTPS endpoints from known browser push-service domains to prevent arbitrary outbound fetches.
 - Push payloads contain generic text and a same-origin path, never note content, event descriptions, invitation tokens or other private data.
-- Due reminders create durable in-app notifications first. Web Push is best-effort; the inbox remains the source of truth.
+- New shared notes and due reminders create durable in-app notifications first. Web Push is best-effort; the inbox remains the source of truth.
 - Expired subscriptions (HTTP 404/410) are removed automatically.
 - If VAPID is not configured, the app keeps working and the push controls report that push is not configured.
 - Push delivery requires a secure origin and browser permission. On iOS/iPadOS, Web Push is available to web apps added to the Home Screen on supported OS versions.
