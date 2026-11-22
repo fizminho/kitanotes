@@ -25,6 +25,16 @@ interface Env {
 }
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}});
 
+function isAnnualHolidaySyncTime(scheduledTime:number):boolean {
+  const date=new Date(scheduledTime);
+  const month=date.getUTCMonth()+1;
+  const isFirstDayOfMonth=date.getUTCDate()===1;
+  const isYearEnd=date.getUTCDate()===31&&month===12;
+  return date.getUTCHours()===2
+    && date.getUTCMinutes()===0
+    && ((isFirstDayOfMonth&&month>=8&&month<=12)||isYearEnd);
+}
+
 export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
     const url=new URL(request.url);
@@ -54,6 +64,7 @@ export default {
   async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void> {
     if(!env.DB)return;
     if(controller.cron==="*/5 * * * *")ctx.waitUntil(deliverDueReminders(env.DB,env));
-    if(controller.cron==="0 2 1 8-12 *"||controller.cron==="0 2 31 12 *")ctx.waitUntil(syncCalendarHolidayData(env.DB));
+    // Keep annual holiday refresh on the same trigger to stay within the Free account limit.
+    if(isAnnualHolidaySyncTime(controller.scheduledTime))ctx.waitUntil(syncCalendarHolidayData(env.DB));
   }
 } satisfies ExportedHandler<Env>;
