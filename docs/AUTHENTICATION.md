@@ -4,12 +4,13 @@
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/auth/google` | GET | Start Google OIDC login using state, nonce and PKCE. |
+| `/auth/google` | GET | Start Google OIDC login using state, nonce and PKCE. Accepts an optional same-origin `returnTo` path for invitation acceptance. |
 | `/auth/google/callback` | GET | Exchange the authorization code, validate the ID token, create/update the user, create a personal workspace and issue a session cookie. |
-| `/api/auth/me` | GET | Return the current user or HTTP 401. |
+| `/api/auth/status` | GET | Return whether D1 and Google OAuth configuration are present, without exposing secrets. |
+| `/api/auth/me` | GET | Return the current user, including personal workspace ID, or HTTP 401. |
 | `/api/auth/logout` | POST | Revoke the current session and clear the cookie. Requires same-origin `Origin` header. |
 
-Login scopes are limited to `openid email profile`. Google Calendar scopes are not requested.
+Login scopes are limited to `openid email profile`. Google Calendar scopes are not requested. Invitation acceptance uses `/invite/accept?token=...`; after Google sign-in the app returns to that path. The verified Google email must match the invitation address.
 
 ## Google Cloud Console setup
 
