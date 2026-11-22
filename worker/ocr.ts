@@ -1,5 +1,6 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { getFreeGeminiModelCandidates } from "./ai.ts";
+import { readJsonBody } from "./notes.ts";
 
 type Env = AuthEnv & { GEMINI_API_KEY?:string; GEMINI_MODEL?:string; GEMINI_MODEL_FALLBACKS?:string };
 const POLICY="gemini-image-ocr-free-tier-2026-11-22";
@@ -25,6 +26,8 @@ async function consumeImage(request:Request):Promise<Uint8Array|null>{
 async function consent(request:Request,env:Env,userId:string):Promise<Response>{
  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
  if(request.method==="POST"){
+  const body=await readJsonBody(request);
+  if(body?.accepted!==true)return json({error:"EXPLICIT_OCR_CONSENT_REQUIRED"},400);
   const now=new Date().toISOString();
   await env.DB!.prepare("INSERT INTO ai_ocr_consent(user_id,accepted_at,policy_version) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET accepted_at=excluded.accepted_at,policy_version=excluded.policy_version").bind(userId,now,POLICY).run();
   return json({consented:true,policyVersion:POLICY});
