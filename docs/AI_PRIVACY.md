@@ -1,0 +1,46 @@
+# Gemini AI privacy and free-only policy
+
+## What is sent
+
+When a signed-in user explicitly enables AI and submits text, KitaNotes sends only:
+
+- The text pasted into the AI organiser.
+- The user's IANA timezone and a server-generated reference timestamp.
+- Names of categories in the selected workspace, so suggestions can reuse them.
+
+KitaNotes does not send the user's existing note contents, files, Google Calendar data, contacts, or workspace member list. It does not use Google Search grounding.
+
+## Free-tier privacy warning
+
+Google's Gemini API pricing page states that content submitted through the free tier may be used to improve Google's products. Do not submit passwords, financial account details, sensitive personal data, confidential work material, or anything you do not want Google to receive.
+
+The user must explicitly consent before the first request. Consent can be revoked from the AI organiser. A policy-version change requires consent again.
+
+Source: [Google Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing).
+
+## Zero-billing guardrails
+
+- The adapter has a hard allowlist of text models currently listed with free-tier input/output pricing: `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.6-flash`, and `gemini-3.5-flash`.
+- `GEMINI_MODEL` and `GEMINI_MODEL_FALLBACKS` are filtered against that allowlist. Unknown and paid model IDs are ignored.
+- A 404 model-not-found, quota/rate-limit response, or transient provider error may move to the next allowlisted free model.
+- Invalid API key/permission and malformed-request errors stop immediately.
+- If all free models fail or the provider quota is exhausted, the request fails. There is no paid-model fallback, automatic upgrade, or billing escalation.
+- Keep the Google AI Studio project unlinked from Cloud Billing. A project with billing enabled may be eligible for paid-tier charges even though this application only chooses free-tier model IDs.
+- KitaNotes enforces a local limit of 10 AI requests per user per UTC day and a 16 KiB input limit. Google also applies its own project/model rate limits.
+
+Free-tier model availability and quotas can change. Recheck Google's pricing/model pages before changing the allowlist.
+
+## Data retention and confirmation
+
+- The raw prompt and generated draft are not stored in D1 by the AI endpoint.
+- D1 stores only the user's consent timestamp/policy version and daily request count.
+- The response is a draft. The user must separately confirm saving the note, creating events, or creating reminders.
+- Dates are returned as local date/time strings with the supplied IANA timezone. Ambiguous dates should produce clarifying questions rather than guessed events.
+- AI outages or quota exhaustion do not affect manual note, calendar, or reminder features.
+
+## Configuration
+
+1. Create a Gemini API key in Google AI Studio using a project with no Cloud Billing account attached.
+2. Add the key as a Cloudflare Worker Secret named `GEMINI_API_KEY`.
+3. Optionally set `GEMINI_MODEL` and `GEMINI_MODEL_FALLBACKS`. Values outside the free-model allowlist are ignored.
+4. Never commit the API key or place it in frontend `VITE_*` variables.
