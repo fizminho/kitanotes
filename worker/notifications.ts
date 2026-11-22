@@ -1,5 +1,4 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
-import { readJsonBody } from "./notes.ts";
 
 type Db=NonNullable<AuthEnv["DB"]>;
 type NotificationRow={id:string;workspace_id:string|null;notification_type:string;title:string;body:string;resource_type:string|null;resource_id:string|null;created_at:string;read_at:string|null};
