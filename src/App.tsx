@@ -697,7 +697,8 @@ export default function App() {
           :"Image processing is temporarily unavailable. Your image has not been saved.";
         throw new Error(message);
       }
-      if(!result.text.trim())throw new Error("No clear, meaningful text was found in this image. Try a sharper photo with the text fully visible.");\n      setAiInput(result.text);
+      if(!result.text.trim())throw new Error("No clear, meaningful text was found in this image. Try a sharper photo with the text fully visible.");
+      setAiInput(result.text);
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to read this image.");}
     finally{setOcrWorking(false);}
   }
