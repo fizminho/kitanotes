@@ -144,7 +144,7 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
     const role = await roleFor(db, row.workspace_id, userId);
     if (role !== "owner" && role !== "editor") return json({ error: "FORBIDDEN" }, 403);
-    const body = await readBody(request);
+    const body = await readJsonBody(request);
     if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
     const title = body.title === undefined ? row.title : textValue(body.title, 200);
     const content = body.content === undefined ? row.content : (typeof body.content === "string" && body.content.length <= MAX_NOTE_CONTENT_CHARS ? body.content : null);
@@ -187,7 +187,7 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
   }
   if (path === "/api/categories" && request.method === "POST") {
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
-    const body = await readBody(request);
+    const body = await readJsonBody(request);
     if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
     const name = textValue(body.name, 50);
     if (!name) return json({ error: "INVALID_CATEGORY" }, 400);
@@ -214,7 +214,7 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
   if (request.method === "PATCH") {
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
     if (role !== "owner" && role !== "editor") return json({ error: "FORBIDDEN" }, 403);
-    const body = await readBody(request);
+    const body = await readJsonBody(request);
     if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
     const name = body.name === undefined ? category.name : textValue(body.name,50);
     const color = body.color === undefined ? category.color : (body.color === null ? null : (typeof body.color==="string" && /^#[0-9a-fA-F]{6}$/.test(body.color) ? body.color : undefined));
