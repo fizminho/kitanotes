@@ -98,7 +98,7 @@ function noteDto(row: NoteRow) {
     createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at
   };
 }
-async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}, url: URL, userId: string): Promise<Response | null> {
+async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}, url: URL, userId: string, ctx?:ExecutionContext): Promise<Response | null> {
   const db = env.DB!;
   const path = url.pathname;
   if (path === "/api/notes" && request.method === "GET") {
@@ -133,7 +133,8 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const row = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
-    await Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"KitaNotes",body:"A new note was shared with your workspace.",url:"/",tag:"shared-note-"+id})));
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"KitaNotes",body:"A new note was shared with your workspace.",url:"/",tag:"shared-note-"+id})));
+    if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     return json({ note: row ? noteDto(row) : null }, 201);
   }
   const match = path.match(/^\/api\/notes\/([^/]+)$/);
@@ -243,13 +244,13 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
   return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 }
 
-export async function handleNotesRequest(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}): Promise<Response | null> {
+export async function handleNotesRequest(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}, ctx?:ExecutionContext): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/notes") && !url.pathname.startsWith("/api/categories")) return null;
   if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
   const user = await getCurrentUser(request, env);
   if (!user) return json({ error: "UNAUTHENTICATED" }, 401);
   return url.pathname.startsWith("/api/notes")
-    ? handleNotes(request, env, url, user.id)
+    ? handleNotes(request, env, url, user.id, ctx)
     : handleCategories(request, env, url, user.id);
 }
