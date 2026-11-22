@@ -22,7 +22,7 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
 type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
-type Workspace = {id:string;name:string;type:"personal"|"shared";role:"owner"|"editor"|"viewer"};
+type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
@@ -434,7 +434,7 @@ export default function App() {
       && (!value || (note.title + " " + note.content + " " + (note.categoryName ?? "")).toLowerCase().includes(value)));
     return [...filtered].sort((a, b) => sortMode === "title" ? a.title.localeCompare(b.title) : sortMode === "oldest" ? a.updatedAt.localeCompare(b.updatedAt) : b.updatedAt.localeCompare(a.updatedAt));
   }, [notes, query, categoryFilter, sortMode]);
-  const sharedWorkspaces = useMemo(() => workspaces.filter(item => item.type === "shared"), [workspaces]);
+  const sharedWorkspaces = useMemo(() => workspaces.filter(item => item.visibility === "shared"), [workspaces]);
   const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId);
   const canWrite = activeWorkspace ? activeWorkspace.role !== "viewer" : true;
 
@@ -842,6 +842,19 @@ export default function App() {
     finally{setWorkspaceActionBusy(false);}
   }
 
+  async function makeWorkspaceShared() {
+    if(!activeWorkspaceId||workspaceActionBusy)return;
+    if(!window.confirm("Allow invited members to access this workspace again? Existing members will not be restored automatically."))return;
+    setWorkspaceActionBusy(true);setInviteCreateError("");
+    try{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({action:"make_shared"})});
+      if(!response.ok)throw new Error("Unable to make workspace shared.");
+      await refreshWorkspaces(activeWorkspaceId);
+      setInviteNotice("This workspace can now be shared. Invite members to grant access.");
+    }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to make workspace shared.");}
+    finally{setWorkspaceActionBusy(false);}
+  }
+
   async function makeWorkspacePrivate() {
     if(!activeWorkspaceId||workspaceActionBusy)return;
     if(!window.confirm("Remove all other members? They will immediately lose access. Pending invitations will be revoked. Notes and categories will be kept."))return;
@@ -984,9 +997,9 @@ export default function App() {
         </a>
         <label className="workspace-switch" aria-label="Choose workspace">
           <span className="workspace-avatar">K</span>
-          <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"Shared space":"Personal · private"}</small></span>
+          <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
           <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
-            {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
+            {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}
           </select>
           <ChevronDown size={16} />
         </label>
@@ -1051,7 +1064,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New shared space</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.type==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New shared space</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
@@ -1197,7 +1210,7 @@ export default function App() {
 
           {manageTab==="settings"&&activeWorkspace.role==="owner"&&<div className="invite-list">
             <strong>Space settings</strong><p className="invite-list-note">Rename this space, remove everyone else, or delete it with everything inside.</p>
-            <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button><button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Remove all members</button><button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button></div>
+            <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button>{activeWorkspace.visibility==="shared"?<button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Make private</button>:<button className="secondary-button" onClick={makeWorkspaceShared} disabled={workspaceActionBusy}>Make shared</button>}<button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button></div>
           </div>}
 
           {manageTab==="leave"&&activeWorkspace.role!=="owner"&&<div className="invite-list">
@@ -1223,11 +1236,11 @@ export default function App() {
 
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
-          <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"SHARED WORKSPACE NOTE":"PERSONAL NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
+          <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
           <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div><label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.type==="shared"?"Saved to this shared workspace.":"Saved to your personal workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
+          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
         </section>
       </div>}
       <div className="toast-stack" role="status" aria-live="polite">{toasts.map(toast=><div key={toast.id} className={"toast "+toast.tone}>{toast.text}</div>)}</div>
