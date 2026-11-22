@@ -148,7 +148,7 @@ async function holidays(request:Request,db?:Db):Promise<Response>{
 export async function syncCalendarHolidayData(db:Db,now=new Date()):Promise<{states:number;publicEvents:number;schoolEvents:number;failedStates:string[]}> {
  const syncedAt=now.toISOString();const currentYear=now.getUTCFullYear();let publicEvents=0,schoolEvents=0;const failedStates:string[]=[];
  const stateEntries=Object.entries(STATE_SLUGS);
- const results=await Promise.all(stateEntries.map(async([state,slug])=>{
+ await Promise.all(stateEntries.map(async([state,slug])=>{
   try{
    const response=await fetch("https://holidaywise.wee.my/my/"+slug+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(12000)});
    if(!response.ok)throw new Error("HTTP "+response.status);
