@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag, Upload, Download } from "lucide-react";
+import { defaultReminderDateTime } from "./calendar-utils.ts";
 
 type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
@@ -118,9 +119,10 @@ export default function App() {
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
   const [eventTitle, setEventTitle] = useState("");
   const [eventDescription, setEventDescription] = useState("");
-  const [eventStart, setEventStart] = useState(() => localDateTime(new Date(Date.now()+3600000)));
-  const [eventEnd, setEventEnd] = useState(() => localDateTime(new Date(Date.now()+7200000)));
+  const [eventStart, setEventStart] = useState(() => localDateTime(new Date(Date.now()+25*3600000)));
+  const [eventEnd, setEventEnd] = useState(() => localDateTime(new Date(Date.now()+26*3600000)));
   const [eventReminderAt, setEventReminderAt] = useState("");
+  const [eventReminderAuto,setEventReminderAuto]=useState(true);
   const [eventLinkedNoteId, setEventLinkedNoteId] = useState("");
   const [eventTimezone, setEventTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur");
   const [eventSaving, setEventSaving] = useState(false);
@@ -801,9 +803,11 @@ export default function App() {
     setEditingEvent(null);
     setEventTitle("");
     setEventDescription("");
-    setEventStart(localDateTime(new Date(Date.now()+3600000)));
-    setEventEnd(localDateTime(new Date(Date.now()+7200000)));
-    setEventReminderAt("");
+    const start=localDateTime(new Date(Date.now()+25*3600000));
+    setEventStart(start);
+    setEventEnd(localDateTime(new Date(Date.now()+26*3600000)));
+    setEventReminderAt(defaultReminderDateTime(start,eventTimezone));
+    setEventReminderAuto(true);
     setEventLinkedNoteId("");
     setEventsError("");
     setEventComposerOpen(true);
@@ -812,7 +816,7 @@ export default function App() {
   function startEditEvent(item:CalendarEvent) {
     setEditingEvent(item);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
     setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
-    setEventReminderAt("");setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
+    setEventReminderAt("");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
   }
 
   async function saveEvent() {
@@ -826,7 +830,7 @@ export default function App() {
       setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
       if(eventReminderAt&&!editingEvent){
         const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:activeWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:new Date(eventReminderAt).toISOString(),timezone:eventTimezone
+          workspaceId:activeWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone
         })});
         if(!reminderResponse.ok)setEventsError("Event saved, but its reminder could not be created.");
       }
@@ -1410,10 +1414,10 @@ export default function App() {
           <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">{editingEvent?"Edit event":"New event"}</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
           <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
-          <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>setEventStart(e.target.value)}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
-          <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>setEventTimezone(e.target.value)} placeholder="Asia/Kuala_Lumpur"/></label>
+          <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>{setEventStart(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(e.target.value,eventTimezone));}}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
+          <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>{setEventTimezone(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(eventStart,e.target.value));}} placeholder="Asia/Kuala_Lumpur"/></label>
           <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
-          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
+          <label className="field-label">{editingEvent?"Reminder (existing reminders are retained)":"Reminder (default: 1 day before)"}<input className="invite-input" type="datetime-local" value={eventReminderAt} disabled={Boolean(editingEvent)} onChange={e=>{setEventReminderAt(e.target.value);setEventReminderAuto(false);}}/>{!editingEvent&&<><small className="calendar-reminder-help">Set automatically for 24 hours before the event. You can change the time or clear it.</small><button type="button" className="text-action" onClick={()=>{setEventReminderAt(defaultReminderDateTime(eventStart,eventTimezone));setEventReminderAuto(true);}}>Reset to 1 day before</button></>}</label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
           <footer><span>{editingEvent?"Changes use version checking. Existing reminders are retained.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
