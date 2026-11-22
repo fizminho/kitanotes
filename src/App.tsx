@@ -23,6 +23,10 @@ export default function App() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (inviteToken) window.history.replaceState({}, "", "/");
+  }, [inviteToken]);
+
+  useEffect(() => {
     let active = true;
     fetch("/api/auth/status", { credentials: "same-origin" })
       .then(async statusResponse => {
@@ -174,6 +178,7 @@ export default function App() {
           </div>
         </header>
         <div className="content">
+          {inviteNotice && <div className="invite-success-banner"><Check size={16}/>{inviteNotice}</div>}
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
             {view === "notes" && user && <button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}
