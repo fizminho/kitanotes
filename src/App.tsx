@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil } from "lucide-react";
 
 type View = "notes" | "calendar" | "shared";
+type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}> };
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
 function dateKey(value:Date):string { return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0"); }
 function dateTimeInputFor(value:string,timezone:string):string {
@@ -87,6 +88,13 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
+  const [installPrompt,setInstallPrompt]=useState<InstallPromptEvent|null>(null);
+  const [installHelpOpen,setInstallHelpOpen]=useState(false);
+  const [isInstalled,setIsInstalled]=useState(false);
+  const [pushSupported,setPushSupported]=useState(false);
+  const [pushSubscribed,setPushSubscribed]=useState(false);
+  const [pushBusy,setPushBusy]=useState(false);
+  const [pushError,setPushError]=useState("");
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiConsentChecked, setAiConsentChecked] = useState(false);
@@ -233,6 +241,81 @@ export default function App() {
       .finally(()=>{if(active)setNotificationsLoading(false);});
     return ()=>{active=false;};
   },[notificationsOpen,user]);
+
+  useEffect(()=>{
+    const standalone=window.matchMedia("(display-mode: standalone)").matches||Boolean((navigator as Navigator & {standalone?:boolean}).standalone);
+    setIsInstalled(standalone);
+    const handler=(event:Event)=>{event.preventDefault();setInstallPrompt(event as InstallPromptEvent);};
+    window.addEventListener("beforeinstallprompt",handler);
+    window.addEventListener("appinstalled",()=>{setIsInstalled(true);setInstallPrompt(null);setInstallHelpOpen(false);});
+    return ()=>window.removeEventListener("beforeinstallprompt",handler);
+  },[]);
+
+  useEffect(()=>{
+    const supported="serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
+    setPushSupported(supported);
+    if(!supported||!user)return;
+    let active=true;
+    navigator.serviceWorker.ready.then(registration=>registration.pushManager.getSubscription()).then(subscription=>{
+      if(active)setPushSubscribed(Boolean(subscription));
+    }).catch(()=>{if(active)setPushSubscribed(false);});
+    return ()=>{active=false;};
+  },[user]);
+
+  async function installApp(){
+    if(installPrompt){
+      await installPrompt.prompt();
+      const choice=await installPrompt.userChoice;
+      if(choice.outcome==="accepted")setIsInstalled(true);
+      setInstallPrompt(null);
+    }else setInstallHelpOpen(value=>!value);
+  }
+
+  function decodeVapidKey(value:string):Uint8Array{
+    const padded=value.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((value.length+3)%4);
+    const raw=window.atob(padded);
+    return Uint8Array.from(raw,char=>char.charCodeAt(0));
+  }
+
+  async function enablePush(){
+    if(!user||pushBusy||!pushSupported)return;
+    setPushBusy(true);setPushError("");
+    try{
+      const permission=Notification.permission==="default"?await Notification.requestPermission():Notification.permission;
+      if(permission!=="granted")throw new Error(permission==="denied"?"Notifications are blocked in browser settings.":"Notification permission was not granted.");
+      const keyResponse=await fetch("/api/push/public-key",{credentials:"same-origin"});
+      const keyResult=await keyResponse.json() as {enabled:boolean;publicKey:string|null};
+      if(!keyResponse.ok||!keyResult.enabled||!keyResult.publicKey)throw new Error("Push notifications are not configured on the KitaNotes server yet.");
+      const registration=await navigator.serviceWorker.ready;
+      const subscription=await registration.pushManager.getSubscription()??await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:decodeVapidKey(keyResult.publicKey)});
+      const response=await fetch("/api/push/subscriptions",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(subscription.toJSON())});
+      if(!response.ok)throw new Error("Unable to save this device's push subscription.");
+      setPushSubscribed(true);
+    }catch(error){setPushError(error instanceof Error?error.message:"Unable to enable push notifications.");}
+    finally{setPushBusy(false);}
+  }
+
+  async function disablePush(){
+    if(pushBusy)return;setPushBusy(true);setPushError("");
+    try{
+      const registration=await navigator.serviceWorker.ready;
+      const subscription=await registration.pushManager.getSubscription();
+      if(subscription){
+        const response=await fetch("/api/push/subscriptions",{method:"DELETE",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({endpoint:subscription.endpoint})});
+        if(!response.ok)throw new Error("Unable to remove this device from push notifications.");
+        await subscription.unsubscribe();
+      }
+      setPushSubscribed(false);
+    }catch(error){setPushError(error instanceof Error?error.message:"Unable to disable push notifications.");}
+    finally{setPushBusy(false);}
+  }
+
+  async function testPush(){
+    if(pushBusy)return;setPushBusy(true);setPushError("");
+    try{const response=await fetch("/api/push/test",{method:"POST",credentials:"same-origin"});if(!response.ok)throw new Error("Unable to send a test notification.");}
+    catch(error){setPushError(error instanceof Error?error.message:"Unable to send a test notification.");}
+    finally{setPushBusy(false);}
+  }
 
   const visibleNotes = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -625,14 +708,17 @@ export default function App() {
         <header className="topbar">
           <div className="breadcrumb">My workspace <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
+            {!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
             {user ? <span className="signed-in-label">{user.displayName ?? user.email}</span> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
             {user?.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <div className="profile-avatar small">{user?.displayName?.slice(0, 1).toUpperCase() ?? "?"}</div>}
           </div>
         </header>
         <div className="content">
+          {installHelpOpen&&<section className="install-help"><button className="mini-icon" onClick={()=>setInstallHelpOpen(false)} aria-label="Close install instructions"><X size={15}/></button><strong>Install KitaNotes</strong><p><b>iPhone / iPad:</b> Open this page in Safari, tap Share, then choose Add to Home Screen.</p><p><b>Android:</b> Open the browser menu and choose Install app or Add to Home screen.</p></section>}
           {notificationsOpen && <section className="notification-panel">
-            <header><strong>Notifications</strong><button className="text-action" onClick={markAllNotificationsRead} disabled={unreadCount===0}>Mark all read</button></header>
+            <header><strong>Notifications</strong><div className="notification-actions">{pushSupported&&user&&<button className="text-action" onClick={pushSubscribed?disablePush:enablePush} disabled={pushBusy}>{pushBusy?"Working…":pushSubscribed?"Disable push":"Enable push"}</button>}{pushSubscribed&&<button className="text-action" onClick={testPush} disabled={pushBusy}>Test</button>}<button className="text-action" onClick={markAllNotificationsRead} disabled={unreadCount===0}>Mark all read</button></div></header>
+            {pushError&&<p className="invite-error">{pushError}</p>}
             {notificationError&&<p className="invite-error">{notificationError}</p>}
             {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=><button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><small>{new Date(notification.createdAt).toLocaleString()}</small></button>)}
           </section>}
