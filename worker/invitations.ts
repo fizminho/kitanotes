@@ -1,8 +1,10 @@
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { readJsonBody } from "./notes.ts";
+import { sendPushToUser } from "./push.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
+type InvitationEnv = AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string};
 type InvitationRow = {
   id: string; workspace_id: string; invited_email_normalized: string; role: "editor" | "viewer";
   status: "pending" | "accepted" | "expired" | "revoked"; expires_at: string; created_at: string;
@@ -57,7 +59,7 @@ async function ownerFor(db: Db, workspaceId: string, userId: string): Promise<bo
     .bind(workspaceId,userId).first<{role:string}>();
   return row?.role === "owner";
 }
-function invitationUrl(request: Request, env: AuthEnv, token: string): string {
+function invitationUrl(request: Request, env: InvitationEnv, token: string): string {
   const base = new URL(env.APP_BASE_URL?.trim() || new URL(request.url).origin);
   if (base.protocol !== "https:" && base.hostname !== "localhost" && base.hostname !== "127.0.0.1") {
     throw new Error("Invitation base URL must use HTTPS outside local development");
@@ -66,7 +68,7 @@ function invitationUrl(request: Request, env: AuthEnv, token: string): string {
   link.searchParams.set("token", token);
   return link.toString();
 }
-async function createInvitation(request: Request, env: AuthEnv, userId: string): Promise<Response> {
+async function createInvitation(request: Request, env: InvitationEnv, userId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
   const body = await readJsonBody(request);
   if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
@@ -120,7 +122,7 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
     delivery: "manual_gmail_handoff"
   },201);
 }
-async function listInvitations(request: Request, env: AuthEnv, userId: string): Promise<Response> {
+async function listInvitations(request: Request, env: InvitationEnv, userId: string): Promise<Response> {
   const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? "";
   if (!workspaceId) return json({ error: "WORKSPACE_REQUIRED" },400);
   const db = env.DB!;
@@ -132,7 +134,7 @@ async function listInvitations(request: Request, env: AuthEnv, userId: string): 
     status:row.status==="pending"&&row.expires_at<=new Date().toISOString()?"expired":row.status,expiresAt:row.expires_at,createdAt:row.created_at
   })) });
 }
-async function acceptInvitation(request: Request, env: AuthEnv, userId: string): Promise<Response> {
+async function acceptInvitation(request: Request, env: InvitationEnv, userId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
   const body = await readJsonBody(request);
   const token = typeof body?.token === "string" && body.token.length >= 32 && body.token.length <= 256 ? body.token : "";
@@ -154,6 +156,7 @@ async function acceptInvitation(request: Request, env: AuthEnv, userId: string):
     if(!existingMember)await db.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)").bind(openLink.workspace_id,userId,openLink.role,now).run();
     await logActivity(db,openLink.workspace_id,userId,"member.joined","user",userId,{role:openLink.role,via:"invite_link"});
     if(ws.owner_user_id!==userId)await notifyUser(db,ws.owner_user_id,openLink.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".","workspace",openLink.workspace_id,"invite-link-join:"+openLink.workspace_id+":"+userId);
+    if(ws.owner_user_id!==userId)await sendPushToUser(db,env,ws.owner_user_id,{title:"KitaNotes workspace",body:"A new member joined your shared workspace.",url:"/",tag:"workspace-join-"+openLink.workspace_id+"-"+userId},"workspace");
     return json({accepted:true,workspaceId:openLink.workspace_id,role:existingMember?.role??openLink.role,alreadyMember:Boolean(existingMember)});
   }
   const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? RETURNING workspace_id,role")
@@ -172,10 +175,11 @@ async function acceptInvitation(request: Request, env: AuthEnv, userId: string):
   const ownerRow = await db.prepare("SELECT owner_user_id FROM workspaces WHERE id=?").bind(accepted.workspace_id).first<{owner_user_id:string}>();
   if (ownerRow && ownerRow.owner_user_id !== userId) {
     await notifyUser(db,ownerRow.owner_user_id,accepted.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,accepted.workspace_id))+" as "+accepted.role+".","workspace",accepted.workspace_id,"invitation_accepted:"+accepted.workspace_id+":"+userId+":"+now);
+    await sendPushToUser(db,env,ownerRow.owner_user_id,{title:"KitaNotes workspace",body:"A new member joined your shared workspace.",url:"/",tag:"workspace-join-"+accepted.workspace_id+"-"+userId},"workspace");
   }
   return json({ accepted:true,workspaceId:accepted.workspace_id,role:accepted.role });
 }
-async function revokeInvitation(request: Request, env: AuthEnv, userId: string, invitationId: string): Promise<Response> {
+async function revokeInvitation(request: Request, env: InvitationEnv, userId: string, invitationId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
   const db = env.DB!;
   const invitation = await db.prepare("SELECT workspace_id,status FROM invitations WHERE id=?")
@@ -188,14 +192,14 @@ async function revokeInvitation(request: Request, env: AuthEnv, userId: string, 
 }
 
 
-async function listMembers(env: AuthEnv, userId: string, workspaceId: string): Promise<Response> {
+async function listMembers(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
   const result = await db.prepare("SELECT wm.user_id,wm.role,wm.joined_at,u.email,u.display_name FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? ORDER BY CASE WHEN wm.role='owner' THEN 0 ELSE 1 END,u.email_normalized")
     .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null}>();
   return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at})) });
 }
-async function updateMemberRole(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
+async function updateMemberRole(request: Request, env: InvitationEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const body=await readJsonBody(request);
   const role=body?.role==="editor"||body?.role==="viewer"?body.role:null;
@@ -208,11 +212,12 @@ async function updateMemberRole(request: Request, env: AuthEnv, userId: string, 
   if (member.role !== role) {
     await logActivity(db,workspaceId,userId,"member.role_changed","user",memberId,{from:member.role,to:role});
     await notifyUser(db,memberId,workspaceId,"member_role_changed","Your permission changed","You are now "+(role==="editor"?"an editor":"a viewer")+" in "+(await workspaceName(db,workspaceId))+".","workspace",workspaceId,"role_changed:"+workspaceId+":"+memberId+":"+role+":"+Date.now());
+    await sendPushToUser(db,env,memberId,{title:"KitaNotes workspace access",body:"Your workspace permissions have changed.",url:"/",tag:"workspace-role-"+workspaceId},"workspace");
   }
   return json({updated:true,role});
 }
 
-async function removeMember(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
+async function removeMember(request: Request, env: InvitationEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const db=env.DB!;
   if (!(await ownerFor(db,workspaceId,userId))) return json({error:"OWNER_PERMISSION_REQUIRED"},403);
@@ -223,10 +228,11 @@ async function removeMember(request: Request, env: AuthEnv, userId: string, work
   await db.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,memberId).run();
   await logActivity(db,workspaceId,userId,"member.removed","user",memberId);
   await notifyUser(db,memberId,null,"member_removed","Removed from a shared space","You no longer have access to "+spaceName+".","workspace",workspaceId,"member_removed:"+workspaceId+":"+memberId+":"+Date.now());
+  await sendPushToUser(db,env,memberId,{title:"KitaNotes workspace access",body:"Your access to a shared workspace has been removed.",url:"/",tag:"workspace-removed-"+workspaceId},"workspace");
   return json({removed:true});
 }
 
-async function leaveWorkspace(request: Request, env: AuthEnv, userId: string, workspaceId: string): Promise<Response> {
+async function leaveWorkspace(request: Request, env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const result=await env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,userId).run();
   const changed=Number((result as {meta?:{changes?:number}})?.meta?.changes ?? 0);
@@ -235,9 +241,10 @@ async function leaveWorkspace(request: Request, env: AuthEnv, userId: string, wo
   await logActivity(db,workspaceId,userId,"member.left","user",userId);
   const ownerRow = await db.prepare("SELECT owner_user_id FROM workspaces WHERE id=?").bind(workspaceId).first<{owner_user_id:string}>();
   if (ownerRow) await notifyUser(db,ownerRow.owner_user_id,workspaceId,"member_left","A member left",(await displayName(db,userId))+" left "+(await workspaceName(db,workspaceId))+".","workspace",workspaceId,"member_left:"+workspaceId+":"+userId+":"+Date.now());
+  if (ownerRow) await sendPushToUser(db,env,ownerRow.owner_user_id,{title:"KitaNotes workspace",body:"A member left your shared workspace.",url:"/",tag:"workspace-left-"+workspaceId+"-"+userId},"workspace");
   return json({left:true});
 }
-async function deleteWorkspace(request: Request, env: AuthEnv, userId: string, workspaceId: string): Promise<Response> {
+async function deleteWorkspace(request: Request, env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const workspace=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(workspaceId,userId).first<{id:string}>();
   if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
@@ -245,7 +252,7 @@ async function deleteWorkspace(request: Request, env: AuthEnv, userId: string, w
   return json({deleted:true});
 }
 
-async function listActivity(env: AuthEnv, userId: string, workspaceId: string): Promise<Response> {
+async function listActivity(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
   const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,u.email AS actor_email,t.display_name AS target_name,t.email AS target_email FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id WHERE a.workspace_id=? ORDER BY a.created_at DESC LIMIT 50")
@@ -257,7 +264,7 @@ async function listActivity(env: AuthEnv, userId: string, workspaceId: string): 
   }) });
 }
 
-async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
+async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
   const result = await env.DB!.prepare(
     "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
   ).bind(userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
@@ -266,7 +273,7 @@ async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
   })) });
 }
 
-export async function handleInvitationsRequest(request: Request, env: AuthEnv): Promise<Response | null> {
+export async function handleInvitationsRequest(request: Request, env: InvitationEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/workspaces" && !url.pathname.startsWith("/api/workspaces/") && !url.pathname.startsWith("/api/invitations")) return null;
   if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" },503);
