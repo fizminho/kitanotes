@@ -3,6 +3,7 @@ import { readJsonBody } from "./notes.ts";
 import { sendPushToUser } from "./push.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
+type EventEnv = AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string};
 type Role = "owner" | "editor" | "viewer";
 type EventRow = {
   id:string; workspace_id:string; title:string; description:string; starts_at_utc:string; ends_at_utc:string;
@@ -66,7 +67,7 @@ async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Res
     : await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
   return json({events:result.results.map(dto),from,to});
 }
-async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Response> {
+async function createEvent(request:Request,env:EventEnv,userId:string):Promise<Response> {
   if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const body=await readJsonBody(request);
   if(!body) return json({error:"INVALID_JSON_BODY"},400);
@@ -93,7 +94,7 @@ async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Re
   const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
-async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Promise<Response> {
+async function eventById(request:Request,env:EventEnv,userId:string,id:string):Promise<Response> {
   const db=env.DB!;
   const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
   if(!row||!(await roleFor(db,row.workspace_id,userId))) return json({error:"NOT_FOUND"},404);
@@ -136,7 +137,7 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
   const updated=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
-export async function handleEventsRequest(request:Request,env:AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}):Promise<Response|null> {
+export async function handleEventsRequest(request:Request,env:EventEnv):Promise<Response|null> {
   const url=new URL(request.url);
   if(!url.pathname.startsWith("/api/events")) return null;
   if(!env.DB) return json({error:"DATABASE_NOT_CONFIGURED"},503);
