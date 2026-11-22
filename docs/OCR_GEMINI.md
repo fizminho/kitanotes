@@ -1,6 +1,6 @@
 # KitaNotes Gemini OCR — Design and Implementation Plan
 
-**Status:** Backend foundation implemented; frontend capture/review workflow and full verification remain open  
+**Status:** Core backend and frontend capture/edit/handoff workflow implemented; image preview, client-side image preparation and live provider verification remain open  
 **Priority:** P5 enhancement; backend foundation started after notification preferences  
 **Budget:** RM0 recurring spend; Gemini free tier only  
 **Related:** [Masterplan](MASTERPLAN.md), [AI privacy policy](AI_PRIVACY.md)
@@ -15,7 +15,7 @@ OCR must be an optional input method for the existing AI organiser, not a separa
 
 1. User opens Scan with AI from the note composer.
 2. User captures an image with the camera or selects an image from the device.
-3. The browser shows a preview and allows the user to replace or remove it.
+3. The browser retains the selected file locally and lets the user replace it. A dedicated rendered image preview is not implemented yet.
 4. Before the first OCR request, show a clear disclosure that the image will be sent to Google's Gemini API under the free-tier privacy terms. Require explicit OCR consent; existing text-AI consent must not silently imply consent to image processing.
 5. Browser sends the image to an authenticated KitaNotes Worker endpoint over HTTPS.
 6. Worker validates the session, same-origin mutation, image MIME type, encoded and decoded size, user quota and AI configuration.
@@ -96,16 +96,16 @@ Implemented endpoint: POST /api/ai/ocr. Consent endpoints: POST/DELETE /api/ai/o
 - [x] Authenticated and same-origin endpoint.
 - [x] Strict MIME and file-signature validation (JPEG, PNG, WebP).
 - [x] Request body limit (2 MiB).
-- [ ] No user-supplied URL fetching.
-- [ ] Per-user quota and rate limit.
+- [x] No user-supplied URL fetching; the endpoint accepts raw image bytes only.
+- [x] Per-user daily quota (5/day) and dedicated burst rate limit (3/minute).
 - [x] OCR consent is separate and revocable.
 - [x] Gemini key remains Worker Secret only.
 - [x] Existing free-tier model allowlist reused.
 - [x] Extraction-only prompt treats image content as untrusted; no tools are available.
 - [x] No image or extracted text is logged or persisted by the OCR handler.
-- [ ] No persistence or service-worker caching of image data.
-- [ ] OCR output is editable and requires user review.
-- [ ] Structured note/event creation remains behind existing explicit confirmation.
+- [x] No image persistence or service-worker caching; the service worker caches only the application shell and static assets.
+- [x] OCR output is editable and requires user review.
+- [x] Structured note/event creation remains behind existing explicit confirmation.
 
 ## 8. Test plan
 
@@ -134,7 +134,7 @@ Implemented endpoint: POST /api/ai/ocr. Consent endpoints: POST/DELETE /api/ai/o
 
 ## 10. Implementation status (2026-11-22)
 
-The first backend slice is committed:
+The OCR backend and first frontend workflow slice are committed:
 - `worker/ocr.ts` implements authenticated OCR consent and image extraction routes.
 - `migrations/0010_gemini_ocr.sql` stores separate OCR consent and daily usage counters.
 - The endpoint accepts a raw image body (not base64 JSON), limited to 2 MiB, and checks JPEG/PNG/WebP signatures.
@@ -143,4 +143,4 @@ The first backend slice is committed:
 - OCR returns editable plain text and explicitly flags that user review is required. It does not create notes or events.
 - Automated tests cover separate consent, signature validation, extraction, no automatic note writes and quota exhaustion.
 
-**Not complete yet:** frontend image picker/preview, explicit OCR consent UI, editable OCR result UI and handoff into the existing organiser; a dedicated OCR rate-limit bucket; runtime verification of the 2 MiB limit and Gemini image-capable model availability. Do not mark the OCR feature complete or deploy it until these are finished.
+**Remaining:** a rendered image preview, client-side resizing/EXIF stripping, and runtime verification of the 2 MiB limit plus the configured Gemini model's image-input support/free-tier availability. The frontend already has an image file picker, explicit OCR consent, editable extracted text and handoff to the existing organiser. The Worker now enforces a separate 3-requests-per-minute burst limit in addition to the 5-per-day OCR quota. Do not describe OCR as production-verified until a live Gemini request succeeds.
