@@ -24,7 +24,7 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 - `GET /api/invitations?workspaceId=`: owner-only list without token hashes or raw tokens.
 - `POST /api/invitations/accept`: signed-in user accepts with `{ token }`; verified Google email must match the invitation address.
 - `DELETE /api/invitations/:id`: owner revokes a pending invitation.
-- `GET /api/workspaces`, `POST /api/workspaces` (creates a **shared** space, max 30 owned), `PATCH /api/workspaces/:id` (`{name}` rename; `{action:"make_private"}` removes all other members and revokes invitations; `{action:"transfer_ownership",userId}`), `DELETE /api/workspaces/:id` (owner deletes a shared space and everything in it).
+- `GET /api/workspaces`, `POST /api/workspaces` (creates a **shared** space, max 30 owned), `PATCH /api/workspaces/:id` (`{name}` rename; `{action:"make_private"}` removes all other members and revokes pending invitations; `{action:"make_shared"}` re-enables new invitations without restoring former members; `{action:"transfer_ownership",userId}`), `DELETE /api/workspaces/:id` (owner deletes a shared-visibility workspace and everything in it; private workspaces cannot be deleted through this route).
 - `GET /api/workspaces/:id/members`: any member. `PATCH|DELETE /api/workspaces/:id/members/:userId`: owner changes role / removes; a non-owner may `DELETE` their own membership to leave.
 - `GET /api/workspaces/:id/activity`: any member; last 50 sharing events (invitations, joins, leaves, removals, role changes, ownership transfers).
 - Collaboration notifications: invitation accepted and member left (to owner); role changed, removed, ownership received (to the affected member).
@@ -55,6 +55,14 @@ Timestamps must include an explicit UTC offset or `Z`; the API stores UTC instan
 
 A free Cloudflare Cron Trigger runs every five minutes. Due reminders create idempotent in-app notifications for workspace members. Deleted linked notes/events cancel pending reminders. This MVP does not send email or browser push notifications.
 
+## Gemini OCR
+
+- `POST /api/ai/ocr/consent`: body `{ accepted: true }`; records separate, revocable image-processing consent.
+- `DELETE /api/ai/ocr/consent`: revoke OCR consent.
+- `POST /api/ai/ocr`: raw JPEG, PNG or WebP bytes with the matching `Content-Type`; requires authentication, same-origin request and current OCR consent. Maximum image size is 2 MiB. Returns editable extracted text only; it does not create notes or events.
+
+OCR uses the configured free-tier Gemini model allowlist, a 5-request per-user UTC-day quota and a separate 3-request-per-user-per-minute burst limit. Images and extracted text are not persisted by the OCR handler. No user-supplied URL is fetched and no paid fallback is allowed. The frontend requires explicit consent, lets users edit extracted text and hands it to the existing organiser; the organiser still requires its own separate consent and explicit save confirmation. A rendered image preview and client-side EXIF stripping are not yet implemented.
+
 ## AI organiser
 
 - `GET /api/ai/status`: return key configuration status, consent status and local daily usage. Never returns the key.
@@ -80,4 +88,4 @@ The AI endpoint does not persist prompts or drafts. It stores only consent metad
 - Category name is limited to 50 characters; colors must be six-digit hex.
 - Category assignment must point to a category in the same workspace.
 - Note updates use optimistic concurrency through `version`.
-- Workspace invitations and verified-email acceptance are implemented. New shared-note notifications are created by a D1 trigger. Integration tests use a SQLite-backed D1 adapter; live Cloudflare D1 and Google OAuth verification remain pending.
+- Workspace invitations and verified-email acceptance are implemented. New shared-note notifications are created by a D1 trigger. Integration tests use a SQLite-backed D1 adapter. Production Google login, note persistence and two-account collaboration have been exercised, but the latest workspace visibility migrations and code still require a current-release production smoke test.
