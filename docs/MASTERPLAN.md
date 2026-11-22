@@ -4,7 +4,7 @@
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
-**Last updated:** 2026-11-22 (free-only architecture revision)
+**Last updated:** 2026-11-22 (notification/PWA status reconciliation and Gemini OCR roadmap)
 
 > This is the source-of-truth planning document for KitaNotes. Update the checkboxes and decision log as implementation progresses. A checked item means it has been implemented and verified, not merely discussed.
 
@@ -58,7 +58,8 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 - [ ] Optional Google Calendar integration and two-way sync.
 - [ ] Real-time collaborative editing / presence.
-- [ ] Attachments and image/PDF text extraction.
+- [ ] Gemini OCR for user-selected images: extract text, then pass it through the existing structured-note flow. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
 - [ ] Recurring events and advanced reminder rules.
 - [ ] Shared templates and reusable note formats.
 - [ ] Offline editing with conflict resolution.
@@ -88,7 +89,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 | Identity | Google OAuth 2.0 / OpenID Connect | Gmail/Google sign-in; no Calendar scope at login. |
 | AI | Gemini API free tier only | Server-side Worker Secret; quotas and eligible models can change. No paid fallback. |
 | Reminders | Cloudflare Workers Cron Trigger | Use a small number of scheduled scans and indexed due-time queries. Workers Free supports up to 5 Cron Triggers/account. |
-| Notifications | In-app inbox | Durable D1 inbox; Web Push is a later enhancement and is not configured. |
+| Notifications | In-app inbox + optional Web Push | D1 inbox is durable; Web Push code is implemented but VAPID provisioning and real-device verification remain open. |
 | CI/CD | GitHub Actions + Cloudflare deploy action/CLI | Use repository/environment secrets; never expose secret values in logs or frontend builds. |
 
 ### Free-tier ceilings to design around
@@ -110,7 +111,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 4. API validates identity, membership and role for every protected operation.
 5. API reads/writes D1 using prepared statements and indexed queries.
 6. AI requests go through the backend Gemini adapter; the browser never receives the Gemini API key.
-7. Cron scans due reminders and creates durable in-app notification records. Web Push is a later enhancement.
+7. Cron scans due reminders and creates durable in-app notification records; optional Web Push is best-effort and never carries private note content.
 
 ## 4. Authentication, invitations and access control
 
@@ -197,7 +198,7 @@ MVP calendar is an internal KitaNotes calendar. This avoids requiring calendar p
 - Use durable scheduled jobs / a due-reminder query with idempotency keys.
 - Create one notification per recipient according to workspace membership and notification preferences.
 - Handle edits, cancellations, daylight-saving transitions and past-due reminders.
-- Do not promise push delivery when browser permission is denied or a device is offline; retain the notification in the in-app inbox and retain the notification in the in-app inbox; automated email is outside the free-only MVP.
+- Do not promise push delivery when browser permission is denied or a device is offline; retain the notification in the in-app inbox; automated email is outside the free-only MVP.
 
 ### Google Calendar (later phase)
 
@@ -432,8 +433,10 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Implement in-app notification inbox API/UI, unread count, mark-read and mark-all-read.
 - [x] Notify other workspace members when a new shared note is created.
 - [x] Add event editing UI and month/week calendar views. Event updates use optimistic version checks; event-local date/time values are converted using the event IANA timezone.
-- [ ] Implement PWA service worker and Web Push subscription/delivery.
-- [ ] Implement notification preferences and delivery settings.
+- [x] Implement PWA manifest, install flow, service worker and offline app-shell/static-asset cache; private API data is never cached.
+- [x] Implement per-device Web Push subscription APIs, VAPID key generation helper and best-effort generic push delivery for reminders/shared notes. VAPID provisioning and real-device delivery verification remain open.
+- [ ] Implement per-user notification preferences (reminder/shared-note push toggles) and delivery settings.
+- [ ] Implement quiet hours with explicit timezone handling; in-app notifications must remain available even when push is suppressed.
 
 ### P3 — Gemini assistant
 
@@ -446,6 +449,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Do not persist raw prompts or AI drafts; D1 stores only consent metadata and daily usage counts.
 - [x] Add mocked tests for 404, 429 quota, 503 transient errors, auth failure, malformed JSON, invalid output, provider outage, daily cap and manual-note resilience.
 - [ ] Configure a real Gemini free-tier key from a project with no Cloud Billing and verify a live request/fallback sequence.
+- [ ] Implement Gemini image OCR as a separate consent-gated capability reusing the existing provider adapter, free-model allowlist, quota controls and review-before-save boundary. Design: [OCR_GEMINI.md](OCR_GEMINI.md).
 
 ### P4 — Production hardening
 
@@ -464,9 +468,10 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 - [ ] Optional Google Calendar sync.
 - [ ] Real-time collaboration.
-- [ ] Attachments and OCR/text extraction.
+- [ ] Gemini image OCR and image-to-note flow. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [ ] PDF text extraction and attachment management.
 - [ ] Recurring events and richer task management.
-- [ ] Offline support and conflict resolution.
+- [ ] Offline editing and conflict resolution.
 
 ## 14. Acceptance criteria for MVP
 
@@ -536,5 +541,6 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
 - **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
 - **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
-- **2026-11-22:** Added PWA manifest, install prompt, root service worker and network-first offline shell cache. Added per-user Web Push subscriptions, VAPID key generation instructions, generic privacy-preserving reminder payloads and expired-subscription cleanup. VAPID configuration and real browser delivery remain pending.
+- **2026-11-22:** Added PWA manifest, install prompt, root service worker and network-first offline shell cache. Added per-user Web Push subscriptions, VAPID key generation instructions, generic privacy-preserving reminder/shared-note payloads and expired-subscription cleanup. VAPID configuration and real browser delivery remain pending.
+- **2026-11-22:** Added a staged Gemini OCR roadmap. OCR will reuse the existing Gemini free-tier adapter and structured-note review flow; it is not implemented yet. Notification preferences and quiet-hours behavior are also tracked as the next P2 implementation.
 - **2026-11-22:** Added calendar month/week navigation, six-week month loading, event edit UI with version-conflict handling, and timezone-aware date/time editing. GitHub Actions passed TypeScript build, all tests, SQLite migration validation and Wrangler dry-run (runs [45005225542](https://github.com/fizminho/kitanotes/actions/runs/45005225542) and [45005229375](https://github.com/fizminho/kitanotes/actions/runs/45005229375)).
