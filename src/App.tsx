@@ -856,7 +856,7 @@ export default function App() {
 \n      {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
         <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
           <header><div><span className="eyebrow">GEMINI FREE TIER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
-          {!aiStatus?<p className="ai-privacy-copy">Checking AI configuration…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>Add the Gemini API key as a Cloudflare Worker Secret. No text will be sent until the key and your consent are both present.</p></div>:!aiStatus.consented?<div className="ai-privacy-card">
+          {!aiStatus?<p className="ai-privacy-copy">Checking AI configuration…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>Add the Gemini API key as a Cloudflare Worker Secret. No text will be sent until the key and your consent are both present.</p></div>:!aiStatus.consented?<><div className="ai-privacy-card">
             <strong>Before enabling AI, please review this privacy notice.</strong>
             <p>Your pasted text will be sent to Google Gemini. Google states that content submitted through its free tier may be used to improve its products. Read the <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Gemini pricing and data terms</a> and the <a href="https://github.com/fizminho/kitanotes/blob/main/docs/AI_PRIVACY.md" target="_blank" rel="noreferrer">KitaNotes AI privacy policy</a>. Do not paste passwords, banking details, sensitive personal data or anything you do not want shared with Google.</p>
             <p>KitaNotes uses only allowlisted free-tier text models, never falls back to a paid model, and stops when the local daily limit or provider quota is reached. Keep the Google Cloud project unlinked from Cloud Billing to maintain the RM0 target.</p>
@@ -873,8 +873,7 @@ export default function App() {
               <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||!ocrConsentChecked||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
               {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="secondary-button" onClick={()=>{setAiInput(ocrText);setAiDraft(null);setAiError("Text AI consent is required before organising this OCR result.");}}>Copy extracted text to organiser</button></>}
               <button className="text-action" onClick={revokeOcrConsent}>Revoke OCR consent</button>
-            </div>
-          </div>:!aiDraft?<div>
+            </div></>:!aiDraft?<div>
             <p className="ai-privacy-copy">Paste unstructured text. Gemini will suggest a clean note, categories, events, reminders and tasks. Review everything before saving.</p>
             <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={9} placeholder="Example: Meeting with Sarah next Tuesday at 10am. Prepare the proposal beforehand and remind me 30 minutes before…"/>
             <div className="ai-usage-row"><span>{aiInput.length.toLocaleString()} / 16,000 characters</span><span>{aiStatus.dailyRemaining} free requests left today</span></div>
