@@ -152,10 +152,16 @@ async function startGoogleLogin(request: Request, env: AuthEnv): Promise<Respons
   const configError = authConfiguration(env);
   if (configError) return json({ error: "AUTH_NOT_CONFIGURED", message: configError }, 503);
   const origin = baseUrl(request, env);
+  const requestedReturnTo = new URL(request.url).searchParams.get("returnTo") ?? "/";
+  let returnTo = "/";
+  if (requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") && !requestedReturnTo.includes("\\")) {
+    const target = new URL(requestedReturnTo, origin);
+    if (target.origin === origin.origin) returnTo = target.pathname + target.search + target.hash;
+  }
   const state = randomToken();
   const nonce = randomToken();
   const verifier = randomToken(48);
-  const payload = base64Url(new TextEncoder().encode(JSON.stringify({ state, nonce, verifier, issuedAt: Date.now() })));
+  const payload = base64Url(new TextEncoder().encode(JSON.stringify({ state, nonce, verifier, returnTo, issuedAt: Date.now() })));
   const signed = await signState(payload, env.SESSION_SECRET!);
   const challenge = await sha256(verifier);
   const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -246,7 +252,8 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
     const identity = await verifyGoogleIdToken(tokenPayload.id_token, env.GOOGLE_CLIENT_ID!, payload.nonce);
     const session = await createUserAndSession(env, identity);
     appendCookie(headers, SESSION_COOKIE + "=" + session.token + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + SESSION_TTL_SECONDS);
-    headers.set("location", new URL("/", origin).toString());
+    const returnTo = typeof payload.returnTo === "string" && payload.returnTo.startsWith("/") && !payload.returnTo.startsWith("//") && !payload.returnTo.includes("\\") ? payload.returnTo : "/";
+    headers.set("location", new URL(returnTo, origin).toString());
     return new Response(null, { status: 302, headers });
   } catch {
     return json({ error: "GOOGLE_IDENTITY_VALIDATION_FAILED" }, 401, headers);
