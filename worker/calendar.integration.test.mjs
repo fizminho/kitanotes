@@ -204,7 +204,7 @@ test("Malaysia holiday feed is state-specific and returns all-day public holiday
  };
  try{
   const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-12-01&to=2026-12-31"),{});
-  assert.equal(response.status,200);const result=await response.json();assert.equal(result.events.length,2);const publicHoliday=result.events.find(event=>event.holidayType==="public");const schoolHoliday=result.events.find(event=>event.holidayType==="school");assert.equal(publicHoliday.title,"Birthday of the Sultan of Selangor");assert.equal(publicHoliday.allDay,true);assert.equal(schoolHoliday.title,"Cuti Akhir Persekolahan 2026 (Kumpulan B)");assert.equal(schoolHoliday.startsAt,"2026-12-04T16:00:00.000Z");assert.equal(schoolHoliday.endsAt,"2027-01-01T16:00:00.000Z");
+  assert.equal(response.status,200);const result=await response.json();assert.equal(result.events.length,2);const publicHoliday=result.events.find(event=>event.holidayType==="public");const schoolHoliday=result.events.find(event=>event.holidayType==="school");assert.equal(publicHoliday.title,"Birthday of the Sultan of Selangor");assert.equal(publicHoliday.allDay,true);assert.equal(schoolHoliday.title,"Cuti Akhir Persekolahan 2026 (Kumpulan B)");assert.equal(schoolHoliday.startsAt,"2026-12-04T16:00:00.000Z");assert.equal(schoolHoliday.endsAt,"2026-12-31T16:00:00.000Z");
  }finally{globalThis.fetch=originalFetch;}
 });
 
