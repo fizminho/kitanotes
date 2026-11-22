@@ -115,12 +115,27 @@ async function accessToken(env: CalendarEnv, connection: { refresh_token_ciphert
   if (!payload.access_token) throw new Error("GOOGLE_ACCESS_TOKEN_MISSING");
   return payload.access_token;
 }
-function eventTime(value: { dateTime?: string; date?: string } | undefined, isEnd: boolean): string | null {
+function localDateStart(dateValue: string, timezone: string): Date {
+  const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return new Date(NaN);
+  const target = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  let guess = target;
+  for (let index = 0; index < 3; index++) {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(new Date(guess));
+    const part = (type: string) => Number(parts.find(item => item.type === type)?.value ?? 0);
+    const represented = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
+    const next = guess + target - represented;
+    if (next === guess) break;
+    guess = next;
+  }
+  return new Date(guess);
+}
+function eventTime(value: { dateTime?: string; date?: string } | undefined, isEnd: boolean, timezone: string): string | null {
   if (value?.dateTime) { const date = new Date(value.dateTime); return Number.isNaN(date.getTime()) ? null : date.toISOString(); }
   if (value?.date && /^\d{4}-\d{2}-\d{2}$/.test(value.date)) {
-    const date = new Date(value.date + "T00:00:00.000Z");
-    if (isEnd) date.setUTCMilliseconds(date.getUTCMilliseconds() - 1);
-    return date.toISOString();
+    const date = localDateStart(value.date, timezone);
+    if (isEnd) date.setTime(date.getTime() - 1);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
   return null;
 }
@@ -177,14 +192,14 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
         }
         continue;
       }
-      const startsAt = eventTime(item.start, false), endsAt = eventTime(item.end, true);
+      const timezone = item.start?.timeZone ?? item.end?.timeZone ?? TIMEZONE_FALLBACK;
+      const startsAt = eventTime(item.start, false, timezone), endsAt = eventTime(item.end, true, timezone);
       const title = (item.summary ?? "Untitled Google Calendar event").trim().slice(0, 200);
       const sourceCreator = item.creator?.displayName ?? item.creator?.email ?? "Google Calendar";
       const sourceCreatedAt = item.created ?? now;
       const sourceUpdatedAt = item.updated ?? now;
       if (!startsAt || !endsAt || endsAt <= startsAt || !title) { skipped++; continue; }
       const allDay = Boolean(item.start?.date);
-      const timezone = item.start?.timeZone ?? item.end?.timeZone ?? TIMEZONE_FALLBACK;
       if (mapped) {
         const result = await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,source_updated_by=?,source_updated_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
           .bind(title, (item.description ?? "").slice(0, 5000), startsAt, endsAt, timezone, allDay ? 1 : 0, "Google Calendar", sourceUpdatedAt, now, userId, mapped.local_event_id).run();
