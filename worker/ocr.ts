@@ -1,6 +1,7 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { getFreeGeminiModelCandidates } from "./ai.ts";
 import { readJsonBody } from "./notes.ts";
+import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 
 type Env = AuthEnv & { GEMINI_API_KEY?:string; GEMINI_MODEL?:string; GEMINI_MODEL_FALLBACKS?:string };
 const POLICY="gemini-image-ocr-free-tier-2026-11-22";
@@ -43,6 +44,8 @@ async function recognize(request:Request,env:Env,userId:string):Promise<Response
  if(!env.GEMINI_API_KEY)return json({error:"AI_NOT_CONFIGURED"},503);
  const accepted=await env.DB!.prepare("SELECT policy_version FROM ai_ocr_consent WHERE user_id=?").bind(userId).first<{policy_version:string}>();
  if(accepted?.policy_version!==POLICY)return json({error:"OCR_CONSENT_REQUIRED",policyVersion:POLICY},428);
+ const rate=await consumeRateLimit(env.DB!,"ai:ocr:user:"+userId,3,60*1000);
+ if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
  const mime=(request.headers.get("content-type")??"").toLowerCase().split(";")[0].trim();
  if(!MIME.has(mime))return json({error:"UNSUPPORTED_IMAGE_TYPE",allowed:[...MIME]},415);
  const bytes=await consumeImage(request);
