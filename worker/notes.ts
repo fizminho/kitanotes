@@ -98,7 +98,7 @@ function noteDto(row: NoteRow) {
     createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at
   };
 }
-async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: string): Promise<Response | null> {
+async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}, url: URL, userId: string): Promise<Response | null> {
   const db = env.DB!;
   const path = url.pathname;
   if (path === "/api/notes" && request.method === "GET") {
