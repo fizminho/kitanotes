@@ -103,7 +103,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 4. API validates identity, membership and role for every protected operation.
 5. API reads/writes D1 using prepared statements and indexed queries.
 6. AI requests go through the backend Gemini adapter; the browser never receives the Gemini API key.
-7. Cron scans due reminders and creates durable in-app notification records; Web Push delivery is best-effort.
+7. Cron scans due reminders and creates durable in-app notification records. Web Push is a later enhancement.
 
 ## 4. Authentication, invitations and access control
 
@@ -120,7 +120,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 
 ### Invitation lifecycle
 
-1. Owner/editor enters an email address and role.
+1. Workspace owner enters an email address and role.
 2. API verifies inviter permission and creates a cryptographically random, single-use invitation token.
 3. Store only a hash of the token; set an expiry and status.
 4. Create a one-time acceptance URL and show a copy-link action plus a prefilled Gmail compose handoff; the inviter sends it manually.
@@ -402,7 +402,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [x] Create architecture, data-model and security baseline documents (ADR-0001 through ADR-0004, DATA_MODEL.md and SECURITY.md). Security review remains open.
 - [x] Bootstrap React/Vite frontend, Worker API and shared route handlers with pinned direct dependencies. A separate shared-contract package is deferred until the API stabilises.
-- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [44999942863](https://github.com/fizminho/kitanotes/actions/runs/44999942863).
+- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [45000688019](https://github.com/fizminho/kitanotes/actions/runs/45000688019).
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
@@ -412,8 +412,10 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Implement and integration-test user upsert plus personal workspace/member creation in the Google login callback against SQLite-backed D1 test adapter. Live cloud D1 verification remains pending.
 - [x] Implement and integration-test workspace-scoped notes CRUD, soft delete/archive, categories CRUD/archive, role checks, same-origin mutation checks, bounded JSON parsing and optimistic note versions.
 - [x] Implement and integration-test workspace membership role checks for owner/editor/viewer and cross-workspace note/category isolation.
-- [ ] Implement invitation creation, secure link generation, Gmail compose handoff, acceptance, expiry and revocation.
-- [ ] Add authorization and cross-workspace isolation tests.
+- [x] Implement invitation creation, secure one-time hashed links, Gmail compose handoff, verified-email acceptance, expiry and revocation.
+- [x] Add invitation lifecycle, email-mismatch, replay, expiry, role and cross-workspace integration tests.
+- [x] Add owner invite creation, invitee acceptance and pending-invitation revocation UI.
+- [ ] Verify the full flow with two real Google accounts and provisioned Cloudflare D1.
 
 ### P2 — Calendar and notifications
 
