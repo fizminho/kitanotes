@@ -1,7 +1,9 @@
+import { cleanupExpiredRateLimits } from "./rate-limit.ts";
 type DueReminder={id:string;workspace_id:string;event_id:string|null;note_id:string|null;title:string;due_at_utc:string};
 
 export async function deliverDueReminders(db:D1Database):Promise<number>{
   const now=new Date().toISOString();
+  await cleanupExpiredRateLimits(db);
   await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE status='pending' AND due_at_utc<=? AND ((event_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM calendar_events e WHERE e.id=reminders.event_id AND e.deleted_at IS NULL)) OR (note_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.id=reminders.note_id AND n.deleted_at IS NULL)))")
     .bind(now,now,now).run();
 
