@@ -49,6 +49,34 @@ const validDraft={
 };
 const okResponse=()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(validDraft)}]}}]}),{status:200});
 
+
+test("AI Organizer returns category assignments for selected existing notes without changing them",async()=>{
+  const{db,env}=seed();const now=new Date().toISOString();
+  db.sqlite.prepare("INSERT INTO categories (id,workspace_id,name,color,sort_order,created_by_user_id,created_at,updated_at) VALUES ('c1','w1','Family','#766bd0',0,'u1',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO notes (id,workspace_id,title,content,category_id,created_by_user_id,updated_by_user_id,version,created_at,updated_at) VALUES ('n1','w1','School trip','Bring water and permission slip',NULL,'u1','u1',1,?,?),('n2','w1','Weekend plan','Visit grandparents',NULL,'u1','u1',1,?,?)").run(now,now,now,now);
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({assignments:[{noteId:"n1",categoryName:"Family",reason:"Family activity"},{noteId:"n2",categoryName:"Family",reason:"Family plans"}]})}]}}]}),{status:200});
+  try{
+    const response=await handleAiRequest(request("/api/ai/organize-existing","POST",{workspaceId:"w1",noteIds:["n1","n2"]}),env);
+    assert.equal(response.status,200);
+    const payload=await response.json();
+    assert.equal(payload.assignments.length,2);
+    assert.equal(payload.assignments[0].categoryName,"Family");
+    assert.equal(payload.requiresUserConfirmation,true);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM categories").get().count,1);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notes WHERE category_id IS NOT NULL").get().count,0);
+  }finally{globalThis.fetch=originalFetch;db.close();}
+});
+
+test("AI Organizer rejects note IDs outside the selected workspace and invalid selection sizes",async()=>{
+  const{db,env}=seed();
+  try{
+    const response=await handleAiRequest(request("/api/ai/organize-existing","POST",{workspaceId:"w1",noteIds:Array.from({length:31},(_,i)=>"n"+i)}),env);
+    assert.equal(response.status,400);
+    assert.equal((await response.json()).error,"INVALID_NOTE_SELECTION");
+  }finally{db.close();}
+});
+
 test("free model allowlist excludes paid or unknown models",()=>{
   assert.deepEqual(getFreeGeminiModelCandidates("gemini-1.5-pro","gemini-2.5-flash,gemini-pro,gemini-3-flash-preview"),["gemini-3.1-flash-lite","gemini-2.5-flash","gemini-3-flash-preview"]);
   assert.deepEqual(getFreeGeminiModelCandidates("gemini-2.5-flash-lite",""),["gemini-2.5-flash-lite","gemini-3.1-flash-lite","gemini-3-flash-preview","gemini-2.5-flash"]);
