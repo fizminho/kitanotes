@@ -50,8 +50,8 @@ const validDraft={
 const okResponse=()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(validDraft)}]}}]}),{status:200});
 
 test("free model allowlist excludes paid or unknown models",()=>{
-  assert.deepEqual(getFreeGeminiModelCandidates("gemini-1.5-pro","gemini-2.5-flash,gemini-pro,gemini-3.5-flash"),["gemini-3.1-flash-lite","gemini-3.5-flash"]);
-  assert.deepEqual(getFreeGeminiModelCandidates("gemini-3.6-flash",""),["gemini-3.6-flash","gemini-3.1-flash-lite","gemini-3.5-flash-lite","gemini-3.5-flash"]);
+  assert.deepEqual(getFreeGeminiModelCandidates("gemini-1.5-pro","gemini-2.5-flash,gemini-pro,gemini-3.5-flash"),["gemini-3.1-flash-lite","gemini-3-flash-preview"]);
+  assert.deepEqual(getFreeGeminiModelCandidates("gemini-2.5-flash-lite",""),["gemini-3.6-flash","gemini-3.1-flash-lite","gemini-2.5-flash","gemini-3.5-flash"]);
 });
 
 test("draft validator rejects invalid local dates and preserves timezone",()=>{
