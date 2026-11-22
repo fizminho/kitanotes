@@ -1,4 +1,5 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
+import { sendPushToUser } from "./push.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
 type Role = "owner" | "editor" | "viewer";
@@ -131,6 +132,8 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
       .bind(id, workspace.id, title, content, categoryId, userId, now, now).run();
     const row = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
+    const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
+    await Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"KitaNotes",body:"A new note was shared with your workspace.",url:"/",tag:"shared-note-"+id})));
     return json({ note: row ? noteDto(row) : null }, 201);
   }
   const match = path.match(/^\/api\/notes\/([^/]+)$/);
@@ -240,7 +243,7 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
   return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 }
 
-export async function handleNotesRequest(request: Request, env: AuthEnv): Promise<Response | null> {
+export async function handleNotesRequest(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/notes") && !url.pathname.startsWith("/api/categories")) return null;
   if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
