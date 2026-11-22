@@ -123,7 +123,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 1. Owner/editor enters an email address and role.
 2. API verifies inviter permission and creates a cryptographically random, single-use invitation token.
 3. Store only a hash of the token; set an expiry and status.
-4. Send invitation email containing a one-time acceptance link.
+4. Create a one-time acceptance URL and show a copy-link action plus a prefilled Gmail compose handoff; the inviter sends it manually.
 5. Invitee signs in with Google.
 6. Accept only if the authenticated, verified Google email matches the invitation email (case-normalised for comparison).
 7. Record acceptance and create membership atomically.
@@ -304,12 +304,12 @@ Proposed relational entities (final schema follows implementation review):
 - `event_reminders`
 - `notifications`
 - `push_subscriptions`
-- `email_deliveries`
+- Invitation delivery status is tracked on `invitations`; no outbound email delivery provider is used in the free-only MVP.
 - `activity_events`
 - `ai_generation_runs`
 - `oauth_connections` (only for optional Google Calendar integration)
 
-Use UUID primary keys, foreign keys, useful indexes, UTC timestamps and transactions around membership/invitation changes. Add workspace-scoped authorization checks to every query. Consider PostgreSQL row-level security as defence in depth, not as a replacement for API authorization.
+Use UUID text primary keys, SQLite foreign keys, useful indexes, UTC timestamps and D1 batch/transaction semantics around membership and invitation changes. Add workspace-scoped authorization checks to every query. Database constraints and triggers provide additional integrity checks, not a replacement for API authorization.
 
 ## 10. Security, privacy and reliability
 
@@ -334,10 +334,10 @@ Use UUID primary keys, foreign keys, useful indexes, UTC timestamps and transact
 - Preview / staging (free Cloudflare preview deployments)
 - Production (Cloudflare Free)
 
-### Frontend deployment
+### Frontend and API deployment
 
 - Build static assets with a pinned Node version and lockfile.
-- Deploy static build output to Cloudflare Pages or Worker Static Assets using the existing Investlah-style Cloudflare deployment pattern.
+- Deploy the SPA and API together through one Cloudflare Worker using Worker Static Assets, following the inspected Investlah deployment pattern.
 - Use Cloudflare's asset caching and deployment versions; no S3 bucket or CloudFront distribution.
 - Configure SPA fallback without masking API errors.
 - Use separate Cloudflare environments / project deployments for staging and production where feasible on the free plan.
@@ -346,7 +346,7 @@ Use UUID primary keys, foreign keys, useful indexes, UTC timestamps and transact
 
 ### API deployment
 
-- Deploy API independently from frontend.
+- Serve API routes from the same Worker deployment as the frontend.
 - Bind Gemini key as a Cloudflare Worker Secret (server-side only).
 - Bind Google OAuth client configuration appropriately; keep any client secret server-side.
 - Apply D1 migrations as a controlled release step.
@@ -397,14 +397,14 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P0 — Foundation and decisions
 
-- [ ] Inspect and document the exact Investlah Cloudflare Worker deployment workflow and reusable GitHub Actions.
-- [ ] Confirm Cloudflare Pages versus Worker Static Assets for the frontend.
-- [ ] Confirm D1 schema, migration and quota-monitoring approach.
+- [x] Inspect and document the exact Investlah Cloudflare Worker deployment workflow and reusable GitHub Actions. See ADR-0001.
+- [x] Confirm Worker Static Assets for the frontend and API. See ADR-0001.
+- [x] Create the initial D1 workspace/notes migration and add SQLite validation to CI. D1 resource provisioning and quota monitoring remain open.
 - [ ] Confirm domain/subdomain and staging/production environments.
-- [ ] Create architecture, security and data-model decision records.
-- [ ] Bootstrap frontend, API and shared contracts with pinned dependencies.
-- [ ] Add lint, typecheck, tests and build CI.
-- [ ] Add health endpoint and local development instructions.
+- [x] Create architecture and data-model decision records (ADR-0001 through ADR-0004). Security-specific design review remains open.
+- [x] Bootstrap React/Vite frontend and minimal Worker API shell with pinned direct dependencies. Shared contracts remain outstanding.
+- [x] Add TypeScript build, Node regression tests, SQLite migration validation and Wrangler dry-run CI. First full run including migration validation is pending.
+- [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
 
@@ -517,4 +517,4 @@ MVP is not complete until all of these are demonstrated:
 ## Change log
 
 - **2026-11-22:** Initial product and technical masterplan created. No application code or deployment has been implemented yet.
-- **2026-11-22:** Revised architecture to strict free-only Cloudflare Pages/Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.
+- **2026-11-22:** Revised architecture to strict free-only Cloudflare Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.\n- **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.\n- **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 initial migration, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
