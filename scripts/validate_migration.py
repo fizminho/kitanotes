@@ -7,7 +7,7 @@ for migration_path in sorted(Path("migrations").glob("*.sql")):
     db.executescript(migration_path.read_text(encoding="utf-8"))
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
@@ -58,4 +58,9 @@ except sqlite3.IntegrityError:
 else:
     raise SystemExit("Negative rate-limit request count was accepted")
 
-print("D1 migrations valid; foreign keys, workspace/category guard, membership isolation, personal workspace uniqueness, session token uniqueness and request rate-limit constraints verified.")
+db.execute("INSERT INTO push_subscriptions (id,user_id,endpoint,subscription_json,created_at,updated_at) VALUES ('p1','u1','https://fcm.googleapis.com/push/one','{}','now','now')")
+visible_push_to_u2 = db.execute("SELECT id FROM push_subscriptions WHERE user_id='u2'").fetchall()
+if visible_push_to_u2:
+    raise SystemExit("Push subscription query exposed another user's device")
+
+print("D1 migrations valid; foreign keys, workspace/category guard, membership isolation, personal workspace uniqueness, session token uniqueness, request rate limits and per-user push subscriptions verified.")
