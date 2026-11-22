@@ -259,7 +259,7 @@ export default function App() {
           {inviteNotice && <div className="invite-success-banner"><Check size={16}/>{inviteNotice}</div>}
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setCreatedInvite(null); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
