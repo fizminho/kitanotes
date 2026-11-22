@@ -1,4 +1,5 @@
 import { handleAiRequest } from "./ai";
+import { handleOcrRequest } from "./ocr";
 import { handleEventsRequest } from "./events";
 import { handleRemindersRequest } from "./reminders";
 import { handleNotificationsRequest } from "./notifications";
@@ -37,7 +38,8 @@ export default {
         ?? await handleRemindersRequest(request,env)
         ?? await handleNotificationsRequest(request,env)
         ?? await handlePushRequest(request,env)
-        ?? await handleAiRequest(request,env);
+        ?? await handleAiRequest(request,env)
+        ?? await handleOcrRequest(request,env);
       if(!response && url.pathname.startsWith("/api/")) {
         response=json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
       }
