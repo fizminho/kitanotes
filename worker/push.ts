@@ -41,7 +41,7 @@ function validSubscription(value:unknown):value is PushSubscription {
  return validEndpoint(item.endpoint)&&!!keys&&typeof keys.p256dh==="string"&&keys.p256dh.length>=80&&keys.p256dh.length<=100&&typeof keys.auth==="string"&&keys.auth.length>=16&&keys.auth.length<=32;
 }
 
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string}):Promise<void> {,kind:PushKind="test"):Promise<void> {
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string},kind:PushKind="test"):Promise<void> {
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
