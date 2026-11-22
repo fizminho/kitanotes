@@ -29,13 +29,14 @@ CREATE INDEX IF NOT EXISTS ix_google_calendar_connections_workspace ON google_ca
 
 CREATE TABLE IF NOT EXISTS google_calendar_event_map (
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  connection_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   calendar_id TEXT NOT NULL,
   google_event_id TEXT NOT NULL,
   local_event_id TEXT NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
   google_updated_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY(workspace_id, calendar_id, google_event_id),
+  PRIMARY KEY(workspace_id, connection_user_id, calendar_id, google_event_id),
   UNIQUE(local_event_id)
 );
 CREATE INDEX IF NOT EXISTS ix_google_calendar_map_local ON google_calendar_event_map(local_event_id);
