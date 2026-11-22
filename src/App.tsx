@@ -58,7 +58,8 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);\n  const calendarIcsInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const calendarIcsInputRef = useRef<HTMLInputElement>(null);
   const pushToast = useCallback((text:string, tone:"ok"|"error"="ok") => {
     const id = Date.now() + Math.random();
     setToasts(current => [...current.slice(-3), { id, text, tone }]);
