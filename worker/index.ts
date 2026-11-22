@@ -31,6 +31,8 @@ export default {
     let response:Response|null=null;
     if(url.pathname==="/api/health") {
       response=json({service:"kitanotes",environment:env.APP_ENV??"development",ok:true});
+    } else if(url.pathname.startsWith("/api/google-calendar/")||url.pathname.startsWith("/auth/google/calendar/")) {
+      response=json({error:"CALENDAR_OAUTH_REMOVED",message:"Use .ics calendar import and export instead."},410);
     } else {
       response=await handleCalendarIcsRequest(request,env)
         ?? await handleAuthRequest(request,env)
