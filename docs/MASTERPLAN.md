@@ -400,9 +400,9 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Confirm Worker Static Assets for the frontend and API. See ADR-0001.
 - [x] Create and verify the initial D1 workspace/notes migration with SQLite validation in CI. D1 resource provisioning and quota monitoring remain open.
 - [ ] Confirm domain/subdomain and staging/production environments.
-- [x] Create architecture and data-model decision records (ADR-0001 through ADR-0004). Security-specific design review remains open.
-- [x] Bootstrap React/Vite frontend and minimal Worker API shell with pinned direct dependencies. Shared contracts remain outstanding.
-- [x] Verify TypeScript build, Node regression tests, SQLite migration validation and Wrangler dry-run in CI. Successful run: [44996387087](https://github.com/fizminho/kitanotes/actions/runs/44996387087).
+- [x] Create architecture, data-model and security baseline documents (ADR-0001 through ADR-0004, DATA_MODEL.md and SECURITY.md). Security review remains open.
+- [x] Bootstrap React/Vite frontend, Worker API and shared route handlers with pinned direct dependencies. A separate shared-contract package is deferred until the API stabilises.
+- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [44997082960](https://github.com/fizminho/kitanotes/actions/runs/44997082960).
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
