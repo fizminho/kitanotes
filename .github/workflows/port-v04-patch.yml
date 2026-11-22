@@ -1,0 +1,33 @@
+name: Port KitaNotes v0.4 handover patch
+on:
+  push:
+    branches: [port/kitanotes-v0.4-handover]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply upstream handover patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f .kitanotes-v04-patch-applied ]; then
+            echo "Patch already applied."
+            exit 0
+          fi
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/fizminho/bayarlahcloudflare/549324df9428b9037d37307873b6a63b356c2c7e/kitalah%20agent%20handover/kitanotes-v0.4.patch" \
+            --output /tmp/kitanotes-v0.4.patch
+          echo "Patch size: $(wc -c </tmp/kitanotes-v0.4.patch) bytes"
+          git apply --3way --binary /tmp/kitanotes-v0.4.patch
+          touch .kitanotes-v04-patch-applied
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Port KitaNotes v0.4 handover patch"
+          git push origin HEAD:port/kitanotes-v0.4-handover
