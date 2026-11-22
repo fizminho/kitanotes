@@ -72,7 +72,7 @@ async function roleFor(db: Db, workspaceId: string, userId: string): Promise<Rol
   return row?.role ?? null;
 }
 async function personalWorkspace(db: Db, userId: string): Promise<string | null> {
-  const row = await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'")
+  const row = await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND visibility='private'")
     .bind(userId).first<{ id: string }>();
   return row?.id ?? null;
 }
