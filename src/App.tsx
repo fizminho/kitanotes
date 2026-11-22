@@ -105,9 +105,9 @@ export default function App() {
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [googleCalendarStatus,setGoogleCalendarStatus]=useState<GoogleCalendarStatus>({connected:false,lastSyncAt:null,direction:"google_to_kitanotes",readOnly:true});
-  const [googleCalendarBusy,setGoogleCalendarBusy]=useState(false);
-  const [googleCalendarError,setGoogleCalendarError]=useState("");
+  const [holidays,setHolidays]=useState<CalendarItem[]>([]);
+  const [holidayState,setHolidayState]=useState("selangor");
+  const [calendarTransferBusy,setCalendarTransferBusy]=useState(false);
   const [calendarRefresh,setCalendarRefresh]=useState(0);
   const [calendarMode,setCalendarMode]=useState<"month"|"week">("month");
   const [calendarCursor,setCalendarCursor]=useState(()=>new Date());
