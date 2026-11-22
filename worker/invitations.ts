@@ -36,6 +36,9 @@ async function ownerFor(db: Db, workspaceId: string, userId: string): Promise<bo
 }
 function invitationUrl(request: Request, env: AuthEnv, token: string): string {
   const base = new URL(env.APP_BASE_URL?.trim() || new URL(request.url).origin);
+  if (base.protocol !== "https:" && base.hostname !== "localhost" && base.hostname !== "127.0.0.1") {
+    throw new Error("Invitation base URL must use HTTPS outside local development");
+  }
   const link = new URL("/invite/accept", base);
   link.searchParams.set("token", token);
   return link.toString();
