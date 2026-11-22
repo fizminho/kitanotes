@@ -207,14 +207,12 @@ export default function App() {
   async function generateWorkspaceWithAi() {
     if(!workspacePurpose.trim()||workspaceAiBusy)return;
     if(!aiStatus?.configured){setWorkspaceAiError("Gemini is not configured on the server yet. You can still create a workspace manually.");return;}
-    if(!aiStatus.consented){setWorkspaceAiError("Enable text AI consent in Organize with AI first. No workspace details have been sent.");return;}
     setWorkspaceAiBusy(true);setWorkspaceAiError("");
     try{
       const response=await fetch("/api/ai/workspace",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({purpose:workspacePurpose.trim()})});
       const result=await response.json() as {draft?:WorkspaceAiDraft;usage?:{dailyUsed:number;dailyRemaining:number};error?:string};
       if(!response.ok||!result.draft){
         const message=result.error==="AI_NOT_CONFIGURED"?"Gemini is not configured on the server yet."
-          :result.error==="AI_CONSENT_REQUIRED"?"Enable text AI consent in Organize with AI first."
           :result.error==="AI_DAILY_FREE_LIMIT_REACHED"||result.error==="AI_FREE_QUOTA_EXHAUSTED"?"The free Gemini limit has been reached. Try again after the quota resets."
           :result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 shared workspace limit."
           :"Gemini could not prepare this workspace. You can retry or create it manually.";
@@ -1231,14 +1229,13 @@ export default function App() {
       {workspaceModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&!workspaceSaving)setWorkspaceModalOpen(false);}}>
         <section className="composer workspace-composer" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title">
           <header><div><span className="eyebrow">CREATE A SHARED SPACE</span><h2 id="workspace-create-title">Give this space a purpose</h2></div><button className="icon-button" onClick={()=>setWorkspaceModalOpen(false)} aria-label="Close" disabled={workspaceSaving}><X size={19}/></button></header>
-          <p className="workspace-intro">Describe what you want to keep here. Gemini can suggest a workspace name and a tidy set of categories. You review everything before creation.</p>
+          <p className="workspace-intro">Describe what you want to keep here. AI can suggest a workspace name and a tidy set of categories. You review everything before creation.</p>
           <label className="field-label">What is this workspace for?<textarea className="ai-input" rows={4} maxLength={4000} value={workspacePurpose} onChange={event=>{setWorkspacePurpose(event.target.value);setWorkspaceAiDraft(null);}} placeholder="Example: A shared space for our family plans, school information, household tasks and important dates."/></label>
-          <div className="workspace-ai-row"><span className="workspace-ai-status"><Sparkles size={14}/>{!aiStatus?"Checking Gemini…":!aiStatus.configured?"AI setup needed":!aiStatus.consented?"AI consent needed":"Gemini ready"}</span><button className="secondary-button" onClick={generateWorkspaceWithAi} disabled={!workspacePurpose.trim()||workspaceAiBusy||!aiStatus?.configured||!aiStatus.consented}>{workspaceAiBusy?"Designing…":"Suggest with Gemini"}</button></div>
-          {!aiStatus?.consented&&aiStatus?.configured&&<div className="workspace-ai-consent"><p className="ai-privacy-copy">Text AI consent is needed before sending this description to Gemini.</p><button className="text-action" onClick={()=>{setWorkspaceModalOpen(false);setAiModalOpen(true);}}>Review AI privacy settings</button></div>}
-          {workspaceAiDraft&&<div className="workspace-ai-preview"><div className="workspace-ai-preview-heading"><Check size={15}/> Gemini suggestion · review before creating</div><p>{workspaceAiDraft.categories.length} suggested categories</p><div className="workspace-category-suggestions">{workspaceAiDraft.categories.map(category=><div key={category.name}><strong>{category.name}</strong><small>{category.description}</small></div>)}</div></div>}
+          <div className="workspace-ai-row"><span className="workspace-ai-status"><Sparkles size={14}/>{!aiStatus?"Checking AI…":!aiStatus.configured?"AI unavailable":"AI ready"}</span><button className="secondary-button" onClick={generateWorkspaceWithAi} disabled={!workspacePurpose.trim()||workspaceAiBusy||!aiStatus?.configured}>{workspaceAiBusy?"Designing…":"Suggest with AI"}</button></div>
+          {workspaceAiDraft&&<div className="workspace-ai-preview"><div className="workspace-ai-preview-heading"><Check size={15}/> AI suggestion · review before creating</div><p>{workspaceAiDraft.categories.length} suggested categories</p><div className="workspace-category-suggestions">{workspaceAiDraft.categories.map(category=><div key={category.name}><strong>{category.name}</strong><small>{category.description}</small></div>)}</div></div>}
           <label className="field-label">Workspace name<input className="invite-input" value={workspaceName} onChange={event=>setWorkspaceName(event.target.value)} maxLength={60} placeholder="e.g. Family HQ"/></label>
           {workspaceAiError&&<p className="invite-error">{workspaceAiError}</p>}
-          <footer><span>{workspaceAiDraft?"Suggested categories will be added after you confirm.":"You can create it manually or ask Gemini for a starting structure."}</span><button className="primary-button" onClick={saveNewWorkspace} disabled={!workspaceName.trim()||workspaceSaving}>{workspaceSaving?"Creating…":"Create workspace"}</button></footer>
+          <footer><span>{workspaceAiDraft?"Suggested categories will be added after you confirm.":"You can create it manually or ask AI for a starting structure."}</span><button className="primary-button" onClick={saveNewWorkspace} disabled={!workspaceName.trim()||workspaceSaving}>{workspaceSaving?"Creating…":"Create workspace"}</button></footer>
         </section>
       </div>}
 
@@ -1254,56 +1251,39 @@ export default function App() {
 
       {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
         <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
-          <header><div><span className="eyebrow">GEMINI FREE TIER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
-          {!aiStatus?<p className="ai-privacy-copy">Checking AI configuration…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>Add the Gemini API key as a Cloudflare Worker Secret. No text will be sent until the key and your consent are both present.</p></div>:!aiStatus.consented?<><div className="ai-privacy-card">
-            <strong>Before enabling AI, please review this privacy notice.</strong>
-            <p>Your pasted text will be sent to Google Gemini. Google states that content submitted through its free tier may be used to improve its products. Read the <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Gemini pricing and data terms</a> and the <a href="https://github.com/fizminho/kitanotes/blob/main/docs/AI_PRIVACY.md" target="_blank" rel="noreferrer">KitaNotes AI privacy policy</a>. Do not paste passwords, banking details, sensitive personal data or anything you do not want shared with Google.</p>
-            <p>KitaNotes uses only allowlisted free-tier text models, never falls back to a paid model, and stops when the local daily limit or provider quota is reached. Keep the Google Cloud project unlinked from Cloud Billing to maintain the RM0 target.</p>
-            <p>AI results are drafts. KitaNotes will not save a note, create an event or add a reminder until you confirm each action.</p>
-            <label className="ai-consent-check"><input type="checkbox" checked={aiConsentChecked} onChange={event=>setAiConsentChecked(event.target.checked)}/> I understand and consent to sending the text I submit to Google Gemini under these terms.</label>
-            {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><span>Text AI consent is separate. OCR consent does not enable text organisation.</span><button className="primary-button" onClick={enableAi} disabled={!aiConsentChecked||aiConsentSaving}>{aiConsentSaving?"Saving…":"Agree and enable text AI"}</button></footer>
-            </div>
+          <header><div><span className="eyebrow">SMART ORGANISER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          {!aiStatus?<p className="ai-privacy-copy">Checking AI availability…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>AI features will be available once the service is configured.</p></div>:!aiDraft?<div>
+            <p className="ai-privacy-copy">Add text or an image. AI can prepare a note, recommend its category, and identify calendar events, reminders and tasks. Your submitted content is sent to an external AI service for processing. Review all suggestions before saving.</p>
+            <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={7} placeholder="Example: Meeting with Sarah next Tuesday at 10am. Prepare the proposal beforehand and remind me 30 minutes before…"/>
+            <div className="ai-usage-row"><span>{aiInput.length.toLocaleString()} / 16,000 characters</span></div>
             <div className="ai-draft-section">
-              <strong>Use image OCR without enabling text AI</strong>
-              <p className="ai-privacy-copy">OCR consent is separate. Your selected image is sent to Google Gemini for text extraction only, is not stored by KitaNotes, and is not automatically organised or saved.</p>
-              <input className="invite-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
+              <strong>Add an image</strong>
+              <p className="ai-privacy-copy">Choose an image from your photo library or take a new picture. Images are processed for text extraction and are not stored by KitaNotes.</p>
+              <input ref={galleryInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
+              <input ref={cameraInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
+              <div className="image-source-actions"><button className="secondary-button" onClick={()=>galleryInputRef.current?.click()}><Plus size={15}/> Choose from gallery</button><button className="secondary-button" onClick={()=>cameraInputRef.current?.click()}><Plus size={15}/> Take a photo</button></div>
+              {ocrFile&&<div className="selected-image-row"><span>{ocrFile.name}</span><button className="text-action" onClick={()=>{setOcrFile(null);setOcrText("");}}>Remove image</button></div>}
               {ocrPreviewUrl&&<img className="ocr-image-preview" src={ocrPreviewUrl} alt="Selected image preview"/>}
-              <label className="ai-consent-check"><input type="checkbox" checked={ocrConsentChecked} onChange={event=>setOcrConsentChecked(event.target.checked)}/> I consent to sending this image to Google Gemini for OCR under its free-tier data terms.</label>
-              <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||!ocrConsentChecked||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
-              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><p className="ai-privacy-copy">After enabling text AI, you can ask Gemini to prepare a note and calendar draft from this extracted text.</p></>}
-              <button className="text-action" onClick={revokeOcrConsent}>Revoke OCR consent</button>
-            </div></>:!aiDraft?<div>
-            <p className="ai-privacy-copy">Paste unstructured text. Gemini will suggest a clean note, categories, events, reminders and tasks. Review everything before saving.</p>
-            <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={9} placeholder="Example: Meeting with Sarah next Tuesday at 10am. Prepare the proposal beforehand and remind me 30 minutes before…"/>
-            <div className="ai-usage-row"><span>{aiInput.length.toLocaleString()} / 16,000 characters</span><span>{aiStatus.dailyRemaining} free requests left today</span></div>
-            <div className="ai-draft-section">
-              <strong>Scan an image with Gemini OCR</strong>
-              <p className="ai-privacy-copy">Choose a receipt, document or handwritten note. The image is sent to Google Gemini and is not stored by KitaNotes. Printed text works best; handwriting is best-effort.</p>
-              <input className="invite-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
-              {ocrPreviewUrl&&<img className="ocr-image-preview" src={ocrPreviewUrl} alt="Selected image preview"/>}
-              <label className="ai-consent-check"><input type="checkbox" checked={ocrConsentChecked} onChange={event=>setOcrConsentChecked(event.target.checked)}/> I consent to sending this image to Google Gemini for OCR under its free-tier data terms. I will not upload sensitive identity or banking documents.</label>
-              <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||!ocrConsentChecked||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
-              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="primary-button" onClick={()=>organizeWithAi(ocrText)} disabled={aiWorking||!aiStatus.consented||new TextEncoder().encode(ocrText).byteLength>16000}>{aiWorking?"Preparing note & calendar…":"AI: prepare note & calendar"}</button><small className="ai-privacy-copy">AI will suggest what belongs in a note and which dates belong on your calendar. Review and confirm each action.</small></>}
+              <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
+              {ocrText!==""&&<label className="field-label">Review extracted text<textarea className="ai-input" rows={5} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label>}
             </div>
             {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><button className="text-action" onClick={revokeAiConsent}>Revoke AI consent</button><button className="primary-button" onClick={()=>organizeWithAi()} disabled={!aiInput.trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize text"}</button></footer>
+            <footer><button className="primary-button" onClick={()=>organizeWithAi(ocrText||aiInput)} disabled={!(ocrText||aiInput).trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize"}</button></footer>
           </div>:<div className="ai-draft">
-            <div className="ai-draft-banner"><Sparkles size={15}/> Draft only. Nothing has been saved yet.</div>
+            <div className="ai-draft-banner"><Sparkles size={15}/> Review your suggestions before saving.</div>
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
             <label className="field-label">Note title<input className="invite-input" value={aiDraftTitle} onChange={event=>setAiDraftTitle(event.target.value)} maxLength={200}/></label>
             <label className="field-label">Note content<textarea className="ai-input" value={aiDraftContent} onChange={event=>setAiDraftContent(event.target.value)} rows={6} maxLength={50000}/></label>
-            {aiDraft.suggestedCategories.length>0&&<div className="ai-draft-section"><strong>Suggested categories</strong>{aiDraft.suggestedCategories.map(category=><div key={category.name}><b>{category.name}</b><small>{category.reason}</small></div>)}<button className="secondary-button" onClick={createAiCategories} disabled={categorySaving||aiCategoriesCreated}>{categorySaving?"Creating…":aiCategoriesCreated?"Categories added":"Add suggested categories"}</button></div>}
-            <label className="field-label">Save note in category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-            {aiDraft.events.length>0&&<div className="ai-draft-section"><strong>Events</strong>{aiDraft.events.map((event,index)=><div key={index}><b>{event.title}</b><small>{event.startLocal} to {event.endLocal} ({event.timezone}){event.reminderLocal?" · reminder "+event.reminderLocal:""}</small></div>)}</div>}
+            {aiDraft.categorySuggestion&&<div className="ai-category-recommendation"><div><strong>Recommended category</strong><span>{aiDraft.categorySuggestion.name}</span><small>{aiDraft.categorySuggestion.reason||"Based on the note content."}</small></div><badge className="not-used">{aiDraft.categorySuggestion.createNew?"New category":"Existing category"}</badge></div>}
+            <label className="field-label">Save note in category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}{aiDraft.categorySuggestion?.createNew&&<option value="__ai_new_category__">Create new: {aiDraft.categorySuggestion.name}</option>}</select></label>
+            {aiDraft.events.length>0&&<div className="ai-draft-section"><strong>Calendar events</strong>{aiDraft.events.map((event,index)=><div key={index}><b>{event.title}</b><small>{event.startLocal} to {event.endLocal} ({event.timezone}){event.reminderLocal?" · reminder "+event.reminderLocal:""}</small></div>)}</div>}
             {aiDraft.reminders.length>0&&<div className="ai-draft-section"><strong>Reminders</strong>{aiDraft.reminders.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal} ({item.timezone})</small></div>)}</div>}
             {aiDraft.tasks.length>0&&<div className="ai-draft-section"><strong>Tasks</strong>{aiDraft.tasks.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal||"No due date supplied"}</small></div>)}</div>}
             {aiDraft.clarifyingQuestions.length>0&&<div className="ai-questions"><strong>Needs clarification</strong>{aiDraft.clarifyingQuestions.map((question,index)=><p key={index}>{question}</p>)}</div>}
             {aiError&&<p className="invite-error">{aiError}</p>}
-            {aiNoteSaved&&<p className="ai-saved">Note saved to your workspace.</p>}
-            {aiItemsCreated&&<p className="ai-saved">Suggested events and reminders created.</p>}
-            <footer><button className="text-action" onClick={()=>{setAiDraft(null);setAiError("");}}>Start over</button><button className="secondary-button" onClick={createAiItems} disabled={aiCreatingItems||aiItemsCreated||(!aiDraft.events.length&&!aiDraft.reminders.length&&!aiDraft.tasks.some(task=>task.dueLocal))}>{aiCreatingItems?"Creating…":aiItemsCreated?"Items created":"Create events & reminders"}</button><button className="primary-button" onClick={saveAiNote} disabled={aiSavingNote||aiNoteSaved||!aiDraftTitle.trim()}>{aiSavingNote?"Saving…":aiNoteSaved?"Note saved":"Save note"}</button></footer>
-            <button className="text-action ai-revoke" onClick={revokeAiConsent}>Revoke AI consent</button>
+            {aiNoteSaved&&<p className="ai-saved">Note saved. Calendar items still need attention.</p>}
+            {aiItemsCreated&&<p className="ai-saved">Calendar items saved.</p>}
+            <footer><button className="text-action" onClick={()=>{setAiDraft(null);setAiError("");setAiNoteSaved(false);setAiItemsCreated(false);setAiCreatedItems([]);}}>Start over</button><button className="primary-button" onClick={saveAiNote} disabled={aiSavingNote||aiCreatingItems||!aiDraftTitle.trim()}>{aiSavingNote?"Saving…":aiNoteSaved?"Finish saving calendar":"Save note & calendar"}</button></footer>
           </div>}
         </section>
       </div>}
