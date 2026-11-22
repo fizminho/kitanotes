@@ -207,3 +207,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 [data-theme=dark] .notification-settings[open]>summary{border-color:#2c2b52}
 [data-theme=dark] .notification-settings-content>label{color:#c3c5d3}
 [data-theme=dark] .notification-settings-note,[data-theme=dark] .notification-settings>summary small{color:#9a9db0}
+
+/* Notification content stays readable on narrow screens and long note previews. */
+.notification-item{min-width:0;overflow:hidden}
+.notification-item strong,.notification-item span{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.notification-item strong{-webkit-line-clamp:2;line-height:1.35}
+.notification-item span{-webkit-line-clamp:3;line-height:1.45}
+@media(max-width:760px){.topbar-action.logout-action{width:auto;padding:0 9px;font-size:10px}.topbar-action.logout-action svg{width:13px;height:13px}}
