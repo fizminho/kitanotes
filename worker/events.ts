@@ -5,7 +5,7 @@ type Db = NonNullable<AuthEnv["DB"]>;
 type Role = "owner" | "editor" | "viewer";
 type EventRow = {
   id:string; workspace_id:string; title:string; description:string; starts_at_utc:string; ends_at_utc:string;
-  timezone:string; all_day:number; linked_note_id:string|null; created_by_user_id:string; version:number;
+  timezone:string; all_day:number; linked_note_id:string|null; created_by_user_id:string; created_by_name?:string|null; created_by_email?:string|null; updated_by_user_id?:string|null; updated_by_name?:string|null; updated_by_email?:string|null; version:number;
   created_at:string; updated_at:string; deleted_at:string|null;
 };
 
@@ -46,7 +46,7 @@ async function noteInWorkspace(db:Db,noteId:string|null,workspaceId:string):Prom
   return Boolean(row);
 }
 function dto(row:EventRow) {
-  return {id:row.id,workspaceId:row.workspace_id,title:row.title,description:row.description,startsAt:row.starts_at_utc,endsAt:row.ends_at_utc,timezone:row.timezone,allDay:Boolean(row.all_day),linkedNoteId:row.linked_note_id,createdBy:row.created_by_user_id,version:row.version,createdAt:row.created_at,updatedAt:row.updated_at,deletedAt:row.deleted_at};
+  return {id:row.id,workspaceId:row.workspace_id,title:row.title,description:row.description,startsAt:row.starts_at_utc,endsAt:row.ends_at_utc,timezone:row.timezone,allDay:Boolean(row.all_day),linkedNoteId:row.linked_note_id,createdBy:row.created_by_user_id,createdByName:row.created_by_name??null,createdByEmail:row.created_by_email??null,updatedBy:row.updated_by_user_id??null,updatedByName:row.updated_by_name??null,updatedByEmail:row.updated_by_email??null,version:row.version,createdAt:row.created_at,updatedAt:row.updated_at,deletedAt:row.deleted_at};
 }
 async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Response> {
   const db=env.DB!;
@@ -61,8 +61,8 @@ async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Res
   if(workspaceId&&!(await roleFor(db,workspaceId,userId))) return json({error:"NOT_FOUND"},404);
   const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit"))||100));
   const result=workspaceId
-    ? await db.prepare("SELECT * FROM calendar_events WHERE workspace_id=? AND deleted_at IS NULL AND starts_at_utc<? AND ends_at_utc>=? ORDER BY starts_at_utc LIMIT ?").bind(workspaceId,to,from,limit).all<EventRow>()
-    : await db.prepare("SELECT e.* FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
+    ? await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.workspace_id=? AND deleted_at IS NULL AND starts_at_utc<? AND ends_at_utc>=? ORDER BY starts_at_utc LIMIT ?").bind(workspaceId,to,from,limit).all<EventRow>()
+    : await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
   return json({events:result.results.map(dto),from,to});
 }
 async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Response> {
@@ -83,15 +83,16 @@ async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Re
   if(linkedNoteId===undefined||!(await noteInWorkspace(db,linkedNoteId,workspaceId))) return json({error:"INVALID_LINKED_NOTE"},400);
   const id=crypto.randomUUID(); const now=new Date().toISOString();
   try {
-    await db.prepare("INSERT INTO calendar_events (id,workspace_id,title,description,starts_at_utc,ends_at_utc,timezone,all_day,linked_note_id,created_by_user_id,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)")
-      .bind(id,workspaceId,title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,now,now).run();
+    await db.prepare("INSERT INTO calendar_events (id,workspace_id,title,description,starts_at_utc,ends_at_utc,timezone,all_day,linked_note_id,created_by_user_id,updated_by_user_id,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)")
+      .bind(id,workspaceId,title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,userId,now,now).run();
   } catch { return json({error:"EVENT_CREATE_FAILED"},400); }
-  const row=await db.prepare("SELECT * FROM calendar_events WHERE id=?").bind(id).first<EventRow>();
+  await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
+  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
 async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Promise<Response> {
   const db=env.DB!;
-  const row=await db.prepare("SELECT * FROM calendar_events WHERE id=? AND deleted_at IS NULL").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
   if(!row||!(await roleFor(db,row.workspace_id,userId))) return json({error:"NOT_FOUND"},404);
   if(request.method==="GET") return json({event:dto(row)});
   const role=await roleFor(db,row.workspace_id,userId);
@@ -101,9 +102,10 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
     const body=await readJsonBody(request);
     if(!body||Number(body.version)!==row.version) return json({error:"VERSION_CONFLICT",currentVersion:row.version},409);
     const now=new Date().toISOString();
-    const result=await db.prepare("UPDATE calendar_events SET deleted_at=?,updated_at=?,version=version+1 WHERE id=? AND version=? AND deleted_at IS NULL").bind(now,now,id,row.version).run();
+    const result=await db.prepare("UPDATE calendar_events SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND version=? AND deleted_at IS NULL").bind(now,now,userId,id,row.version).run();
     if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
     await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE event_id=? AND status='pending'").bind(now,now,id).run();
+    await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.deleted','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
     return json({ok:true});
   }
   if(request.method!=="PATCH") return json({error:"METHOD_NOT_ALLOWED"},405);
@@ -119,10 +121,11 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
   const linkedNoteId=body.linkedNoteId===undefined?row.linked_note_id:(body.linkedNoteId===null||body.linkedNoteId===""?null:(typeof body.linkedNoteId==="string"?cleanText(body.linkedNoteId,64):undefined));
   if(!Number.isInteger(version)||version!==row.version||!title||description===null||!starts||!ends||ends<=starts||!timezone||typeof allDay!=="boolean"||linkedNoteId===undefined||!(await noteInWorkspace(db,linkedNoteId,row.workspace_id))) return json({error:"INVALID_OR_STALE_EVENT",currentVersion:row.version},409);
   const now=new Date().toISOString();
-  const result=await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,linked_note_id=?,version=version+1,updated_at=? WHERE id=? AND version=? AND deleted_at IS NULL")
-    .bind(title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,now,id,version).run();
+  const result=await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,linked_note_id=?,updated_by_user_id=?,version=version+1,updated_at=? WHERE id=? AND version=? AND deleted_at IS NULL")
+    .bind(title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,now,id,version).run();
   if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
-  const updated=await db.prepare("SELECT * FROM calendar_events WHERE id=?").bind(id).first<EventRow>();
+  await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.updated','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
+  const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
 export async function handleEventsRequest(request:Request,env:AuthEnv):Promise<Response|null> {
