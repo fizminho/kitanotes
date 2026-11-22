@@ -62,7 +62,7 @@ async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Res
   const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit"))||100));
   const result=workspaceId
     ? await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.workspace_id=? AND deleted_at IS NULL AND starts_at_utc<? AND ends_at_utc>=? ORDER BY starts_at_utc LIMIT ?").bind(workspaceId,to,from,limit).all<EventRow>()
-    : await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
+    : await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
   return json({events:result.results.map(dto),from,to});
 }
 async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Response> {
@@ -87,12 +87,12 @@ async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Re
       .bind(id,workspaceId,title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,userId,now,now).run();
   } catch { return json({error:"EVENT_CREATE_FAILED"},400); }
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
-  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
 async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Promise<Response> {
   const db=env.DB!;
-  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
   if(!row||!(await roleFor(db,row.workspace_id,userId))) return json({error:"NOT_FOUND"},404);
   if(request.method==="GET") return json({event:dto(row)});
   if(row.google_imported) return json({error:"GOOGLE_IMPORTED_EVENT_READ_ONLY"},403);
@@ -126,7 +126,7 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
     .bind(title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,now,id,version).run();
   if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.updated','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
-  const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
+  const updated=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
 export async function handleEventsRequest(request:Request,env:AuthEnv):Promise<Response|null> {
