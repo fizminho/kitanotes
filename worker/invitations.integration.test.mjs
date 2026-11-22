@@ -94,7 +94,7 @@ test("owner creates one-time Gmail handoff invite and verified invitee accepts i
 });
 
 test("open workspace invite link can be reused by multiple signed-in Google users", async () => {
-  const {env,db,tokens}=await setup();
+  const {env,db,tokens}=seed();
   try {
     db.sqlite.prepare("DELETE FROM workspace_members WHERE workspace_id='w1' AND user_id='u3'").run();
     const created=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",openLink:true,role:"viewer"}),env);
