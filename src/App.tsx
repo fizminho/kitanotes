@@ -150,7 +150,7 @@ export default function App() {
   const [aiInput, setAiInput] = useState("");
   const [ocrFile,setOcrFile] = useState<File|null>(null);
   const [ocrWorking,setOcrWorking] = useState(false);
-  const [ocrText,setOcrText] = useState("");
+
   const [ocrPreviewUrl,setOcrPreviewUrl] = useState("");
   const [aiWorking, setAiWorking] = useState(false);
   const [aiError, setAiError] = useState("");
@@ -684,7 +684,7 @@ export default function App() {
 
   async function scanImageWithAi() {
     if(!ocrFile||ocrWorking)return;
-    setOcrWorking(true);setAiError("");setOcrText("");
+    setOcrWorking(true);setAiError("");setAiInput("");
     try{
       const prepared=await prepareImageForOcr(ocrFile);
       if(prepared.size>2*1024*1024)throw new Error("This image is still larger than 2 MB after preparation. Please choose a smaller image.");
@@ -697,7 +697,7 @@ export default function App() {
           :"Image processing is temporarily unavailable. Your image has not been saved.";
         throw new Error(message);
       }
-      setOcrText(result.text);
+      if(!result.text.trim())throw new Error("No clear, meaningful text was found in this image. Try a sharper photo with the text fully visible.");\n      setAiInput(result.text);
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to read this image.");}
     finally{setOcrWorking(false);}
   }
@@ -761,7 +761,7 @@ export default function App() {
         const itemsSaved=await createAiItems();
         if(!itemsSaved)return;
       }
-      setAiModalOpen(false);setAiDraft(null);setAiInput("");setOcrFile(null);setOcrText("");
+      setAiModalOpen(false);setAiDraft(null);setAiInput("");setOcrFile(null);setAiInput("");
       pushToast(hasCalendarItems?"Note and calendar items saved":"Note saved");
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to save this note.");}
     finally{setAiSavingNote(false);}
@@ -1328,22 +1328,22 @@ export default function App() {
         <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
           <header><div><span className="eyebrow">CREATE WITH AI</span><h2 id="ai-title">AI Note Assistant</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
           {!aiStatus?<p className="ai-privacy-copy">Checking AI availability…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>AI features will be available once the service is configured.</p></div>:!aiDraft?<div>
-            <p className="ai-privacy-copy">Describe what you want to capture or choose an image. AI can draft a note, detect events and prepare reminders. Text or images you submit are processed by an external AI service. Review the result before saving.</p>
+            <p className="ai-privacy-copy">Describe what you want to capture or choose an image. AI can draft a note, detect events and prepare reminders. Text or images you submit are processed by an external AI service. Check the generated note before saving.</p>
             <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={7} placeholder="Example: Meeting with Sarah next Tuesday at 10 AM. I need to finish the proposal beforehand and remind me 30 minutes early…"/>
             <div className="ai-usage-row"><span>{aiInput.length.toLocaleString()} / 16,000 characters</span></div>
             <div className="ai-draft-section">
               <strong>Add an image</strong>
-              <p className="ai-privacy-copy">Choose an image from your photo library or take a new picture. Images are processed for text extraction and are not stored by KitaNotes.</p>
+              <p className="ai-privacy-copy">Choose an image from your photo library or take a new picture. Images are checked for clear, useful text. Unreadable fragments and visual noise are discarded. Images are not stored by KitaNotes.</p>
               <input ref={galleryInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
               <input ref={cameraInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
               <div className="image-source-actions"><button className="secondary-button" onClick={()=>galleryInputRef.current?.click()}><Plus size={15}/> Choose from gallery</button><button className="secondary-button" onClick={()=>cameraInputRef.current?.click()}><Plus size={15}/> Take a photo</button></div>
               {ocrFile&&<div className="selected-image-row"><span>{ocrFile.name}</span><button className="text-action" onClick={()=>{setOcrFile(null);setOcrText("");}}>Remove image</button></div>}
               {ocrPreviewUrl&&<img className="ocr-image-preview" src={ocrPreviewUrl} alt="Selected image preview"/>}
-              <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
-              {ocrText!==""&&<label className="field-label">Review extracted text<textarea className="ai-input" rows={5} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label>}
+              <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||ocrWorking}>{ocrWorking?"Reading image…":"Add extracted text to note"}</button>
+
             </div>
             {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><button className="primary-button" onClick={()=>organizeWithAi(ocrText||aiInput)} disabled={!(ocrText||aiInput).trim()||aiWorking}>{aiWorking?"Preparing…":"Create draft"}</button></footer>
+            <footer><button className="primary-button" onClick={()=>organizeWithAi(aiInput)} disabled={!aiInput.trim()||aiWorking}>{aiWorking?"Preparing…":"Create draft"}</button></footer>
           </div>:<div className="ai-draft">
             <div className="ai-draft-banner"><Sparkles size={15}/> Review your suggestions before saving.</div>
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
