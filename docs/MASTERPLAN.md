@@ -409,7 +409,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [x] Create architecture, data-model and security baseline documents (ADR-0001 through ADR-0004, DATA_MODEL.md and SECURITY.md). Security review remains open.
 - [x] Bootstrap React/Vite frontend, Worker API and shared route handlers with pinned direct dependencies. A separate shared-contract package is deferred until the API stabilises.
-- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [45001120864](https://github.com/fizminho/kitanotes/actions/runs/45001120864).
+- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [45001187511](https://github.com/fizminho/kitanotes/actions/runs/45001187511).
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
