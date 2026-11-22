@@ -10,5 +10,13 @@ export default { async fetch(request:Request,env:Env):Promise<Response> {
  const notesResponse=await handleNotesRequest(request,env);
  if(notesResponse) return notesResponse;
  if(url.pathname.startsWith("/api/")) return json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
- return env.ASSETS.fetch(request);
+ const response = await env.ASSETS.fetch(request);
+ const headers = new Headers(response.headers);
+ headers.set("x-content-type-options", "nosniff");
+ headers.set("x-frame-options", "DENY");
+ headers.set("referrer-policy", "no-referrer");
+ headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+ headers.set("content-security-policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self'");
+ if (url.protocol === "https:") headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+ return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }} satisfies ExportedHandler<Env>;
