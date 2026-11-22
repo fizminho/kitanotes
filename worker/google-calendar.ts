@@ -42,8 +42,9 @@ async function workspaceRole(db: Db, workspaceId: string, userId: string): Promi
   const row = await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId, userId).first<{ role: string }>();
   return row?.role ?? null;
 }
-function redirect(request: Request, env: CalendarEnv, result: string): Response {
+function redirect(request: Request, env: CalendarEnv, result: string, workspaceId?: string): Response {
   const target = new URL("/", baseUrl(request, env)); target.searchParams.set("googleCalendar", result);
+  if (workspaceId) target.searchParams.set("googleCalendarWorkspace", workspaceId);
   return new Response(null, { status: 302, headers: { location: target.toString(), "cache-control": "no-store" } });
 }
 
@@ -64,8 +65,8 @@ async function startConnect(request: Request, env: CalendarEnv): Promise<Respons
   const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authorize.search = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID, redirect_uri: new URL(REDIRECT_PATH, baseUrl(request, env)).toString(),
-    response_type: "code", scope: "openid email profile " + SCOPE, access_type: "offline", prompt: "consent select_account",
-    include_granted_scopes: "false", state, code_challenge: challenge, code_challenge_method: "S256"
+    response_type: "code", scope: "openid email profile " + SCOPE, access_type: "offline", prompt: "consent",
+    login_hint: user.email, include_granted_scopes: "true", state, code_challenge: challenge, code_challenge_method: "S256"
   }).toString();
   return new Response(null, { status: 302, headers: { location: authorize.toString(), "cache-control": "no-store" } });
 }
@@ -101,7 +102,7 @@ async function completeConnect(request: Request, env: CalendarEnv): Promise<Resp
   const now = new Date().toISOString();
   await env.DB.prepare("INSERT INTO google_calendar_connections (id,user_id,workspace_id,calendar_id,refresh_token_ciphertext,sync_token,last_sync_at,created_at,updated_at) VALUES (?,?,?,'primary',?,NULL,NULL,?,?) ON CONFLICT(user_id,workspace_id) DO UPDATE SET refresh_token_ciphertext=excluded.refresh_token_ciphertext,sync_token=NULL,last_sync_at=NULL,updated_at=excluded.updated_at")
     .bind(crypto.randomUUID(), user.id, row.workspace_id, encrypted, now, now).run();
-  return redirect(request, env, "connected");
+  return redirect(request, env, "connected", row.workspace_id);
 }
 
 async function accessToken(env: CalendarEnv, connection: { refresh_token_ciphertext: string }): Promise<string> {
