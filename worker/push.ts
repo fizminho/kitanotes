@@ -6,8 +6,9 @@ type StoredSubscription = { id:string; endpoint:string; subscription_json:string
 
 function json(data:unknown,status=200):Response { return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}}); }
 function sameOrigin(request:Request):boolean { return request.headers.get("origin")===new URL(request.url).origin; }
-function vapid(env:PushEnv):VapidKeys { return {subject:env.VAPID_SUBJECT,publicKey:env.VAPID_PUBLIC_KEY,privateKey:env.VAPID_PRIVATE_KEY}; }
-function pushConfigured(env:PushEnv):boolean { return Boolean(env.VAPID_PUBLIC_KEY&&env.VAPID_PRIVATE_KEY&&env.VAPID_SUBJECT); }
+type VapidEnv=Pick<PushEnv,"VAPID_PUBLIC_KEY"|"VAPID_PRIVATE_KEY"|"VAPID_SUBJECT">;
+function vapid(env:VapidEnv):VapidKeys { return {subject:env.VAPID_SUBJECT,publicKey:env.VAPID_PUBLIC_KEY,privateKey:env.VAPID_PRIVATE_KEY}; }
+function pushConfigured(env:VapidEnv):boolean { return Boolean(env.VAPID_PUBLIC_KEY&&env.VAPID_PRIVATE_KEY&&env.VAPID_SUBJECT); }
 function validEndpoint(value:unknown):value is string {
  if(typeof value!=="string"||value.length>2048)return false;
  try {
@@ -26,7 +27,7 @@ function validSubscription(value:unknown):value is PushSubscription {
  return validEndpoint(item.endpoint)&&!!keys&&typeof keys.p256dh==="string"&&keys.p256dh.length>=80&&keys.p256dh.length<=100&&typeof keys.auth==="string"&&keys.auth.length>=16&&keys.auth.length<=32;
 }
 
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:PushEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string}):Promise<void> {
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string}):Promise<void> {
  if(!pushConfigured(env))return;
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  for(const row of rows.results){
