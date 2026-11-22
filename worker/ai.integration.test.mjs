@@ -3,10 +3,18 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { handleAiRequest, getFreeGeminiModelCandidates, validateAiDraft, validateWorkspaceAiDraft } from "./ai.ts";
+import { handleAiRequest, getFreeGeminiModelCandidates, validateAiDraft, validateWorkspaceAiDraft, buildPrompt } from "./ai.ts";
 import { handleNotesRequest } from "./notes.ts";
 
-class D1TestDatabase {
+
+test("AI note prompt writes in the user's voice and matches the input language",()=>{
+  const prompt=buildPrompt("user planned to fishing at xxx","Asia/Kuala_Lumpur","2026-11-22T07:00:00.000Z",[]);
+  assert.match(prompt,/write the note as if you are the user/i);
+  assert.match(prompt,/never describe the user in third person/i);
+  assert.match(prompt,/I am planning to go fishing at xxx/i);
+  assert.match(prompt,/Malay stays Malay; English stays English/i);
+});
+\nclass D1TestDatabase {
   constructor(){
     this.sqlite=new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
