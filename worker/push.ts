@@ -41,8 +41,16 @@ function validSubscription(value:unknown):value is PushSubscription {
  return validEndpoint(item.endpoint)&&!!keys&&typeof keys.p256dh==="string"&&keys.p256dh.length>=80&&keys.p256dh.length<=100&&typeof keys.auth==="string"&&keys.auth.length>=16&&keys.auth.length<=32;
 }
 
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string}):Promise<void> {
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string}):Promise<void> {,kind:PushKind="test"):Promise<void> {
  if(!pushConfigured(env))return;
+ let preferences:PushPreferenceRow;
+ try {
+  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,quiet_hours_start,quiet_hours_end,timezone FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"};
+ } catch { return; }
+ if(preferences.push_enabled!==1)return;
+ if(kind==="reminder"&&preferences.reminder_push_enabled!==1)return;
+ if(kind==="shared_note"&&preferences.shared_note_push_enabled!==1)return;
+ if(kind!=="test"&&inQuietHours(preferences))return;
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  for(const row of rows.results){
   try {
