@@ -24,14 +24,14 @@ interface Env {
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}});
 
 export default {
-  async fetch(request:Request,env:Env):Promise<Response> {
+  async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response> {
     const url=new URL(request.url);
     let response:Response|null=null;
     if(url.pathname==="/api/health") {
       response=json({service:"kitanotes",environment:env.APP_ENV??"development",ok:true});
     } else {
       response=await handleAuthRequest(request,env)
-        ?? await handleNotesRequest(request,env)
+        ?? await handleNotesRequest(request,env,ctx)
         ?? await handleInvitationsRequest(request,env)
         ?? await handleEventsRequest(request,env)
         ?? await handleRemindersRequest(request,env)
