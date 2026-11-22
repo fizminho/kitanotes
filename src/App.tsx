@@ -38,6 +38,7 @@ type AiDraft = {
   clarifyingQuestions:string[];
 };
 type AiStatus = {configured:boolean;consented:boolean;dailyLimit:number;dailyUsed:number;dailyRemaining:number};
+type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
@@ -63,6 +64,13 @@ export default function App() {
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
   const [workspaceCreating,setWorkspaceCreating]=useState(false);
+  const [workspaceModalOpen,setWorkspaceModalOpen]=useState(false);
+  const [workspaceName,setWorkspaceName]=useState("");
+  const [workspacePurpose,setWorkspacePurpose]=useState("");
+  const [workspaceAiBusy,setWorkspaceAiBusy]=useState(false);
+  const [workspaceSaving,setWorkspaceSaving]=useState(false);
+  const [workspaceAiDraft,setWorkspaceAiDraft]=useState<WorkspaceAiDraft|null>(null);
+  const [workspaceAiError,setWorkspaceAiError]=useState("");
   const [authStatus, setAuthStatus] = useState<"loading" | "signed_out" | "ready" | "unavailable">("loading");
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -192,21 +200,55 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  async function createPersonalWorkspace() {
+  function createPersonalWorkspace() {
     if(workspaceCreating)return;
-    const name=window.prompt("Name your new shared space (you can invite people to it afterwards)");
-    if(!name?.trim())return;
-    setWorkspaceCreating(true);
-    try {
-      const response=await fetch("/api/workspaces",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({name:name.trim()})});
+    setWorkspaceName("");setWorkspacePurpose("");setWorkspaceAiDraft(null);setWorkspaceAiError("");setWorkspaceModalOpen(true);
+  }
+
+  async function generateWorkspaceWithAi() {
+    if(!workspacePurpose.trim()||workspaceAiBusy)return;
+    if(!aiStatus?.configured){setWorkspaceAiError("Gemini is not configured on the server yet. You can still create a workspace manually.");return;}
+    if(!aiStatus.consented){setWorkspaceAiError("Enable text AI consent in Organize with AI first. No workspace details have been sent.");return;}
+    setWorkspaceAiBusy(true);setWorkspaceAiError("");
+    try{
+      const response=await fetch("/api/ai/workspace",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({purpose:workspacePurpose.trim()})});
+      const result=await response.json() as {draft?:WorkspaceAiDraft;usage?:{dailyUsed:number;dailyRemaining:number};error?:string};
+      if(!response.ok||!result.draft){
+        const message=result.error==="AI_NOT_CONFIGURED"?"Gemini is not configured on the server yet."
+          :result.error==="AI_CONSENT_REQUIRED"?"Enable text AI consent in Organize with AI first."
+          :result.error==="AI_DAILY_FREE_LIMIT_REACHED"||result.error==="AI_FREE_QUOTA_EXHAUSTED"?"The free Gemini limit has been reached. Try again after the quota resets."
+          :result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 shared workspace limit."
+          :"Gemini could not prepare this workspace. You can retry or create it manually.";
+        throw new Error(message);
+      }
+      setWorkspaceAiDraft(result.draft);setWorkspaceName(result.draft.name);
+      if(result.usage&&aiStatus)setAiStatus({...aiStatus,dailyUsed:result.usage.dailyUsed,dailyRemaining:result.usage.dailyRemaining});
+    }catch(error){setWorkspaceAiError(error instanceof Error?error.message:"Unable to prepare a workspace with AI.");}
+    finally{setWorkspaceAiBusy(false);}
+  }
+
+  async function saveNewWorkspace() {
+    const name=workspaceName.trim();
+    if(!name||workspaceSaving)return;
+    setWorkspaceSaving(true);setWorkspaceAiError("");
+    try{
+      const response=await fetch("/api/workspaces",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({name})});
       const result=await response.json() as {workspace?:Workspace;error?:string};
-      if(!response.ok||!result.workspace)throw new Error(result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 shared space limit.":"Unable to create workspace.");
-      setWorkspaces(current=>[...current,result.workspace!]);
-      setActiveWorkspaceId(result.workspace.id);
-      setSelectedCategoryId("");
-      setView("notes");
-    } catch(error){window.alert(error instanceof Error?error.message:"Unable to create workspace.");}
-    finally{setWorkspaceCreating(false);}
+      if(!response.ok||!result.workspace)throw new Error(result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 shared workspace limit.":result.error==="INVALID_WORKSPACE_NAME"?"Workspace names must be between 1 and 60 characters.":"Unable to create workspace.");
+      const created=result.workspace;
+      setWorkspaces(current=>[...current,created]);setActiveWorkspaceId(created.id);setSelectedCategoryId("");setView("notes");
+      let categoriesAdded=0;
+      if(workspaceAiDraft?.categories.length){
+        for(const [index,category] of workspaceAiDraft.categories.entries()){
+          const categoryResponse=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:created.id,name:category.name,color:"#766bd0",sortOrder:index})});
+          if(categoryResponse.ok)categoriesAdded++;else if(categoryResponse.status!==409)break;
+        }
+      }
+      setWorkspaceModalOpen(false);setWorkspaceAiDraft(null);setWorkspacePurpose("");setWorkspaceName("");
+      if(workspaceAiDraft?.categories.length&&categoriesAdded!==workspaceAiDraft.categories.length)pushToast("Workspace created. Some suggested categories could not be added.","error");
+      else pushToast(workspaceAiDraft?"Workspace and AI categories created":"Workspace created");
+    }catch(error){setWorkspaceAiError(error instanceof Error?error.message:"Unable to create workspace.");}
+    finally{setWorkspaceSaving(false);}
   }
 
   useEffect(()=>{
@@ -1098,6 +1140,7 @@ export default function App() {
           <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}</select></label>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
+            {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={14}/> New space</button>}
             <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
             {user ? <span className="signed-in-label">{user.displayName ?? user.email}</span> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
@@ -1138,7 +1181,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New shared space</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New space</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
@@ -1168,7 +1211,7 @@ export default function App() {
 
           {view === "calendar" && <section className="calendar-section">
             {eventsError&&<div className="inline-error">{eventsError}</div>}
-            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div><div className="google-calendar-actions">{activeWorkspace?.role!=="viewer"&&(googleCalendarStatus.connected?<><button className="secondary-button" onClick={syncGoogleCalendar} disabled={googleCalendarBusy}>{googleCalendarBusy?"Syncing…":"Sync Google Calendar"}</button><button className="text-action" onClick={disconnectGoogleCalendar} disabled={googleCalendarBusy}>Disconnect</button></>:<button className="secondary-button" onClick={connectGoogleCalendar}>Connect Google Calendar</button>)}</div></div>
+            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div><div className="google-calendar-actions">{activeWorkspace?.role!=="viewer"&&(googleCalendarStatus.connected?<><button className="secondary-button" onClick={syncGoogleCalendar} disabled={googleCalendarBusy}>{googleCalendarBusy?"Syncing…":"Sync Google Calendar"}</button><button className="text-action" onClick={()=>void disconnectGoogleCalendar()} disabled={googleCalendarBusy}>Disconnect</button></>:<button className="secondary-button" onClick={connectGoogleCalendar}>Connect Google Calendar</button>)}</div></div>
             <p className="calendar-sync-note">Google Calendar → KitaNotes only. Imported events are visible to this workspace’s members. KitaNotes never edits Google Calendar. {googleCalendarStatus.lastSyncAt?"Last sync: "+new Date(googleCalendarStatus.lastSyncAt).toLocaleString():""} </p>
             {googleCalendarError&&<div className="inline-error">{googleCalendarError}</div> }
             {eventsLoading?<div className="loading-state">Loading your calendar…</div>:<div className={calendarMode==="month"?"calendar-grid month-grid":"calendar-grid week-grid"}>{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=><div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day=><div className={"calendar-day"+(day.getMonth()!==calendarCursor.getMonth()&&calendarMode==="month"?" outside":"")+(dateKey(day)===dateKey(new Date())?" today":"")} key={dateKey(day)}><div className="calendar-day-heading"><span>{day.getDate()}</span>{calendarMode==="week"&&<small>{day.toLocaleDateString(undefined,{month:"short"})}</small>}</div><div className="calendar-day-events">{eventsForDay(day).map(item=><button className="calendar-event-chip" key={item.id} onClick={()=>{if(item.source!=="google_calendar")startEditEvent(item);}} title={item.source==="google_calendar"?item.title+" · Imported from Google Calendar":item.title}><span>{item.allDay?"All day":new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</span>{item.title}</button>)}</div>{calendarMode==="week"&&eventsForDay(day).length===0&&<span className="calendar-empty-day">No events</span>}</div>)}</div>}
@@ -1180,6 +1223,20 @@ export default function App() {
           <button className="ai-hint" onClick={()=>{setAiModalOpen(true);setAiError("");}} disabled={!user}><span className="ai-icon"><Sparkles size={17}/></span><div><strong>AI organiser</strong><p>Turn a brain dump into a note, events and reminders.</p></div><span className="coming-soon">{aiStatus?.configured?"OPEN":"SETUP"}</span></button>
         </div>
       </section>
+
+      {workspaceModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&!workspaceSaving)setWorkspaceModalOpen(false);}}>
+        <section className="composer workspace-composer" role="dialog" aria-modal="true" aria-labelledby="workspace-create-title">
+          <header><div><span className="eyebrow">CREATE A SHARED SPACE</span><h2 id="workspace-create-title">Give this space a purpose</h2></div><button className="icon-button" onClick={()=>setWorkspaceModalOpen(false)} aria-label="Close" disabled={workspaceSaving}><X size={19}/></button></header>
+          <p className="workspace-intro">Describe what you want to keep here. Gemini can suggest a workspace name and a tidy set of categories. You review everything before creation.</p>
+          <label className="field-label">What is this workspace for?<textarea className="ai-input" rows={4} maxLength={4000} value={workspacePurpose} onChange={event=>{setWorkspacePurpose(event.target.value);setWorkspaceAiDraft(null);}} placeholder="Example: A shared space for our family plans, school information, household tasks and important dates."/></label>
+          <div className="workspace-ai-row"><span className="workspace-ai-status"><Sparkles size={14}/>{!aiStatus?"Checking Gemini…":!aiStatus.configured?"AI setup needed":!aiStatus.consented?"AI consent needed":"Gemini ready"}</span><button className="secondary-button" onClick={generateWorkspaceWithAi} disabled={!workspacePurpose.trim()||workspaceAiBusy||!aiStatus?.configured||!aiStatus.consented}>{workspaceAiBusy?"Designing…":"Suggest with Gemini"}</button></div>
+          {!aiStatus?.consented&&aiStatus?.configured&&<p className="ai-privacy-copy">To use Gemini, first enable text AI consent in Organize with AI. Your description will be sent to Google Gemini free tier only after you choose Suggest with Gemini.</p>}
+          {workspaceAiDraft&&<div className="workspace-ai-preview"><div className="workspace-ai-preview-heading"><Check size={15}/> Gemini suggestion · review before creating</div><p>{workspaceAiDraft.categories.length} suggested categories</p><div className="workspace-category-suggestions">{workspaceAiDraft.categories.map(category=><div key={category.name}><strong>{category.name}</strong><small>{category.description}</small></div>)}</div></div>}
+          <label className="field-label">Workspace name<input className="invite-input" value={workspaceName} onChange={event=>setWorkspaceName(event.target.value)} maxLength={60} placeholder="e.g. Family HQ"/></label>
+          {workspaceAiError&&<p className="invite-error">{workspaceAiError}</p>}
+          <footer><span>{workspaceAiDraft?"Suggested categories will be added after you confirm.":"You can create it manually or ask Gemini for a starting structure."}</span><button className="primary-button" onClick={saveNewWorkspace} disabled={!workspaceName.trim()||workspaceSaving}>{workspaceSaving?"Creating…":"Create workspace"}</button></footer>
+        </section>
+      </div>}
 
       {categoryModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setCategoryModalOpen(false);}}>
         <section className="composer" role="dialog" aria-modal="true" aria-labelledby="category-title">
