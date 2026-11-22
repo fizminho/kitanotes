@@ -45,13 +45,13 @@ This release caches only the application shell and static assets. It does not ca
 
 ## Per-user notification preferences
 
-Migration `0009_notification_preferences.sql` adds user-scoped delivery settings exposed through:
+Migrations `0009_notification_preferences.sql` and `0015_notification_activity_preferences.sql` add user-scoped delivery settings exposed through:
 
 - `GET /api/notifications/preferences`
 - `PUT /api/notifications/preferences`
 
-Users can independently enable/disable push delivery, reminder pushes and new shared-note pushes. The durable in-app inbox is not affected by these switches.
+Users can independently enable/disable push delivery for reminders, new shared notes, shared-note updates/deletions, calendar event changes and workspace membership/access changes. The durable in-app inbox is not affected by these switches. Activity caused by the current user is excluded from shared-workspace push delivery.
 
-Quiet hours use the user's IANA timezone (default `Asia/Kuala_Lumpur`) and a local start/end time. Overnight windows such as 22:00–07:00 are supported. During quiet hours, reminder and shared-note push attempts are suppressed; they are not queued for later delivery. The corresponding in-app notification remains available in the inbox. Test pushes bypass quiet hours and category switches but still respect the global push-enabled switch.
+Quiet hours use the user's IANA timezone (default `Asia/Kuala_Lumpur`) and a local start/end time. Overnight windows such as 22:00–07:00 are supported. During quiet hours, activity push attempts are suppressed; they are not queued for later delivery. The corresponding in-app notification remains available in the inbox where that activity type creates one. Test pushes bypass quiet hours and category switches but still respect the global push-enabled switch.
 
 Invalid time ranges, mismatched start/end values and unsupported timezone identifiers are rejected by the API. Preference updates require an authenticated session and same-origin request.
