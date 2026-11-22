@@ -144,6 +144,73 @@ export default function App() {
     }
   }
 
+  async function acceptInvite() {
+    if (!inviteToken || !user || inviteStatus === "accepting") return;
+    setInviteStatus("accepting");
+    setInviteError("");
+    try {
+      const response = await fetch("/api/invitations/accept", {
+        method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: inviteToken })
+      });
+      const result = await response.json() as { accepted?: boolean; error?: string };
+      if (!response.ok || !result.accepted) {
+        const message = result.error === "INVITATION_EMAIL_MISMATCH"
+          ? "This invitation was sent to a different Google email. Sign out and use the invited account."
+          : result.error === "INVITATION_EXPIRED"
+            ? "This invitation has expired. Ask the workspace owner to send a new one."
+            : "This invitation is invalid or has already been used.";
+        throw new Error(message);
+      }
+      setInviteStatus("accepted");
+      setInviteNotice("Invitation accepted. The shared workspace is now available.");
+      setInviteToken(null);
+      const notesResponse = await fetch("/api/notes", { credentials: "same-origin" });
+      if (notesResponse.ok) {
+        const noteResult = await notesResponse.json() as { notes: Note[] };
+        setNotes(noteResult.notes);
+      }
+    } catch (error) {
+      setInviteStatus("error");
+      setInviteError(error instanceof Error ? error.message : "Unable to accept invitation.");
+    }
+  }
+
+  async function createInvite() {
+    if (!user?.personalWorkspaceId || !inviteEmail.trim() || inviteSending) return;
+    setInviteSending(true);
+    setInviteCreateError("");
+    setCreatedInvite(null);
+    try {
+      const response = await fetch("/api/invitations", {
+        method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: user.personalWorkspaceId, email: inviteEmail, role: inviteRole })
+      });
+      const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string; error?: string };
+      if (!response.ok || !result.invitationUrl || !result.gmailComposeUrl) {
+        const message = result.error === "ALREADY_A_MEMBER" ? "This person is already a workspace member."
+          : result.error === "INVITATION_ALREADY_PENDING" ? "There is already a pending invitation for this email."
+          : "Unable to create this invitation.";
+        throw new Error(message);
+      }
+      setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl });
+    } catch (error) {
+      setInviteCreateError(error instanceof Error ? error.message : "Unable to create this invitation.");
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!createdInvite) return;
+    try {
+      await navigator.clipboard.writeText(createdInvite.invitationUrl);
+      setCopiedInvite(true);
+    } catch {
+      setInviteCreateError("Clipboard access is unavailable. Select and copy the invitation link manually.");
+    }
+  }
+
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
     setUser(null);
