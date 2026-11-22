@@ -140,7 +140,24 @@ async function revokeInvitation(request: Request, env: AuthEnv, userId: string, 
   return json({ revoked:true });
 }
 
-async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
+
+async function listMembers(env: AuthEnv, userId: string, workspaceId: string): Promise<Response> {
+  const db = env.DB!;
+  if (!(await ownerFor(db,workspaceId,userId))) return json({ error:"OWNER_PERMISSION_REQUIRED" },403);
+  const result = await db.prepare("SELECT wm.user_id,wm.role,wm.joined_at,u.email,u.display_name FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? ORDER BY CASE WHEN wm.role='owner' THEN 0 ELSE 1 END,u.email_normalized")
+    .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null}>();
+  return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at})) });
+}
+async function removeMember(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
+  if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const db=env.DB!;
+  if (!(await ownerFor(db,workspaceId,userId))) return json({error:"OWNER_PERMISSION_REQUIRED"},403);
+  if(memberId===userId) return json({error:"OWNER_CANNOT_REMOVE_SELF"},409);
+  const result=await db.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,memberId).run();
+  if(!result.meta.changes) return json({error:"MEMBER_NOT_FOUND"},404);
+  return json({removed:true});
+}
+\nasync function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
   const result = await env.DB!.prepare(
     "SELECT w.id,w.name,w.workspace_type,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.workspace_type='personal' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
   ).bind(userId).all<{id:string;name:string;workspace_type:"personal"|"shared";role:"owner"|"editor"|"viewer"}>();
@@ -170,16 +187,34 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
     return json({ workspace: { id,name,type:"personal",role:"owner" } },201);
   }
   const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/);
-  if (workspaceMatch && request.method === "PATCH") {
-    if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
-    const body = await readJsonBody(request);
-    const name = typeof body?.name === "string" ? body.name.trim() : "";
-    if (!name || name.length > 60) return json({ error: "INVALID_WORKSPACE_NAME" },400);
-    const id = decodeURIComponent(workspaceMatch[1]);
-    const owned = await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='personal'").bind(id,user.id).first<{id:string}>();
-    if (!owned) return json({ error: "PERSONAL_WORKSPACE_NOT_FOUND" },404);
-    await env.DB!.prepare("UPDATE workspaces SET name=?,updated_at=? WHERE id=?").bind(name,new Date().toISOString(),id).run();
-    return json({ updated:true,id,name });
+  if (workspaceMatch) {
+    const id=decodeURIComponent(workspaceMatch[1]);
+    if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
+    if(request.method==="DELETE" && url.pathname.includes("/members/")) {
+      const memberId=decodeURIComponent(url.pathname.split("/").pop()??"");
+      return removeMember(request,env,user.id,id,memberId);
+    }
+    if(request.method==="PATCH") {
+      if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
+      const body=await readJsonBody(request);
+      if(body?.action==="make_private") {
+        const workspace=await env.DB!.prepare("SELECT id,workspace_type FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared'").bind(id,user.id).first<{id:string;workspace_type:string}>();
+        if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
+        const now=new Date().toISOString();
+        await env.DB!.batch([
+          env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(id,user.id),
+          env.DB!.prepare("UPDATE invitations SET status='revoked' WHERE workspace_id=? AND status='pending'").bind(id),
+          env.DB!.prepare("UPDATE workspaces SET workspace_type='personal',updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id)
+        ]);
+        return json({updated:true,id,type:"personal",membersRemoved:true,invitationsRevoked:true});
+      }
+      const name=typeof body?.name==="string"?body.name.trim():"";
+      if(!name||name.length>60)return json({error:"INVALID_WORKSPACE_NAME"},400);
+      const owned=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='personal'").bind(id,user.id).first<{id:string}>();
+      if(!owned)return json({error:"PERSONAL_WORKSPACE_NOT_FOUND"},404);
+      await env.DB!.prepare("UPDATE workspaces SET name=?,updated_at=? WHERE id=?").bind(name,new Date().toISOString(),id).run();
+      return json({updated:true,id,name});
+    }
   }
   if (url.pathname === "/api/invitations" && request.method === "POST") return createInvitation(request,env,user.id);
   if (url.pathname === "/api/invitations" && request.method === "GET") return listInvitations(request,env,user.id);
