@@ -865,7 +865,7 @@ export default function App() {
     return key>=startKey&&key<=lastVisibleKey;
   }
   function eventsForDay(day:Date):CalendarItem[]{return [...events.filter(item=>occursOnDay(item,day)),...holidays.filter(item=>occursOnDay(item,day))];}
-  const calendarAgendaItems:CalendarItem[]=[...events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)),...holidays.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000))].sort((left,right)=>left.startsAt.localeCompare(right.startsAt)) as CalendarItem[];
+  const calendarAgendaItems=useMemo<CalendarItem[]>(()=>[...events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)),...holidays.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000))].sort((left,right)=>left.startsAt.localeCompare(right.startsAt)) as CalendarItem[],[events,holidays,calendarDays]);
 
   async function importCalendarIcs(file:File){
     if(!activeWorkspaceId||calendarTransferBusy)return;setCalendarTransferBusy(true);
