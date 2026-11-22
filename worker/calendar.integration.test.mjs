@@ -210,7 +210,7 @@ test("Malaysia holiday feed is state-specific and returns all-day public holiday
 
 test("KPM school holidays follow Group A dates for Kedah",async()=>{
  const originalFetch=globalThis.fetch;
- globalThis.fetch=async()=>new Response(["BEGIN:VCALENDAR","VERSION:2.0","END:VCALENDAR"].join("\\r\\n"),{status:200,headers:{"content-type":"text/calendar"}});
+ globalThis.fetch=async()=>new Response(["BEGIN:VCALENDAR","VERSION:2.0","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
  try{
   const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=kedah&from=2027-03-01&to=2027-03-31"),{});
   const result=await response.json();const school=result.events.find(event=>event.holidayType==="school");
