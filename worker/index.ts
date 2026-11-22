@@ -1,3 +1,7 @@
+import { handleEventsRequest } from "./events";
+import { handleRemindersRequest } from "./reminders";
+import { handleNotificationsRequest } from "./notifications";
+import { deliverDueReminders } from "./reminder-cron";
 import { handleInvitationsRequest } from "./invitations";
 import { handleNotesRequest } from "./notes";
 import { handleAuthRequest } from "./auth";
@@ -12,6 +16,12 @@ export default { async fetch(request:Request,env:Env):Promise<Response> {
  if(notesResponse) return notesResponse;
  const invitationResponse=await handleInvitationsRequest(request,env);
  if(invitationResponse) return invitationResponse;
+ const eventsResponse=await handleEventsRequest(request,env);
+ if(eventsResponse) return eventsResponse;
+ const remindersResponse=await handleRemindersRequest(request,env);
+ if(remindersResponse) return remindersResponse;
+ const notificationsResponse=await handleNotificationsRequest(request,env);
+ if(notificationsResponse) return notificationsResponse;
  if(url.pathname.startsWith("/api/")) return json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
  const response = await env.ASSETS.fetch(request);
  const headers = new Headers(response.headers);
@@ -22,4 +32,8 @@ export default { async fetch(request:Request,env:Env):Promise<Response> {
  headers.set("content-security-policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self'");
  if (url.protocol === "https:") headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-}} satisfies ExportedHandler<Env>;
+ },
+ async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  if (env.DB) ctx.waitUntil(deliverDueReminders(env.DB));
+ }
+} satisfies ExportedHandler<Env>;
