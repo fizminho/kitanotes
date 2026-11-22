@@ -3,6 +3,7 @@ import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, S
 
 type View = "notes" | "calendar" | "shared";
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
+type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
@@ -32,6 +33,9 @@ export default function App() {
   const [inviteCreateError, setInviteCreateError] = useState("");
   const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string } | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [invitationsLoading, setInvitationsLoading] = useState(false);
+  const [inviteRefresh, setInviteRefresh] = useState(0);
 
   useEffect(() => {
     if (inviteToken) window.history.replaceState({}, "", "/");
@@ -83,6 +87,21 @@ export default function App() {
       .finally(() => { if (active) setNotesLoading(false); });
     return () => { active = false; };
   }, [user]);
+
+  useEffect(() => {
+    if (!inviteOpen || !user?.personalWorkspaceId) return;
+    let active = true;
+    setInvitationsLoading(true);
+    fetch("/api/invitations?workspaceId=" + encodeURIComponent(user.personalWorkspaceId), { credentials: "same-origin" })
+      .then(async response => {
+        if (!response.ok) throw new Error("Unable to load invitations.");
+        const result = await response.json() as { invitations: Invitation[] };
+        if (active) setInvitations(result.invitations);
+      })
+      .catch(error => { if (active) setInviteCreateError(error instanceof Error ? error.message : "Unable to load invitations."); })
+      .finally(() => { if (active) setInvitationsLoading(false); });
+    return () => { active = false; };
+  }, [inviteOpen, user?.personalWorkspaceId, inviteRefresh]);
 
   const visibleNotes = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -194,10 +213,23 @@ export default function App() {
         throw new Error(message);
       }
       setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl });
+      setInviteRefresh(value => value + 1);
     } catch (error) {
       setInviteCreateError(error instanceof Error ? error.message : "Unable to create this invitation.");
     } finally {
       setInviteSending(false);
+    }
+  }
+
+  async function revokeInvitation(invitationId: string) {
+    try {
+      const response = await fetch("/api/invitations/" + encodeURIComponent(invitationId), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) throw new Error("Unable to revoke invitation.");
+      setInviteRefresh(value => value + 1);
+      setCreatedInvite(null);
+      setCopiedInvite(false);
+    } catch (error) {
+      setInviteCreateError(error instanceof Error ? error.message : "Unable to revoke invitation.");
     }
   }
 
@@ -321,6 +353,14 @@ export default function App() {
             {inviteCreateError && <p className="invite-error">{inviteCreateError}</p>}
             <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button><a className="primary-button" href={createdInvite.gmailComposeUrl} target="_blank" rel="noopener noreferrer">Open Gmail draft</a></footer>
           </>}
+          <div className="invite-list">
+            <div className="invite-list-heading"><strong>Workspace invitations</strong><span>{invitations.length}</span></div>
+            {invitationsLoading ? <p>Loading invitations…</p> : invitations.length === 0 ? <p>No invitations yet.</p> : invitations.map(invitation => <div className="invite-list-row" key={invitation.id}>
+              <div><strong>{invitation.email}</strong><small>{invitation.role} · {invitation.status} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></div>
+              {invitation.status === "pending" && <button className="text-action" onClick={() => revokeInvitation(invitation.id)}>Revoke</button>}
+            </div>)}
+            <p className="invite-list-note">A pending link is shown only once. If it was lost, revoke it here and create a fresh invitation.</p>
+          </div>
         </section>
       </div>}
 
