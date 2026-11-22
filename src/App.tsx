@@ -215,6 +215,72 @@ export default function App() {
     }
   }
 
+  function startNewEvent() {
+    setEventTitle("");
+    setEventDescription("");
+    setEventStart(localDateTime(new Date(Date.now()+3600000)));
+    setEventEnd(localDateTime(new Date(Date.now()+7200000)));
+    setEventReminderAt("");
+    setEventsError("");
+    setEventComposerOpen(true);
+  }
+
+  async function saveEvent() {
+    if(!user?.personalWorkspaceId||!eventTitle.trim()||eventSaving)return;
+    setEventSaving(true);setEventsError("");
+    try {
+      const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+        workspaceId:user.personalWorkspaceId,title:eventTitle,description:eventDescription,
+        startsAt:new Date(eventStart).toISOString(),endsAt:new Date(eventEnd).toISOString(),timezone:eventTimezone
+      })});
+      const result=await response.json() as {event?:CalendarEvent};
+      if(!response.ok||!result.event)throw new Error("Unable to save this event.");
+      setEvents(current=>[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
+      if(eventReminderAt){
+        const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+          workspaceId:user.personalWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:new Date(eventReminderAt).toISOString(),timezone:eventTimezone
+        })});
+        if(!reminderResponse.ok)setEventsError("Event saved, but its reminder could not be created.");
+      }
+      setEventComposerOpen(false);
+    }catch(error){setEventsError(error instanceof Error?error.message:"Unable to save this event.");}
+    finally{setEventSaving(false);}
+  }
+
+  async function deleteEvent(event:CalendarEvent) {
+    try {
+      const response=await fetch("/api/events/"+encodeURIComponent(event.id),{method:"DELETE",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({version:event.version})});
+      if(!response.ok)throw new Error("Unable to delete this event.");
+      setEvents(current=>current.filter(item=>item.id!==event.id));
+    }catch(error){setEventsError(error instanceof Error?error.message:"Unable to delete this event.");}
+  }
+
+  async function markNotificationRead(notification:Notification) {
+    if(notification.readAt)return;
+    const response=await fetch("/api/notifications/"+encodeURIComponent(notification.id)+"/read",{method:"POST",credentials:"same-origin"});
+    if(response.ok){
+      const readAt=new Date().toISOString();
+      setNotifications(current=>current.map(item=>item.id===notification.id?{...item,readAt}:item));
+      setUnreadCount(count=>Math.max(0,count-1));
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    const response=await fetch("/api/notifications/read-all",{method:"POST",credentials:"same-origin"});
+    if(response.ok){
+      const readAt=new Date().toISOString();
+      setNotifications(current=>current.map(item=>({...item,readAt:item.readAt??readAt})));
+      setUnreadCount(0);
+    }
+  }
+
+  function openNotification(notification:Notification) {
+    if(notification.resourceType==="event"||notification.type==="reminder")setView("calendar");
+    else if(notification.resourceType==="note"||notification.type==="shared_note")setView("notes");
+    void markNotificationRead(notification);
+    setNotificationsOpen(false);
+  }
+
   async function acceptInvite() {
     if (!inviteToken || !user || inviteStatus === "accepting") return;
     setInviteStatus("accepting");
