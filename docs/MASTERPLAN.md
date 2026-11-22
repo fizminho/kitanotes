@@ -125,7 +125,12 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 6. AI requests go through the backend Gemini adapter; the browser never receives the Gemini API key.
 7. Cron scans due reminders and creates durable in-app notification records; optional Web Push is best-effort and never carries private note content.
 
-## 4. Authentication, invitations and access control\n\n### Google Calendar import\n\n- Direction is Google Calendar → KitaNotes only. KitaNotes never writes changes back to Google Calendar.\n- Request the read-only `calendar.events.readonly` scope only after a user explicitly connects a workspace.\n- Encrypt refresh tokens at rest with AES-GCM using a key derived from the Worker `SESSION_SECRET`; never expose tokens to the browser.\n- Store per-user/per-workspace sync cursors and event mappings so repeated manual syncs update imported events rather than duplicating them.\n- Start with manual Sync now; no background calendar polling.\n- Configure the additional Google OAuth redirect URI `https://kitanotes.binalah.com/auth/google/calendar/callback` in the existing OAuth web client before production use.\n- Apply migration `0014_google_calendar_import.sql` before deploying the Worker code.
+## 4. Authentication, invitations and access control\n\n### Calendar 2.0
+
+- Import and export RFC 5545 `.ics` calendars for Apple Calendar, Google Calendar, Outlook and compatible apps.
+- Track imported UIDs per workspace to prevent duplicate events on repeated imports.
+- Show Malaysia national and state public holidays for the user's selected state, defaulting to Selangor, using a public iCalendar feed.
+- Do not request Google Calendar API scopes or maintain Google Calendar OAuth connections.
 
 ### Google sign-in
 
