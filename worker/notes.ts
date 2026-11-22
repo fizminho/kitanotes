@@ -135,7 +135,7 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
     if (!title || content === null || categoryId === undefined || archivedAt === undefined || !Number.isInteger(version) || version !== row.version) return json({ error: "INVALID_OR_STALE_NOTE", currentVersion: row.version }, 409);
     if (!(await categoryBelongsToWorkspace(db, categoryId, row.workspace_id))) return json({ error: "INVALID_CATEGORY" }, 400);
     const now = new Date().toISOString();
-    const result = await db.prepare("undefined")
+    const result = await db.prepare("UPDATE notes SET title=?,content=?,category_id=?,archived_at=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=? AND version=? AND deleted_at IS NULL")
       .bind(title, content, categoryId, archivedAt, now, noteId, row.workspace_id, version).run();
     if (changes(result) !== 1) return json({ error: "VERSION_CONFLICT" }, 409);
     const updated = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
