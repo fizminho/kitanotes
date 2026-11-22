@@ -71,6 +71,16 @@ test("calendar events store UTC instants, retain timezone and enforce workspace 
     const event=(await created.json()).event;
     assert.equal(event.startsAt,"2026-11-23T01:00:00.000Z");
     assert.equal(event.timezone,"Asia/Kuala_Lumpur");
+    assert.equal(event.createdBy,"u1");
+    assert.equal(event.updatedBy,"u1");
+    assert.ok(event.createdAt&&event.updatedAt);
+    const edited=await handleEventsRequest(request("/api/events/"+event.id,tokens.u1,"PATCH",{version:1,title:"Updated school meeting"}),env);
+    assert.equal(edited.status,200);
+    const editedEvent=(await edited.json()).event;
+    assert.equal(editedEvent.createdBy,"u1");
+    assert.equal(editedEvent.updatedBy,"u1");
+    assert.equal(editedEvent.title,"Updated school meeting");
+    assert.equal(db.sqlite.prepare("SELECT event_type FROM activity_events WHERE target_type='event' AND target_id=? ORDER BY created_at DESC LIMIT 1").get(event.id).event_type,"event.updated");
     const range=await handleEventsRequest(request("/api/events?from=2026-11-23T00:00:00Z&to=2026-11-24T00:00:00Z",tokens.u1),env);
     assert.equal((await range.json()).events.length,1);
     const outsider=await handleEventsRequest(request("/api/events/"+event.id,tokens.u3),env);
