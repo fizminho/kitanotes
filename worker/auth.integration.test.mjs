@@ -96,7 +96,9 @@ test("Google callback creates user/workspace/session and logout revokes it", asy
       headers: { cookie: "__Host-kitanotes_session=" + sessionMatch[1] }
     }), env);
     assert.equal(me.status, 200);
-    assert.equal((await me.json()).user.email, "person@example.com");
+    const mePayload = await me.json();
+    assert.equal(mePayload.user.email, "person@example.com");
+    assert.equal(mePayload.user.personalWorkspaceId, workspace.id);
 
     const loggedOut = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/logout", {
       method: "POST",
