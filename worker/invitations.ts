@@ -156,6 +156,31 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
   if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(env,user.id);
+  if (url.pathname === "/api/workspaces" && request.method === "POST") {
+    if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
+    const body = await readJsonBody(request);
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!name || name.length > 60) return json({ error: "INVALID_WORKSPACE_NAME" },400);
+    const count = await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'").bind(user.id).first<{total:number}>();
+    if ((count?.total ?? 0) >= 30) return json({ error: "WORKSPACE_LIMIT_REACHED" },409);
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    await env.DB!.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES (?,?,?,'personal',?,?)").bind(id,name,user.id,now,now).run();
+    await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
+    return json({ workspace: { id,name,type:"personal",role:"owner" } },201);
+  }
+  const workspaceMatch = url.pathname.match(/^\\/api\\/workspaces\\/([^/]+)$/);
+  if (workspaceMatch && request.method === "PATCH") {
+    if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
+    const body = await readJsonBody(request);
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!name || name.length > 60) return json({ error: "INVALID_WORKSPACE_NAME" },400);
+    const id = decodeURIComponent(workspaceMatch[1]);
+    const owned = await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='personal'").bind(id,user.id).first<{id:string}>();
+    if (!owned) return json({ error: "PERSONAL_WORKSPACE_NOT_FOUND" },404);
+    await env.DB!.prepare("UPDATE workspaces SET name=?,updated_at=? WHERE id=?").bind(name,new Date().toISOString(),id).run();
+    return json({ updated:true,id,name });
+  }
   if (url.pathname === "/api/invitations" && request.method === "POST") return createInvitation(request,env,user.id);
   if (url.pathname === "/api/invitations" && request.method === "GET") return listInvitations(request,env,user.id);
   if (url.pathname === "/api/invitations/accept" && request.method === "POST") return acceptInvitation(request,env,user.id);
