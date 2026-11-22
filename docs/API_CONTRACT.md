@@ -18,6 +18,15 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 - `PATCH /api/notes/:id`: update title/content/category or archive state. Body includes the current integer `version`; a stale version returns HTTP 409.
 - `DELETE /api/notes/:id`: soft-delete a note. The row is retained with `deleted_at`.
 
+## Invitations
+
+- `POST /api/invitations`: owner-only. Body: `{ workspaceId, email, role: "editor" | "viewer" }`. Returns a one-time invitation URL and a prefilled Gmail compose URL. The API does not send email.
+- `GET /api/invitations?workspaceId=`: owner-only list without token hashes or raw tokens.
+- `POST /api/invitations/accept`: signed-in user accepts with `{ token }`; verified Google email must match the invitation address.
+- `DELETE /api/invitations/:id`: owner revokes a pending invitation.
+
+Invitation tokens are cryptographically random, stored only as SHA-256 hashes, expire after seven days and are single-use. An SQLite trigger creates membership in the same database transaction as the accepted status update.
+
 ## Categories
 
 - `GET /api/categories?workspaceId=`: list active categories in accessible workspaces.
