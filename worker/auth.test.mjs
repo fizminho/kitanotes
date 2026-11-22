@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { verifyGoogleIdToken } from "./auth.ts";
+import { verifyGoogleIdToken, handleAuthRequest } from "./auth.ts";
 
 const encoder = new TextEncoder();
 const encode = (value) => {
@@ -32,4 +32,31 @@ test("Google ID token verifier validates signature and OIDC claims", async () =>
   assert.equal(identity.email, "user@example.com");
   await assert.rejects(() => verifyGoogleIdToken(token, "client-id", "wrong-nonce", fetchMock), /nonce/);
   await assert.rejects(() => verifyGoogleIdToken(token, "wrong-client", "nonce-1", fetchMock), /audience/);
+});
+
+test("auth status does not expose configuration values", async () => {
+  const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/status"), {});
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ready: false });
+});
+
+test("Google login start uses state, nonce, PKCE and secure HttpOnly cookie", async () => {
+  const response = await handleAuthRequest(new Request("https://kitanotes.test/auth/google"), {
+    DB: {},
+    GOOGLE_CLIENT_ID: "public-client-id",
+    GOOGLE_CLIENT_SECRET: "test-secret",
+    SESSION_SECRET: "x".repeat(48)
+  });
+  assert.equal(response.status, 302);
+  const location = new URL(response.headers.get("location"));
+  assert.equal(location.origin, "https://accounts.google.com");
+  assert.equal(location.searchParams.get("response_type"), "code");
+  assert.equal(location.searchParams.get("code_challenge_method"), "S256");
+  assert.ok(location.searchParams.get("state"));
+  assert.ok(location.searchParams.get("nonce"));
+  assert.ok(location.searchParams.get("code_challenge"));
+  const cookie = response.headers.get("set-cookie") ?? "";
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Secure/);
+  assert.match(cookie, /SameSite=Lax/);
 });
