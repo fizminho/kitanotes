@@ -187,7 +187,7 @@ test("making a shared workspace private removes members and revokes pending invi
     assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"shared");
     const blocked=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"again@example.com",role:"viewer"}),env);
     assert.equal(blocked.status,409);
-    const deletePrivate=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"DELETE"),env);
+    const deletePrivate=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"DELETE",{}),env);
     assert.equal(deletePrivate.status,404);
     assert.equal(db.sqlite.prepare("SELECT title FROM notes WHERE id='n1'").get().title,"Keep me");
     const reShared=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"make_shared"}),env);
