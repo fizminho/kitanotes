@@ -11,4 +11,4 @@ const encode = value => Buffer.from(value).toString("base64url");
 console.log("VAPID_PUBLIC_KEY=" + encode(publicBytes));
 console.log("VAPID_PRIVATE_KEY=" + jwk.d);
 console.log("VAPID_SUBJECT=mailto:admin@example.com");
-console.log("\nStore VAPID_PRIVATE_KEY as a Worker Secret. VAPID_PUBLIC_KEY and VAPID_SUBJECT are plain-text Worker variables. Replace the example contact with an address you control. Replace the example contact with an address you control.");
+console.log("\nStore VAPID_PRIVATE_KEY as a Worker Secret. VAPID_PUBLIC_KEY and VAPID_SUBJECT are plain-text Worker variables. Replace the example contact with an address you control.");
