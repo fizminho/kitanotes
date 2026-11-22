@@ -44,7 +44,6 @@ export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
-  const [showSharedWorkspaces,setShowSharedWorkspaces]=useState(()=>localStorage.getItem("kitanotes-show-shared-workspaces")!=="false");
   const [workspaceCreating,setWorkspaceCreating]=useState(false);
   const [authStatus, setAuthStatus] = useState<"loading" | "signed_out" | "ready" | "unavailable">("loading");
   const [notes, setNotes] = useState<Note[]>([]);
@@ -164,14 +163,6 @@ export default function App() {
       .finally(() => { if (active) setAuthStatus(current => current === "loading" ? "signed_out" : current); });
     return () => { active = false; };
   }, []);
-
-  useEffect(()=>{localStorage.setItem("kitanotes-show-shared-workspaces",String(showSharedWorkspaces));},[showSharedWorkspaces]);
-
-  useEffect(()=>{
-    if(!showSharedWorkspaces && workspaces.some(item=>item.id===activeWorkspaceId && item.type==="shared")){
-      setActiveWorkspaceId(workspaces.find(item=>item.type==="personal")?.id??"");
-    }
-  },[showSharedWorkspaces,workspaces,activeWorkspaceId]);
 
   async function createPersonalWorkspace() {
     if(workspaceCreating)return;
@@ -865,7 +856,7 @@ export default function App() {
 
       <section className="main-panel">
         <header className="topbar">
-          <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.filter(workspace=>showSharedWorkspaces||workspace.type==="personal").map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}</select></label>
+          <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}</select></label>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
             {!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
