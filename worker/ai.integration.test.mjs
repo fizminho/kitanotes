@@ -29,7 +29,7 @@ function seed(){
   db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','Personal','u1','personal',?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('s1','u1',?,'2099-01-01T00:00:00.000Z',?)").run(createHash("sha256").update("ai-session").digest("base64url"),now);
-  return{db,env:{DB:db,GEMINI_API_KEY:"test-key",GEMINI_MODEL:"gemini-3.1-flash-lite",GEMINI_MODEL_FALLBACKS:"gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.5-flash"}};
+  return{db,env:{DB:db,GEMINI_API_KEY:"test-key",GEMINI_MODEL:"gemini-3.1-flash-lite",GEMINI_MODEL_FALLBACKS:"gemini-3-flash-preview,gemini-2.5-flash-lite,gemini-2.5-flash"}};
 }
 function request(path,method="GET",body){
   const headers={cookie:"__Host-kitanotes_session=ai-session"};
@@ -50,8 +50,8 @@ const validDraft={
 const okResponse=()=>new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(validDraft)}]}}]}),{status:200});
 
 test("free model allowlist excludes paid or unknown models",()=>{
-  assert.deepEqual(getFreeGeminiModelCandidates("gemini-1.5-pro","gemini-2.5-flash,gemini-pro,gemini-3.5-flash"),["gemini-3.1-flash-lite","gemini-3-flash-preview"]);
-  assert.deepEqual(getFreeGeminiModelCandidates("gemini-2.5-flash-lite",""),["gemini-3.6-flash","gemini-3.1-flash-lite","gemini-2.5-flash","gemini-3.5-flash"]);
+  assert.deepEqual(getFreeGeminiModelCandidates("gemini-1.5-pro","gemini-2.5-flash,gemini-pro,gemini-3-flash-preview"),["gemini-3.1-flash-lite","gemini-2.5-flash","gemini-3-flash-preview"]);
+  assert.deepEqual(getFreeGeminiModelCandidates("gemini-2.5-flash-lite",""),["gemini-2.5-flash-lite","gemini-3.1-flash-lite","gemini-3-flash-preview","gemini-2.5-flash"]);
 });
 
 test("draft validator rejects invalid local dates and preserves timezone",()=>{
@@ -91,7 +91,7 @@ test("consented organiser falls back from a missing model to the next free model
     const response=await handleAiRequest(request("/api/ai/organize","POST",{text:"Tomorrow at 10am, review the project plan and remind me at 9:30.",timezone:"Asia/Kuala_Lumpur"}),env);
     assert.equal(response.status,200);
     const payload=await response.json();
-    assert.equal(payload.model,"gemini-3.5-flash-lite");
+    assert.equal(payload.model,"gemini-3-flash-preview");
     assert.equal(payload.requiresUserConfirmation,true);
     assert.equal(payload.draft.events[0].startLocal,"2026-11-23T10:00");
     assert.equal(models.length,2);
