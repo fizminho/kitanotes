@@ -1,6 +1,6 @@
 # KitaNotes — Product & Technical Masterplan
 
-**Status:** Planning baseline  
+**Status:** P0 foundation in progress  
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
@@ -76,7 +76,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 
 | Layer | Free-only choice | Notes / constraints |
 |---|---|---|
-| Web client | React + TypeScript + Vite on Cloudflare Pages, or Worker Static Assets | Static asset delivery on Pages is free; choose one hosting route after inspecting Investlah workflows. |
+| Web client | React + TypeScript + Vite on Cloudflare Worker Static Assets | Decision recorded in ADR-0001 after inspecting the existing Investlah Worker deployment. |
 | API | Cloudflare Workers Free | 100,000 requests/day; 10 ms CPU per invocation. Keep handlers short and avoid CPU-heavy synchronous work. |
 | Database | Cloudflare D1 Free | SQLite; 5 million rows read/day, 100,000 rows written/day, 500 MB max per database, 5 GB total account storage; free-tier limit exhaustion causes queries to fail until reset. |
 | Identity | Google OAuth 2.0 / OpenID Connect | Gmail/Google sign-in; no Calendar scope at login. |
@@ -97,7 +97,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 
 ### Request flow
 
-1. Browser loads the static application from Cloudflare Pages / Worker Static Assets.
+1. Browser loads the static application from Cloudflare Worker Static Assets.
 2. Google sign-in completes through the configured OAuth client and a server-validated identity flow.
 3. Browser calls the Cloudflare Worker API with a secure session.
 4. API validates identity, membership and role for every protected operation.
@@ -190,7 +190,7 @@ MVP calendar is an internal KitaNotes calendar. This avoids requiring calendar p
 - Use durable scheduled jobs / a due-reminder query with idempotency keys.
 - Create one notification per recipient according to workspace membership and notification preferences.
 - Handle edits, cancellations, daylight-saving transitions and past-due reminders.
-- Do not promise push delivery when browser permission is denied or a device is offline; retain the notification in the in-app inbox and use email fallback where enabled.
+- Do not promise push delivery when browser permission is denied or a device is offline; retain the notification in the in-app inbox and retain the notification in the in-app inbox; automated email is outside the free-only MVP.
 
 ### Google Calendar (later phase)
 
@@ -386,7 +386,7 @@ kitanotes/
 ├── packages/
 │   └── contracts/
 ├── infra/
-│   └── cloudfront/
+│   └── cloudflare/
 └── .github/
     └── workflows/
 ```
@@ -478,8 +478,8 @@ MVP is not complete until all of these are demonstrated:
 | Decision | Current proposal | Status |
 |---|---|---|
 | Product name | KitaNotes | Proposed |
-| Frontend hosting | Cloudflare Pages or Worker Static Assets; no S3 / CloudFront | Proposed |
-| API runtime | Cloudflare Workers Free, following Investlah Worker pattern | Proposed |
+| Frontend hosting | Cloudflare Worker Static Assets; no S3 / CloudFront | Accepted (ADR-0001) |
+| API runtime | Cloudflare Workers Free, same Worker serves static assets and API | Accepted (ADR-0001) |
 | Database | Cloudflare D1 Free | Proposed |
 | Authentication | Google OIDC | Proposed |
 | Calendar | Internal calendar first; Google Calendar sync optional later | Proposed |
