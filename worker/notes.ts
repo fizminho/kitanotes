@@ -147,11 +147,11 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
   const noteId = decodeURIComponent(match[1]);
   const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=? AND n.deleted_at IS NULL")
     .bind(noteId).first<NoteRow>();
-  if (!row || !(await roleFor(db, row.workspace_id, userId))) return json({ error: "NOT_FOUND" }, 404);
+  const role = row ? await roleFor(db, row.workspace_id, userId) : null;
+  if (!row || !role) return json({ error: "NOT_FOUND" }, 404);
   if (request.method === "GET") return json({ note: noteDto(row) });
   if (request.method === "PATCH") {
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
-    const role = await roleFor(db, row.workspace_id, userId);
     if (role !== "owner" && role !== "editor") return json({ error: "FORBIDDEN" }, 403);
     const body = await readJsonBody(request);
     if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
@@ -177,7 +177,6 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
   }
   if (request.method === "DELETE") {
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
-    const role = await roleFor(db, row.workspace_id, userId);
     if (role !== "owner" && role !== "editor") return json({ error: "FORBIDDEN" }, 403);
     const now = new Date().toISOString();
     const result = await db.prepare("UPDATE notes SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND workspace_id=? AND deleted_at IS NULL")
@@ -231,8 +230,8 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
   const categoryId = decodeURIComponent(match[1]);
   const category = await db.prepare("SELECT * FROM categories WHERE id=? AND archived_at IS NULL")
     .bind(categoryId).first<CategoryRow>();
-  if (!category || !(await roleFor(db, category.workspace_id, userId))) return json({ error: "NOT_FOUND" }, 404);
-  const role = await roleFor(db, category.workspace_id, userId);
+  const role = category ? await roleFor(db, category.workspace_id, userId) : null;
+  if (!category || !role) return json({ error: "NOT_FOUND" }, 404);
   if (request.method === "PATCH") {
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
     if (role !== "owner" && role !== "editor") return json({ error: "FORBIDDEN" }, 403);
