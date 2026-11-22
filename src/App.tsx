@@ -26,6 +26,7 @@ type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shar
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
+type GoogleCalendarStatus = {connected:boolean;lastSyncAt:string|null;direction:"google_to_kitanotes";readOnly:boolean};
 type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
   summary:string; timezone:string;
@@ -93,6 +94,10 @@ export default function App() {
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [googleCalendarStatus,setGoogleCalendarStatus]=useState<GoogleCalendarStatus>({connected:false,lastSyncAt:null,direction:"google_to_kitanotes",readOnly:true});
+  const [googleCalendarBusy,setGoogleCalendarBusy]=useState(false);
+  const [googleCalendarError,setGoogleCalendarError]=useState("");
+  const [calendarRefresh,setCalendarRefresh]=useState(0);
   const [calendarMode,setCalendarMode]=useState<"month"|"week">("month");
   const [calendarCursor,setCalendarCursor]=useState(()=>new Date());
   const [editingEvent,setEditingEvent]=useState<CalendarEvent|null>(null);
@@ -306,7 +311,24 @@ export default function App() {
       .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
       .finally(()=>{if(active)setEventsLoading(false);});
     return ()=>{active=false;};
-  },[view,user,calendarMode,calendarCursor]);
+  },[view,user,calendarMode,calendarCursor,calendarRefresh]);
+
+  useEffect(()=>{
+    if(view!=="calendar"||!user||!activeWorkspaceId)return;
+    let active=true;
+    fetch("/api/google-calendar/status?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"})
+      .then(async response=>{if(!response.ok)throw new Error("Unable to check Google Calendar connection.");const result=await response.json() as GoogleCalendarStatus;if(active)setGoogleCalendarStatus(result);})
+      .catch(error=>{if(active)setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar status unavailable.");});
+    return ()=>{active=false;};
+  },[view,user,activeWorkspaceId]);
+
+  useEffect(()=>{
+    const result=new URLSearchParams(window.location.search).get("googleCalendar");
+    if(!result)return;
+    const messages:Record<string,string>={connected:"Google Calendar connected. You can import events now.",signin_required:"Please sign in again to connect Google Calendar.",refresh_token_missing:"Google did not return offline access. Please connect again and approve access.",workspace_error:"You no longer have permission to connect this workspace.",error:"Google Calendar connection did not complete.",state_error:"The Google Calendar connection request expired. Please try again.",token_error:"Google could not complete the calendar connection.",scope_error:"Google Calendar read permission was not granted."};
+    pushToast(messages[result]??"Google Calendar connection status: "+result,result==="connected"?"ok":"error");
+    window.history.replaceState({}, "", window.location.pathname+window.location.hash);
+  },[pushToast]);
 
   useEffect(() => {
     if (!notificationsOpen || !user) return;
@@ -735,6 +757,23 @@ export default function App() {
   function moveCalendar(amount:number){setCalendarCursor(current=>{const next=new Date(current);if(calendarMode==="week")next.setDate(next.getDate()+amount*7);else next.setMonth(next.getMonth()+amount);return next;});}
   function eventsForDay(day:Date){return events.filter(item=>dateKey(new Date(item.startsAt))===dateKey(day));}
 
+  function connectGoogleCalendar(){
+    if(!activeWorkspaceId)return;
+    window.location.href="/auth/google/calendar/connect?workspaceId="+encodeURIComponent(activeWorkspaceId);
+  }
+  async function syncGoogleCalendar(){
+    if(!activeWorkspaceId||googleCalendarBusy)return;
+    setGoogleCalendarBusy(true);setGoogleCalendarError("");
+    try{
+      const response=await fetch("/api/google-calendar/sync",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId})});
+      const result=await response.json() as {error?:string;imported?:number;updated?:number;deleted?:number;skipped?:number;lastSyncAt?:string};
+      if(!response.ok)throw new Error(result.error==="GOOGLE_TOKEN_REFRESH_FAILED"?"Google Calendar access expired. Reconnect to continue.":result.error==="GOOGLE_CALENDAR_NOT_CONNECTED"?"Connect Google Calendar first.":"Google Calendar sync failed. Please try again.");
+      setGoogleCalendarStatus({connected:true,lastSyncAt:result.lastSyncAt??null,direction:"google_to_kitanotes",readOnly:true});
+      setCalendarRefresh(value=>value+1);
+      pushToast("Imported "+(result.imported??0)+", updated "+(result.updated??0)+", removed "+(result.deleted??0)+" Google Calendar events.");
+    }catch(error){setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar sync failed.");}
+    finally{setGoogleCalendarBusy(false);}
+  }
   async function deleteEvent(event:CalendarEvent) {
     try {
       const response=await fetch("/api/events/"+encodeURIComponent(event.id),{method:"DELETE",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({version:event.version})});
@@ -1117,7 +1156,9 @@ export default function App() {
 
           {view === "calendar" && <section className="calendar-section">
             {eventsError&&<div className="inline-error">{eventsError}</div>}
-            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div></div>
+            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div><div className="google-calendar-actions">{googleCalendarStatus.connected?<button className="secondary-button" onClick={syncGoogleCalendar} disabled={googleCalendarBusy}>{googleCalendarBusy?"Syncing…":"Sync Google Calendar"}</button>:<button className="secondary-button" onClick={connectGoogleCalendar}>Connect Google Calendar</button>}</div></div>
+            <p className="calendar-sync-note">Google Calendar → KitaNotes only. Imported events are read-only in Google Calendar. {googleCalendarStatus.lastSyncAt?"Last sync: "+new Date(googleCalendarStatus.lastSyncAt).toLocaleString():""} </p>
+            {googleCalendarError&&<div className="inline-error">{googleCalendarError}</div> }
             {eventsLoading?<div className="loading-state">Loading your calendar…</div>:<div className={calendarMode==="month"?"calendar-grid month-grid":"calendar-grid week-grid"}>{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=><div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day=><div className={"calendar-day"+(day.getMonth()!==calendarCursor.getMonth()&&calendarMode==="month"?" outside":"")+(dateKey(day)===dateKey(new Date())?" today":"")} key={dateKey(day)}><div className="calendar-day-heading"><span>{day.getDate()}</span>{calendarMode==="week"&&<small>{day.toLocaleDateString(undefined,{month:"short"})}</small>}</div><div className="calendar-day-events">{eventsForDay(day).map(item=><button className="calendar-event-chip" key={item.id} onClick={()=>startEditEvent(item)} title={item.title}><span>{new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</span>{item.title}</button>)}</div>{calendarMode==="week"&&eventsForDay(day).length===0&&<span className="calendar-empty-day">No events</span>}</div>)}</div>}
             {!eventsLoading&&events.length===0&&<div className="calendar-empty-note">Nothing scheduled in this period. Add an event to start filling the calendar.</div>}
             <div className="calendar-agenda"><h3>Upcoming in this view</h3>{events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)).map(item=><article className="event-card" key={item.id}><div className="event-date-block"><strong>{new Date(item.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:item.timezone})}</strong><span>{new Date(item.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:item.timezone})}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleString(undefined,{timeZone:item.timezone})} · {item.timezone}</p>{item.description&&<small>{item.description}</small>}<small className="record-audit">Created by {item.createdByName||item.createdByEmail||"Unknown"} · {new Date(item.createdAt).toLocaleString()}<br/>Last updated by {item.updatedByName||item.updatedByEmail||item.createdByName||item.createdByEmail||"Unknown"} · {new Date(item.updatedAt).toLocaleString()}</small></div><button className="mini-icon" onClick={()=>startEditEvent(item)} aria-label="Edit event"><Pencil size={15}/></button><button className="mini-icon" onClick={()=>deleteEvent(item)} aria-label="Delete event"><Archive size={15}/></button></article>)}</div>
