@@ -244,9 +244,9 @@ async function listActivity(env: AuthEnv, userId: string, workspaceId: string): 
 async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
   const result = await env.DB!.prepare(
     "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
-  ).bind(userId).all<{id:string;name:string;workspace_type:"personal"|"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
+  ).bind(userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
   return json({ workspaces: result.results.map(row => ({
-    id:row.id,name:row.name,type:row.visibility==="private"?"personal":row.workspace_type,role:row.role
+    id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role
   })) });
 }
 
@@ -266,9 +266,9 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
     if ((count?.total ?? 0) >= 30) return json({ error: "WORKSPACE_LIMIT_REACHED" },409);
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    await env.DB!.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES (?,?,?,'shared',?,?)").bind(id,name,user.id,now,now).run();
+    await env.DB!.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,'shared','shared',?,?)").bind(id,name,user.id,now,now).run();
     await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
-    return json({ workspace: { id,name,type:"shared",role:"owner" } },201);
+    return json({ workspace: { id,name,type:"shared",visibility:"shared",role:"owner" } },201);
   }
   const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity))?$/);
   if (workspaceMatch) {
@@ -300,7 +300,7 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
           for (const statement of privacyChanges) await statement.run();
         }
         await logActivity(env.DB!,id,user.id,"workspace.members_cleared","workspace",id);
-        return json({updated:true,id,type:"personal",visibility:"private",membersRemoved:true,invitationsRevoked:true});
+        return json({updated:true,id,type:"shared",visibility:"private",membersRemoved:true,invitationsRevoked:true});
       }
       if(body?.action==="transfer_ownership") {
         const targetId=typeof body.userId==="string"?body.userId:"";
