@@ -139,3 +139,28 @@ test("Google login initiation is rate limited per IP fingerprint", async () => {
     db.close();
   }
 });
+
+test("Google OAuth callbacks are rate limited per IP fingerprint", async () => {
+  const db = new D1TestDatabase();
+  const env = {
+    DB: db,
+    GOOGLE_CLIENT_ID: "test-client-id",
+    GOOGLE_CLIENT_SECRET: "test-client-secret",
+    SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters",
+    APP_BASE_URL: "https://kitanotes.test"
+  };
+  try {
+    let last;
+    for (let index = 0; index < 21; index++) {
+      last = await handleAuthRequest(new Request("https://kitanotes.test/auth/google/callback?error=access_denied", {
+        headers: { "cf-connecting-ip": "203.0.113.11" }
+      }), env);
+      if (index < 20) assert.equal(last.status, 400);
+    }
+    assert.equal(last.status, 429);
+    assert.equal(last.headers.get("retry-after") !== null, true);
+    assert.equal(db.sqlite.prepare("SELECT request_count FROM request_rate_limits WHERE bucket_key LIKE 'oauth:callback:%'").get().request_count, 20);
+  } finally {
+    db.close();
+  }
+});
