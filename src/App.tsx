@@ -619,7 +619,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
@@ -652,7 +652,16 @@ export default function App() {
         </div>
       </section>
 
-      {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
+      {categoryModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setCategoryModalOpen(false);}}>
+        <section className="composer" role="dialog" aria-modal="true" aria-labelledby="category-title">
+          <header><div><span className="eyebrow">ORGANISE YOUR NOTES</span><h2 id="category-title">Categories</h2></div><button className="icon-button" onClick={()=>setCategoryModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <label className="field-label">New category<input className="invite-input" value={categoryName} onChange={event=>setCategoryName(event.target.value)} maxLength={50} placeholder="e.g. Family, Work, Ideas"/></label>
+          {categoryError&&<p className="invite-error">{categoryError}</p>}
+          <footer><span>{categories.length} categories in your workspace</span><button className="primary-button" onClick={createCategory} disabled={!categoryName.trim()||categorySaving}>{categorySaving?"Saving…":"Create category"}</button></footer>
+          <div className="category-list">{categories.map(category=><div key={category.id}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/><strong>{category.name}</strong></div>)}</div>
+        </section>
+      </div>}
+\n      {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
         <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
           <header><div><span className="eyebrow">GEMINI FREE TIER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
           {!aiStatus?<p className="ai-privacy-copy">Checking AI configuration…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>Add the Gemini API key as a Cloudflare Worker Secret. No text will be sent until the key and your consent are both present.</p></div>:!aiStatus.consented?<div className="ai-privacy-card">
@@ -674,7 +683,8 @@ export default function App() {
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
             <label className="field-label">Note title<input className="invite-input" value={aiDraftTitle} onChange={event=>setAiDraftTitle(event.target.value)} maxLength={200}/></label>
             <label className="field-label">Note content<textarea className="ai-input" value={aiDraftContent} onChange={event=>setAiDraftContent(event.target.value)} rows={6} maxLength={50000}/></label>
-            {aiDraft.suggestedCategories.length>0&&<div className="ai-draft-section"><strong>Suggested categories</strong>{aiDraft.suggestedCategories.map(category=><div key={category.name}><b>{category.name}</b><small>{category.reason}</small></div>)}</div>}
+            {aiDraft.suggestedCategories.length>0&&<div className="ai-draft-section"><strong>Suggested categories</strong>{aiDraft.suggestedCategories.map(category=><div key={category.name}><b>{category.name}</b><small>{category.reason}</small></div>)}<button className="secondary-button" onClick={createAiCategories} disabled={categorySaving||aiCategoriesCreated}>{categorySaving?"Creating…":aiCategoriesCreated?"Categories added":"Add suggested categories"}</button></div>}
+            <label className="field-label">Save note in category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
             {aiDraft.events.length>0&&<div className="ai-draft-section"><strong>Events</strong>{aiDraft.events.map((event,index)=><div key={index}><b>{event.title}</b><small>{event.startLocal} to {event.endLocal} ({event.timezone}){event.reminderLocal?" · reminder "+event.reminderLocal:""}</small></div>)}</div>}
             {aiDraft.reminders.length>0&&<div className="ai-draft-section"><strong>Reminders</strong>{aiDraft.reminders.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal} ({item.timezone})</small></div>)}</div>}
             {aiDraft.tasks.length>0&&<div className="ai-draft-section"><strong>Tasks</strong>{aiDraft.tasks.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal||"No due date supplied"}</small></div>)}</div>}
@@ -731,6 +741,7 @@ export default function App() {
           <header><div><span className="eyebrow">PERSONAL NOTE</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
+          <label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : "Saved to your personal workspace."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
         </section>
       </div>}
