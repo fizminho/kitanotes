@@ -146,3 +146,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 [data-theme=dark] .workspace-ai-consent{background:#1b1c30;border-color:#34304f}
 [data-theme=dark] .calendar-arrow{background:#1b1d2b;border-color:#34364a;color:#a0a4b8}
 @media(max-width:760px){.topbar-action{width:34px;padding:0;font-size:0}.topbar-action svg{flex:none}}
+
+
+/* AI organiser image sources and automatic category recommendation */
+.visually-hidden-file{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.image-source-actions{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}
+.image-source-actions .secondary-button{flex:1 1 170px}
+.selected-image-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);font-size:11px;color:var(--muted)}
+.selected-image-row span{min-width:0;overflow-wrap:anywhere}
+.ai-category-recommendation{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:15px 0;padding:13px;border:1px solid #e4e0fb;border-radius:11px;background:#faf9ff}
+.ai-category-recommendation>div{display:grid;gap:5px;min-width:0}
+.ai-category-recommendation strong{font-size:11px;color:#6157b8}
+.ai-category-recommendation>div>span{font-size:14px;font-weight:700;color:#34364a}
+.ai-category-recommendation small{font-size:10px;line-height:1.45;color:#85899a}
+.ai-category-kind{flex:none;padding:5px 8px;border-radius:7px;background:#efedff;color:#6258bb;font-size:10px;font-weight:700}
+[data-theme=dark] .selected-image-row{background:#1b1c30;border-color:#34364a}
+[data-theme=dark] .ai-category-recommendation{background:#1b1c30;border-color:#3c385d}
+[data-theme=dark] .ai-category-recommendation>div>span{color:#ececf6}
+[data-theme=dark] .ai-category-kind{background:#302c50;color:#c6c0ff}
+@media(max-width:560px){.image-source-actions{flex-direction:column}.image-source-actions .secondary-button{width:100%}.ai-category-recommendation{align-items:flex-start;flex-direction:column}}
