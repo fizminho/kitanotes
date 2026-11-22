@@ -93,6 +93,25 @@ test("owner creates one-time Gmail handoff invite and verified invitee accepts i
   } finally { db.close(); }
 });
 
+test("open workspace invite link can be reused by multiple signed-in Google users", async () => {
+  const {env,db,tokens}=await setup();
+  try {
+    db.sqlite.prepare("DELETE FROM workspace_members WHERE workspace_id='w1' AND user_id='u3'").run();
+    const created=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",openLink:true,role:"viewer"}),env);
+    assert.equal(created.status,201);
+    const result=await created.json();
+    assert.equal(result.invitation.email,"Anyone with link");
+    assert.equal(result.gmailComposeUrl,null);
+    const token=new URL(result.invitationUrl).searchParams.get("token");
+    const first=await handleInvitationsRequest(request("/api/invitations/accept",tokens.u2,"POST",{token}),env);
+    const second=await handleInvitationsRequest(request("/api/invitations/accept",tokens.u3,"POST",{token}),env);
+    assert.equal(first.status,200);
+    assert.equal(second.status,200);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1' AND user_id IN ('u2','u3')").get().total,2);
+    assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id=?").get(result.invitation.id).status,"pending");
+  } finally { db.close(); }
+});
+
 test("invitation acceptance rejects a different verified Google email", async () => {
   const {db,env,tokens}=seed();
   try {
