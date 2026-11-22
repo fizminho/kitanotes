@@ -256,6 +256,15 @@ export default function App() {
           </div>
         </header>
         <div className="content">
+          {inviteToken && <section className="invite-panel">
+            <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
+              <p>Accept this invitation using the Google account whose email address received it.</p></div>
+            {user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
+              : authStatus === "signed_out" ? <a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Sign in to accept</a>
+              : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>}
+            {inviteError && <p className="invite-error">{inviteError}</p>}
+            {inviteError.includes("different Google email") && user && <button className="text-action" onClick={signOut}>Sign out</button>}
+          </section>}
           {inviteNotice && <div className="invite-success-banner"><Check size={16}/>{inviteNotice}</div>}
           {inviteToken && <section className="invite-panel">
             <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
