@@ -1,6 +1,6 @@
 # KitaNotes — Product & Technical Masterplan
 
-**Status:** Core P0–P3 application code implemented; live Cloudflare/Google provisioning and production verification remain open  
+**Status:** P0–P3 application code and initial P4 security hardening implemented; live Cloudflare/Google provisioning and production verification remain open  
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
@@ -449,6 +449,8 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P4 — Production hardening
 
+- [x] Apply CSP, HSTS (HTTPS), frame denial, no-sniff, referrer and permissions headers to every Worker response; add regression tests.
+- [x] Add D1-backed rate limits for OAuth initiation (10/IP/10m), callbacks (20/IP/10m) and invitations (10/user/hour); add unit and integration tests.
 - [ ] Deploy frontend and API through Cloudflare Free services only.
 - [ ] Configure domains, TLS, CORS, security headers and secrets.
 - [ ] Add database backups, restore test, migrations and rollback.
