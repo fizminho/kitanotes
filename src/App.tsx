@@ -134,6 +134,7 @@ export default function App() {
   const [ocrConsentChecked,setOcrConsentChecked] = useState(false);
   const [ocrWorking,setOcrWorking] = useState(false);
   const [ocrText,setOcrText] = useState("");
+  const [ocrPreviewUrl,setOcrPreviewUrl] = useState("");
   const [aiWorking, setAiWorking] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiDraft, setAiDraft] = useState<AiDraft | null>(null);
@@ -145,6 +146,12 @@ export default function App() {
   const [aiItemsCreated, setAiItemsCreated] = useState(false);
   const [aiCategoriesCreated, setAiCategoriesCreated] = useState(false);
   const [aiCreatedItems, setAiCreatedItems] = useState<string[]>([]);
+
+  useEffect(()=>{
+    if(!ocrFile){setOcrPreviewUrl("");return;}
+    const url=URL.createObjectURL(ocrFile);setOcrPreviewUrl(url);
+    return ()=>URL.revokeObjectURL(url);
+  },[ocrFile]);
 
   useEffect(() => {
     if (inviteToken) window.history.replaceState({}, "", "/");
@@ -569,13 +576,29 @@ export default function App() {
     if(response.ok){setOcrConsentChecked(false);setOcrFile(null);setOcrText("");}
   }
 
+  async function prepareImageForOcr(file:File):Promise<File> {
+    if(!("createImageBitmap" in window))return file;
+    const bitmap=await createImageBitmap(file);
+    try{
+      const scale=Math.min(1,2200/Math.max(bitmap.width,bitmap.height));
+      const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+      const context=canvas.getContext("2d");if(!context)return file;
+      context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/jpeg",0.88));
+      if(!blob)return file;
+      return new File([blob],file.name.replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg",lastModified:Date.now()});
+    }finally{bitmap.close();}
+  }
+
   async function scanImageWithAi() {
     if(!ocrFile||!ocrConsentChecked||ocrWorking)return;
     setOcrWorking(true);setAiError("");setOcrText("");
     try{
       const consent=await fetch("/api/ai/ocr/consent",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({accepted:true})});
       if(!consent.ok)throw new Error("Unable to save OCR consent.");
-      const response=await fetch("/api/ai/ocr",{method:"POST",credentials:"same-origin",headers:{"content-type":ocrFile.type},body:ocrFile});
+      const prepared=await prepareImageForOcr(ocrFile);
+      if(prepared.size>2*1024*1024)throw new Error("This image is still larger than 2 MB after preparation. Please choose a smaller image.");
+      const response=await fetch("/api/ai/ocr",{method:"POST",credentials:"same-origin",headers:{"content-type":prepared.type},body:prepared});
       const result=await response.json() as {text?:string;error?:string};
       if(!response.ok||typeof result.text!=="string"){
         const message=result.error==="OCR_FREE_QUOTA_EXHAUSTED"||result.error==="OCR_DAILY_FREE_LIMIT_REACHED"?"The free OCR limit is reached. Try again after the quota resets."
@@ -590,12 +613,13 @@ export default function App() {
     finally{setOcrWorking(false);}
   }
 
-  async function organizeWithAi() {
-    if(!aiInput.trim()||aiWorking||!aiStatus?.consented)return;
+  async function organizeWithAi(textOverride?:string) {
+    const sourceText=(textOverride??aiInput).trim();
+    if(!sourceText||aiWorking||!aiStatus?.consented)return;
     setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCategoriesCreated(false);setAiCreatedItems([]);
     try{
       const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        text:aiInput,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:activeWorkspaceId
+        text:sourceText,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:activeWorkspaceId
       })});
       const result=await response.json() as {draft?:AiDraft;usage?:{dailyLimit:number;dailyUsed:number;dailyRemaining:number};error?:string};
       if(!response.ok||!result.draft){
@@ -1131,9 +1155,11 @@ export default function App() {
               <strong>Use image OCR without enabling text AI</strong>
               <p className="ai-privacy-copy">OCR consent is separate. Your selected image is sent to Google Gemini for text extraction only, is not stored by KitaNotes, and is not automatically organised or saved.</p>
               <input className="invite-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
+              {ocrPreviewUrl&&<img className="ocr-image-preview" src={ocrPreviewUrl} alt="Selected image preview"/>}
+              {ocrPreviewUrl&&<img className="ocr-image-preview" src={ocrPreviewUrl} alt="Selected image preview"/>}
               <label className="ai-consent-check"><input type="checkbox" checked={ocrConsentChecked} onChange={event=>setOcrConsentChecked(event.target.checked)}/> I consent to sending this image to Google Gemini for OCR under its free-tier data terms.</label>
               <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||!ocrConsentChecked||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
-              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="secondary-button" onClick={()=>{setAiInput(ocrText);setAiDraft(null);setAiError("Text AI consent is required before organising this OCR result.");}}>Copy extracted text to organiser</button></>}
+              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><p className="ai-privacy-copy">After enabling text AI, you can ask Gemini to prepare a note and calendar draft from this extracted text.</p></>}
               <button className="text-action" onClick={revokeOcrConsent}>Revoke OCR consent</button>
             </div></>:!aiDraft?<div>
             <p className="ai-privacy-copy">Paste unstructured text. Gemini will suggest a clean note, categories, events, reminders and tasks. Review everything before saving.</p>
@@ -1145,7 +1171,7 @@ export default function App() {
               <input className="invite-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
               <label className="ai-consent-check"><input type="checkbox" checked={ocrConsentChecked} onChange={event=>setOcrConsentChecked(event.target.checked)}/> I consent to sending this image to Google Gemini for OCR under its free-tier data terms. I will not upload sensitive identity or banking documents.</label>
               <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||!ocrConsentChecked||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
-              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="secondary-button" onClick={()=>{setAiInput(ocrText);setOcrFile(null);setOcrText("");}}>Use extracted text in organiser</button></>}
+              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="primary-button" onClick={()=>organizeWithAi(ocrText)} disabled={aiWorking||!aiStatus.consented||new TextEncoder().encode(ocrText).byteLength>16000}>{aiWorking?"Preparing note & calendar…":"AI: prepare note & calendar"}</button><small className="ai-privacy-copy">AI will suggest what belongs in a note and which dates belong on your calendar. Review and confirm each action.</small></>}
             </div>
             {aiError&&<p className="invite-error">{aiError}</p>}
             <footer><button className="text-action" onClick={revokeAiConsent}>Revoke AI consent</button><button className="primary-button" onClick={organizeWithAi} disabled={!aiInput.trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize text"}</button></footer>
