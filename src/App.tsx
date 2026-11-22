@@ -369,12 +369,29 @@ export default function App() {
   },[view,user,activeWorkspaceId]);
 
   useEffect(()=>{
-    const result=new URLSearchParams(window.location.search).get("googleCalendar");
+    const params=new URLSearchParams(window.location.search);
+    const result=params.get("googleCalendar");
     if(!result)return;
-    const messages:Record<string,string>={connected:"Google Calendar connected. You can import events now.",signin_required:"Please sign in again to connect Google Calendar.",refresh_token_missing:"Google did not return offline access. Please connect again and approve access.",workspace_error:"You no longer have permission to connect this workspace.",error:"Google Calendar connection did not complete.",state_error:"The Google Calendar connection request expired. Please try again.",token_error:"Google could not complete the calendar connection.",scope_error:"Google Calendar read permission was not granted."};
-    pushToast(messages[result]??"Google Calendar connection status: "+result,result==="connected"?"ok":"error");
+    const workspaceId=params.get("googleCalendarWorkspace");
     window.history.replaceState({}, "", window.location.pathname+window.location.hash);
-  },[pushToast]);
+    const messages:Record<string,string>={signin_required:"Please sign in again to connect Google Calendar.",refresh_token_missing:"Google did not return offline access. Please connect again and approve access.",workspace_error:"You no longer have permission to connect this workspace.",error:"Google Calendar connection did not complete.",state_error:"The Google Calendar connection request expired. Please try again.",token_error:"Google could not complete the calendar connection.",scope_error:"Google Calendar read permission was not granted."};
+    if(result!=="connected"||!workspaceId){pushToast(messages[result]??"Google Calendar connection status: "+result,result==="connected"?"ok":"error");return;}
+    let active=true;
+    setGoogleCalendarBusy(true);
+    setGoogleCalendarError("");
+    fetch("/api/google-calendar/sync",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId})})
+      .then(async response=>{
+        const payload=await response.json() as {error?:string;imported?:number;updated?:number;deleted?:number;lastSyncAt?:string};
+        if(!response.ok)throw new Error(payload.error==="GOOGLE_TOKEN_REFRESH_FAILED"?"Calendar connected, but access needs to be renewed. Please reconnect.":"Calendar connected, but the first sync failed. Try Sync Google Calendar.");
+        if(!active)return;
+        if(activeWorkspaceId===workspaceId)setGoogleCalendarStatus({connected:true,lastSyncAt:payload.lastSyncAt??null,direction:"google_to_kitanotes",readOnly:true});
+        setCalendarRefresh(value=>value+1);
+        pushToast("Google Calendar connected and synced. Imported "+(payload.imported??0)+", updated "+(payload.updated??0)+", removed "+(payload.deleted??0)+" events.","ok");
+      })
+      .catch(error=>{if(active){setGoogleCalendarError(error instanceof Error?error.message:"Google Calendar connected, but the first sync failed.");pushToast("Google Calendar connected, but the first sync failed. Open Calendar and try syncing again.","error");}})
+      .finally(()=>{if(active)setGoogleCalendarBusy(false);});
+    return ()=>{active=false;};
+  },[pushToast,activeWorkspaceId]);
 
   useEffect(() => {
     if (!notificationsOpen || !user) return;
