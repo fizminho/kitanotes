@@ -17,6 +17,7 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
 }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
+type Workspace = {id:string;name:string;type:"personal"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
@@ -40,6 +41,8 @@ export default function App() {
   const [view, setView] = useState<View>("notes");
   const [query, setQuery] = useState("");
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
+  const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
   const [authStatus, setAuthStatus] = useState<"loading" | "signed_out" | "ready" | "unavailable">("loading");
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -157,6 +160,19 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
+  useEffect(()=>{
+    if(!user){setWorkspaces([]);setActiveWorkspaceId("");return;}
+    let active=true;
+    fetch("/api/workspaces",{credentials:"same-origin"}).then(async response=>{
+      if(!response.ok)throw new Error("Unable to load workspaces.");
+      const result=await response.json() as {workspaces:Workspace[]};
+      if(!active)return;
+      setWorkspaces(result.workspaces);
+      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
+    }).catch(()=>{if(active)setWorkspaces([]);});
+    return()=>{active=false;};
+  },[user]);
+
   useEffect(() => {
     if (!user) { setNotes([]); return; }
     let active = true;
@@ -183,13 +199,13 @@ export default function App() {
   },[user]);
 
   useEffect(() => {
-    if (!user?.personalWorkspaceId) { setCategories([]); return; }
+    if (!activeWorkspaceId) { setCategories([]); return; }
     let active=true;
-    fetch("/api/categories?workspaceId="+encodeURIComponent(user.personalWorkspaceId),{credentials:"same-origin"})
+    fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"})
       .then(async response=>{if(!response.ok)throw new Error("Unable to load categories.");const result=await response.json() as {categories:Category[]};if(active)setCategories(result.categories);})
       .catch(()=>undefined);
     return ()=>{active=false;};
-  },[user?.personalWorkspaceId]);
+  },[activeWorkspaceId]);
 
   useEffect(() => {
     if (!user) { setAiStatus(null); return; }
@@ -201,7 +217,7 @@ export default function App() {
   },[user]);
 
   useEffect(() => {
-    if (!inviteOpen || !user?.personalWorkspaceId) return;
+    if (!inviteOpen || !activeWorkspaceId) return;
     let active = true;
     setInvitationsLoading(true);
     fetch("/api/invitations?workspaceId=" + encodeURIComponent(user.personalWorkspaceId), { credentials: "same-origin" })
@@ -213,7 +229,7 @@ export default function App() {
       .catch(error => { if (active) setInviteCreateError(error instanceof Error ? error.message : "Unable to load invitations."); })
       .finally(() => { if (active) setInvitationsLoading(false); });
     return () => { active = false; };
-  }, [inviteOpen, user?.personalWorkspaceId, inviteRefresh]);
+  }, [inviteOpen, activeWorkspaceId, inviteRefresh]);
 
   useEffect(() => {
     if (view !== "calendar" || !user) return;
@@ -414,11 +430,11 @@ export default function App() {
   }
 
   async function createCategory() {
-    if(!user?.personalWorkspaceId||!categoryName.trim()||categorySaving)return;
+    if(!activeWorkspaceId||!categoryName.trim()||categorySaving)return;
     setCategorySaving(true);setCategoryError("");
     try{
       const response=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        workspaceId:user.personalWorkspaceId,name:categoryName,color:"#766bd0",sortOrder:categories.length
+        workspaceId:activeWorkspaceId,name:categoryName,color:"#766bd0",sortOrder:categories.length
       })});
       const result=await response.json() as {category?:Category;error?:string};
       if(!response.ok||!result.category)throw new Error(result.error==="CATEGORY_ALREADY_EXISTS"?"A category with that name already exists.":"Unable to create category.");
@@ -429,7 +445,7 @@ export default function App() {
   }
 
   async function createAiCategories() {
-    if(!aiDraft||!user?.personalWorkspaceId||aiCategoriesCreated)return;
+    if(!aiDraft||!activeWorkspaceId||aiCategoriesCreated)return;
     setCategorySaving(true);setAiError("");
     try{
       for(const suggestion of aiDraft.suggestedCategories){
@@ -498,7 +514,7 @@ export default function App() {
     setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCategoriesCreated(false);setAiCreatedItems([]);
     try{
       const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        text:aiInput,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:user?.personalWorkspaceId
+        text:aiInput,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:activeWorkspaceId
       })});
       const result=await response.json() as {draft?:AiDraft;usage?:{dailyLimit:number;dailyUsed:number;dailyRemaining:number};error?:string};
       if(!response.ok||!result.draft){
@@ -516,7 +532,7 @@ export default function App() {
   }
 
   async function saveAiNote() {
-    if(!aiDraft||!user?.personalWorkspaceId||aiSavingNote||aiNoteSaved)return;
+    if(!aiDraft||!activeWorkspaceId||aiSavingNote||aiNoteSaved)return;
     setAiSavingNote(true);setAiError("");
     try{
       const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
@@ -530,7 +546,7 @@ export default function App() {
   }
 
   async function createAiItems() {
-    if(!aiDraft||!user?.personalWorkspaceId||aiCreatingItems||aiItemsCreated)return;
+    if(!aiDraft||!activeWorkspaceId||aiCreatingItems||aiItemsCreated)return;
     setAiCreatingItems(true);setAiError("");
     const completed=new Set(aiCreatedItems);
     try{
@@ -682,14 +698,14 @@ export default function App() {
   }
 
   async function createInvite() {
-    if (!user?.personalWorkspaceId || !inviteEmail.trim() || inviteSending) return;
+    if (!activeWorkspaceId || !inviteEmail.trim() || inviteSending) return;
     setInviteSending(true);
     setInviteCreateError("");
     setCreatedInvite(null);
     try {
       const response = await fetch("/api/invitations", {
         method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workspaceId: user.personalWorkspaceId, email: inviteEmail, role: inviteRole })
+        body: JSON.stringify({ workspaceId: activeWorkspaceId, email: inviteEmail, role: inviteRole })
       });
       const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string; error?: string };
       if (!response.ok || !result.invitationUrl || !result.gmailComposeUrl) {
@@ -743,11 +759,14 @@ export default function App() {
           <span className="brand-mark"><Command size={19} /></span>
           <span>Kita<span className="brand-soft">Notes</span></span>
         </a>
-        <button className="workspace-switch">
+        <label className="workspace-switch" aria-label="Choose workspace">
           <span className="workspace-avatar">K</span>
-          <span className="workspace-copy"><strong>My workspace</strong><small>Personal space</small></span>
+          <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"Shared workspace":"Personal space"}</small></span>
+          <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
+            {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
+          </select>
           <ChevronDown size={16} />
-        </button>
+        </label>
         <div className="nav-label">WORKSPACE</div>
         <nav className="nav-list" aria-label="Main navigation">
           <button className={view === "notes" ? "nav-item active" : "nav-item"} onClick={() => setView("notes")}><Command size={17} /> Notes <span className="nav-count">{notes.length}</span></button>
@@ -766,7 +785,7 @@ export default function App() {
 
       <section className="main-panel">
         <header className="topbar">
-          <div className="breadcrumb">My workspace <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
+          <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
             {!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
@@ -939,7 +958,7 @@ export default function App() {
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>setEventStart(e.target.value)}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>setEventTimezone(e.target.value)} placeholder="Asia/Kuala_Lumpur"/></label>
-          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===user?.personalWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>\n          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
+          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>\n          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
           <footer><span>{editingEvent?"Changes use version checking. Existing reminders are retained.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
@@ -947,7 +966,7 @@ export default function App() {
 
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
-          <header><div><span className="eyebrow">PERSONAL NOTE</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
+          <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"SHARED WORKSPACE NOTE":"PERSONAL NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
           <label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
