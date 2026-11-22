@@ -20,24 +20,24 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 
 ## Invitations
 
-- `POST /api/invitations`: owner-only. Body: `{ workspaceId, email, role: "editor" | "viewer" }`. Returns a one-time invitation URL and a prefilled Gmail compose URL. The API does not send email.
+- `POST /api/invitations`: owner-only. Body: `{ workspaceId, openLink: true, role: "editor" | "viewer" }` creates a reusable seven-day bearer link that any signed-in user with a verified Google email can use; an optional `email` retains legacy email-restricted invitations. The API does not send email.
 - `GET /api/invitations?workspaceId=`: owner-only list without token hashes or raw tokens.
-- `POST /api/invitations/accept`: signed-in user accepts with `{ token }`; verified Google email must match the invitation address.
+- `POST /api/invitations/accept`: signed-in user accepts with `{ token }`; legacy email-restricted invitations require a verified email match. Open links are reusable by multiple Google-authenticated users until expiry/revocation.
 - `DELETE /api/invitations/:id`: owner revokes a pending invitation.
 - `GET /api/workspaces`, `POST /api/workspaces` (creates a **shared** space, max 30 owned), `PATCH /api/workspaces/:id` (`{name}` rename; `{action:"make_private"}` removes all other members and revokes pending invitations; `{action:"make_shared"}` re-enables new invitations without restoring former members; `{action:"transfer_ownership",userId}`), `DELETE /api/workspaces/:id` (owner deletes a shared-visibility workspace and everything in it; private workspaces cannot be deleted through this route).
 - `GET /api/workspaces/:id/members`: any member. `PATCH|DELETE /api/workspaces/:id/members/:userId`: owner changes role / removes; a non-owner may `DELETE` their own membership to leave.
 - `GET /api/workspaces/:id/activity`: any member; last 50 sharing events (invitations, joins, leaves, removals, role changes, ownership transfers).
 - Collaboration notifications: invitation accepted and member left (to owner); role changed, removed, ownership received (to the affected member).
 
-Every workspace has `type:"shared"`; `visibility` is the access boundary (`private` or `shared`). A private workspace remains `type:"shared"` and is returned with `visibility:"private"`. Owners can make it shared again; this does not automatically restore removed members. Making a workspace private revokes pending invitations and removes other memberships while retaining notes and categories. Invitation tokens are cryptographically random, stored only as SHA-256 hashes, expire after seven days and are single-use. An SQLite trigger creates membership in the same database transaction as the accepted status update.
+Every workspace has `type:"shared"`; `visibility` is the access boundary (`private` or `shared`). A private workspace remains `type:"shared"` and is returned with `visibility:"private"`. Owners can make it shared again; this does not automatically restore removed members. Making a workspace private revokes pending invitations and removes other memberships while retaining notes and categories. Invitation tokens are cryptographically random and stored only as SHA-256 hashes. Legacy email-specific invitations are single-use; open workspace links are reusable for seven days and can be revoked by the owner. Each join is logged and owner-removal remains available. An SQLite trigger creates membership in the same database transaction as the accepted status update.
 
 ## Calendar events
 
 - `GET /api/events?from=&to=&workspaceId=&limit=100`: list events overlapping the requested range in workspaces the user belongs to. Default range is 30 days back through 90 days ahead.
-- `POST /api/events`: create event. Body: `{ title, description?, startsAt, endsAt, timezone, allDay?, linkedNoteId?, workspaceId? }`.
+- `POST /api/events`: create event. The response includes creator and latest-editor identity/timestamps. Body: `{ title, description?, startsAt, endsAt, timezone, allDay?, linkedNoteId?, workspaceId? }`.
 - `GET /api/events/:id`: retrieve an event with workspace membership.
-- `PATCH /api/events/:id`: update event with optimistic `version`.
-- `DELETE /api/events/:id`: soft-delete event and cancel pending linked reminders.
+- `PATCH /api/events/:id`: update event with optimistic `version`; records the last editor and an activity entry.
+- `DELETE /api/events/:id`: soft-delete event, records the deleting editor and an activity entry, and cancels pending linked reminders.
 
 Timestamps must include an explicit UTC offset or `Z`; the API stores UTC instants and retains the IANA timezone for display. End must be after start. A linked note must belong to the same workspace.
 
