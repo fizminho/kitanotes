@@ -151,6 +151,15 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
     if (pageToken) params.set("pageToken", pageToken);
     let response = await fetch("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(connection.calendar_id) + "/events?" + params.toString(), { headers: { authorization: "Bearer " + token } });
     if (response.status === 410 && syncToken && !reset) {
+      const stale = await db.prepare("SELECT local_event_id FROM google_calendar_event_map WHERE workspace_id=? AND calendar_id=?")
+        .bind(workspaceId, connection.calendar_id).all<{ local_event_id: string }>();
+      const resetAt = new Date().toISOString();
+      for (const mapped of stale.results) {
+        await db.prepare("UPDATE calendar_events SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
+          .bind(resetAt, resetAt, userId, mapped.local_event_id).run();
+      }
+      await db.prepare("DELETE FROM google_calendar_event_map WHERE workspace_id=? AND calendar_id=?")
+        .bind(workspaceId, connection.calendar_id).run();
       syncToken = undefined; pageToken = undefined; nextSyncToken = undefined; reset = true; page = -1; continue;
     }
     if (!response.ok) return json({ error: "GOOGLE_CALENDAR_API_FAILED", status: response.status }, 502);
