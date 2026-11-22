@@ -186,7 +186,7 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
     await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
     return json({ workspace: { id,name,type:"personal",role:"owner" } },201);
   }
-  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/);
+  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/members(?:\/([^/]+))?)?$/);
   if (workspaceMatch) {
     const id=decodeURIComponent(workspaceMatch[1]);
     if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
