@@ -17,7 +17,7 @@ APP_ENV = "development"
 [[d1_databases]]
 binding = "DB"
 database_name = "kitanotes-db"
-database_id = "00000000-0000-0000-0000-000000000000" # Replace after creating the dedicated KitaNotes D1 database.
+database_id = "cb4cb9e3-eab9-47d6-9e56-49c6b52b2062" # Replace after creating the dedicated KitaNotes D1 database.
 migrations_dir = "./migrations"
 
 [triggers]
