@@ -92,7 +92,7 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
     const result = workspaceId
       ? await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(workspaceId, query, pattern, pattern, limit).all<NoteRow>()
-      : await db.prepare("SELECT n.*,c.name AS category_name FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id WHERE wm.user_id=? AND n.deleted_at IS NULL AND n.archived_at IS NULL AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
+      : await db.prepare("SELECT n.*,c.name AS category_name FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id WHERE wm.user_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(userId, query, pattern, pattern, limit).all<NoteRow>();
     return json({ notes: result.results.map(noteDto) });
   }
