@@ -1209,8 +1209,8 @@ export default function App() {
           </div>}
 
           {manageTab==="settings"&&activeWorkspace.role==="owner"&&<div className="invite-list">
-            <strong>Space settings</strong><p className="invite-list-note">Rename this space, remove everyone else, or delete it with everything inside.</p>
-            <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button>{activeWorkspace.visibility==="shared"?<button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Make private</button>:<button className="secondary-button" onClick={makeWorkspaceShared} disabled={workspaceActionBusy}>Make shared</button>}<button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button></div>
+            <strong>Space settings</strong><p className="invite-list-note">Rename this space or change who can access it. Deleting a shared space permanently removes its notes and events.</p>
+            <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button>{activeWorkspace.visibility==="shared"?<button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Make private</button>:<button className="secondary-button" onClick={makeWorkspaceShared} disabled={workspaceActionBusy}>Make shared</button>}{activeWorkspace.visibility==="shared"&&<button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button>}</div>
           </div>}
 
           {manageTab==="leave"&&activeWorkspace.role!=="owner"&&<div className="invite-list">
