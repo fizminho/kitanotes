@@ -36,6 +36,12 @@ missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
 
+# Creator and last-editor metadata must exist for notes and calendar events.
+for table in ("notes", "calendar_events"):
+    columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    if "created_by_user_id" not in columns or "updated_by_user_id" not in columns:
+        raise SystemExit(f"{table} is missing creator/editor audit columns")
+
 db.execute("INSERT INTO categories (id,workspace_id,name,created_by_user_id,created_at,updated_at) VALUES ('c2','w2','Private','u2','now','now')")
 
 try:
