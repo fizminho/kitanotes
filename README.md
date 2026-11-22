@@ -21,7 +21,7 @@ The logo reads **KitaNotes by Binalah.com**. PWA icons (`public/icons/icon-*.png
 
 ### Workspace model (clarified)
 
-Every user has exactly one private **personal** workspace (enforced by a unique index). Extra workspaces are **shared spaces**: the owner can invite people, change roles, remove members, rename or delete the space; members can leave. Owners get a Manage space dialog (People, Invite, Activity, Settings) with roles, remove, transfer ownership, re-issue invitation links and a sharing activity log; members see People/Activity and can leave. Previously new workspaces were created as `personal`, which collided with that unique index, and nothing could ever become `shared`, so invitations were unreachable. "Make private" now removes all other members and revokes invitations but keeps the space's type.
+Every user has exactly one private **personal** workspace (enforced by a unique index). Extra workspaces are **shared spaces**: the owner can invite people, change roles, remove members, rename or delete the space; members can leave. Owners get a Manage space dialog (People, Invite, Activity, Settings) with roles, remove, transfer ownership, re-issue invitation links and a sharing activity log; members see People/Activity and can leave. Previously new workspaces were created as `personal`, which collided with that unique index, and nothing could ever become `shared`, so invitations were unreachable. "Make private" now removes all other members, revokes pending invitations and permanently blocks new invitations. The space is presented as personal/private while its existing notes and data remain intact.
 
 ## Start here
 
