@@ -23,7 +23,7 @@ function json(data: unknown, status = 200): Response {
 function isSameOrigin(request: Request): boolean {
   return request.headers.get("origin") === new URL(request.url).origin;
 }
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
+export async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) return null;
   const declaredLength = Number(request.headers.get("content-length"));
@@ -116,7 +116,7 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
   }
   if (path === "/api/notes" && request.method === "POST") {
     if (!isSameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
-    const body = await readBody(request);
+    const body = await readJsonBody(request);
     if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
     const title = textValue(body.title, 200);
     const content = typeof body.content === "string" && body.content.length <= MAX_NOTE_CONTENT_CHARS ? body.content : null;
