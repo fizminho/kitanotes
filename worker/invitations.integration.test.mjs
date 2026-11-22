@@ -26,6 +26,7 @@ class D1TestDatabase {
       };
     }};
   }
+  async batch(statements) { const out=[]; for (const statement of statements) out.push(await statement.run()); return out; }
   close() { this.sqlite.close(); }
 }
 
@@ -174,9 +175,67 @@ test("making a shared workspace private removes members and revokes pending invi
     db.sqlite.prepare("INSERT INTO notes (id,workspace_id,title,content,created_by_user_id,created_at,updated_at) VALUES ('n1','w1','Keep me','Body','u1',?,?)").run(now,now);
     const response=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"make_private"}),env);
     assert.equal(response.status,200);
-    assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"personal");
+    assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"shared");
     assert.deepEqual(db.sqlite.prepare("SELECT user_id FROM workspace_members WHERE workspace_id='w1'").all().map(row=>row.user_id),["u1"]);
     assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id='pending1'").get().status,"revoked");
     assert.equal(db.sqlite.prepare("SELECT title FROM notes WHERE id='n1'").get().title,"Keep me");
+  } finally { db.close(); }
+});
+
+test("creating a workspace makes a shared space that can be invited to, renamed, left and deleted", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const created=await handleInvitationsRequest(request("/api/workspaces",tokens.u1,"POST",{name:"Family"}),env);
+    assert.equal(created.status,201);
+    const {workspace}=await created.json();
+    assert.equal(workspace.type,"shared");
+    const invite=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:workspace.id,email:"someone@example.com",role:"viewer"}),env);
+    assert.equal(invite.status,201);
+    const renamed=await handleInvitationsRequest(request("/api/workspaces/"+workspace.id,tokens.u1,"PATCH",{name:"Family HQ"}),env);
+    assert.equal(renamed.status,200);
+    assert.equal(db.sqlite.prepare("SELECT name FROM workspaces WHERE id=?").get(workspace.id).name,"Family HQ");
+    const deleted=await handleInvitationsRequest(request("/api/workspaces/"+workspace.id,tokens.u1,"DELETE",{}),env);
+    assert.equal(deleted.status,200);
+    assert.equal(db.sqlite.prepare("SELECT id FROM workspaces WHERE id=?").get(workspace.id),undefined);
+  } finally { db.close(); }
+});
+
+test("accepting an invitation logs activity and notifies the owner; members can read members and activity", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const created=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"invitee@example.com",role:"editor"}),env);
+    const token=new URL((await created.json()).invitationUrl).searchParams.get("token");
+    await handleInvitationsRequest(request("/api/invitations/accept",tokens.u2,"POST",{token}),env);
+    const note=db.sqlite.prepare("SELECT title,notification_type FROM notifications WHERE user_id='u1'").get();
+    assert.equal(note.notification_type,"invitation_accepted");
+    const members=await handleInvitationsRequest(request("/api/workspaces/w1/members",tokens.u3),env);
+    assert.equal(members.status,200);
+    assert.equal((await members.json()).members.length,3);
+    const activity=await handleInvitationsRequest(request("/api/workspaces/w1/activity",tokens.u3),env);
+    assert.equal(activity.status,200);
+    const types=(await activity.json()).activity.map(item=>item.type);
+    assert.ok(types.includes("member.joined")&&types.includes("invitation.created"));
+    const outsider=await handleInvitationsRequest(request("/api/workspaces/w1/activity","unknown-session"),env);
+    assert.notEqual(outsider.status,200);
+  } finally { db.close(); }
+});
+
+test("members can leave, owners can transfer ownership, role changes notify the member", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const changed=await handleInvitationsRequest(request("/api/workspaces/w1/members/u3",tokens.u1,"PATCH",{role:"editor"}),env);
+    assert.equal(changed.status,200);
+    assert.equal(db.sqlite.prepare("SELECT notification_type FROM notifications WHERE user_id='u3'").get().notification_type,"member_role_changed");
+    const denied=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u3,"PATCH",{action:"transfer_ownership",userId:"u3"}),env);
+    assert.equal(denied.status,404);
+    const moved=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"transfer_ownership",userId:"u3"}),env);
+    assert.equal(moved.status,200);
+    assert.equal(db.sqlite.prepare("SELECT owner_user_id FROM workspaces WHERE id='w1'").get().owner_user_id,"u3");
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u1'").get().role,"editor");
+    const left=await handleInvitationsRequest(request("/api/workspaces/w1/members/u1",tokens.u1,"DELETE",{}),env);
+    assert.equal(left.status,200);
+    assert.equal(db.sqlite.prepare("SELECT user_id FROM workspace_members WHERE workspace_id='w1' AND user_id='u1'").get(),undefined);
+    const ownerLeave=await handleInvitationsRequest(request("/api/workspaces/w1/members/u3",tokens.u3,"DELETE",{}),env);
+    assert.equal(ownerLeave.status,409);
   } finally { db.close(); }
 });

@@ -10,6 +10,19 @@ KitaNotes is a mobile-first web application for private notes, collaboration, ca
 
 Google OAuth credentials, a dedicated D1 database and a Gemini API key have not been provisioned, so live sign-in, persistence and Gemini calls have not been exercised. The AI organiser has consent, free-model allowlisting, daily limits and review-before-save UI, but remains disabled until a key is configured. Google Calendar sync, offline data editing and production deployment remain outstanding. The PWA app shell and month/week calendar are implemented; Web Push code is ready but requires VAPID configuration and real-device verification.
 
+## What's new in 0.2
+
+- **Bug fixes:** editing a calendar event always failed (broken date regex); stray `\n` text rendered in the AI and event dialogs; notes from every workspace were loaded and never refetched when switching workspaces; "Shared with me" was a dead placeholder; the composer always claimed notes were saved to a personal workspace.
+- **Features:** category filter chips, sort (recent / oldest / A–Z), archive view with restore and delete, toast feedback, dark mode, keyboard shortcuts (`/` or Ctrl/⌘+K search, Ctrl/⌘+Enter save, Esc close), word counter, view-only handling for viewer role, and a real shared-spaces list.
+
+### Branding
+
+The logo reads **KitaNotes by Binalah.com**. PWA icons (`public/icons/icon-*.png`, maskable and Apple touch) carry the full name; the compact glyph (`mark.svg`) is used for the favicon and the sidebar, and `logo-lockup.svg` / `logo-lockup-dark.svg` are horizontal versions for docs and sharing. Text is converted to outlines, so the SVGs need no fonts.
+
+### Workspace model (clarified)
+
+Every user has exactly one private **personal** workspace (enforced by a unique index). Extra workspaces are **shared spaces**: the owner can invite people, change roles, remove members, rename or delete the space; members can leave. Owners get a Manage space dialog (People, Invite, Activity, Settings) with roles, remove, transfer ownership, re-issue invitation links and a sharing activity log; members see People/Activity and can leave. Previously new workspaces were created as `personal`, which collided with that unique index, and nothing could ever become `shared`, so invitations were unreachable. "Make private" now removes all other members and revokes invitations but keeps the space's type.
+
 ## Start here
 
 - [Product & Technical Masterplan](docs/MASTERPLAN.md)

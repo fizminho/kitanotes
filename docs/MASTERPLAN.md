@@ -45,10 +45,10 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] In-app notification inbox.
 - [x] Optional per-device Web Push subscriptions, permission flow and best-effort due-reminder delivery; VAPID provisioning and real-device delivery verification remain open.
 - [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.
-- [ ] Add invitation-accepted and other collaboration activity notifications.
+- [x] Add invitation-accepted and other collaboration activity notifications.
 - [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
 - [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
-- [ ] Audit/activity history for sharing and material note changes.
+- [x] Audit/activity history for sharing (invitations, membership, roles, ownership). Material note-change history remains open.
 - [x] Responsive mobile and desktop web experience.
 - [x] PWA install prompt, install metadata and offline application-shell/static-asset cache; private data and edits still require connectivity.
 - [x] Automated tests, CI checks and operational documentation.

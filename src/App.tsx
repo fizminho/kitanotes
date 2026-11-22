@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag } from "lucide-react";
 
+type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
+type ManageTab = "people" | "invite" | "activity" | "settings";
+type SortMode = "updated" | "oldest" | "title";
+type Toast = { id:number; text:string; tone:"ok"|"error" };
 type View = "notes" | "calendar" | "shared";
 type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}> };
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
@@ -11,7 +15,7 @@ function dateTimeInputFor(value:string,timezone:string):string {
  return part("year")+"-"+part("month")+"-"+part("day")+"T"+part("hour")+":"+part("minute");
 }
 function zonedDateTimeToIso(value:string,timezone:string):string {
- const m=value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/); if(!m)throw new Error("Enter a valid event date and time.");
+ const m=value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/); if(!m)throw new Error("Enter a valid event date and time.");
  const target=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5]); let guess=target;
  for(let i=0;i<3;i++){const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(guess));const p=(t:string)=>Number(parts.find(x=>x.type===t)?.value??0);const represented=Date.UTC(p("year"),p("month")-1,p("day"),p("hour"),p("minute"),p("second"));const next=guess+target-represented;if(next===guess)break;guess=next;}return new Date(guess).toISOString();
 }
@@ -41,6 +45,19 @@ type Note = {
 export default function App() {
   const [view, setView] = useState<View>("notes");
   const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [manageTab, setManageTab] = useState<ManageTab>("people");
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [sortMode, setSortMode] = useState<SortMode>("updated");
+  const [showArchived, setShowArchived] = useState(false);
+  const [theme, setTheme] = useState<"light"|"dark">(() => { try { const saved = localStorage.getItem("kitanotes-theme"); if (saved === "dark" || saved === "light") return saved; } catch { /* ignore */ } return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"; });
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const pushToast = useCallback((text:string, tone:"ok"|"error"="ok") => {
+    const id = Date.now() + Math.random();
+    setToasts(current => [...current.slice(-3), { id, text, tone }]);
+    window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), 3500);
+  }, []);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
@@ -166,13 +183,13 @@ export default function App() {
 
   async function createPersonalWorkspace() {
     if(workspaceCreating)return;
-    const name=window.prompt("Name your new personal workspace");
+    const name=window.prompt("Name your new shared space (you can invite people to it afterwards)");
     if(!name?.trim())return;
     setWorkspaceCreating(true);
     try {
       const response=await fetch("/api/workspaces",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({name:name.trim()})});
       const result=await response.json() as {workspace?:Workspace;error?:string};
-      if(!response.ok||!result.workspace)throw new Error(result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 personal workspace limit.":"Unable to create workspace.");
+      if(!response.ok||!result.workspace)throw new Error(result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 shared space limit.":"Unable to create workspace.");
       setWorkspaces(current=>[...current,result.workspace!]);
       setActiveWorkspaceId(result.workspace.id);
       setSelectedCategoryId("");
@@ -195,11 +212,11 @@ export default function App() {
   },[user]);
 
   useEffect(() => {
-    if (!user) { setNotes([]); return; }
+    if (!user || !activeWorkspaceId) { setNotes([]); return; }
     let active = true;
     setNotesLoading(true);
     setNotesError("");
-    fetch("/api/notes", { credentials: "same-origin" })
+    fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
       .then(async response => {
         if (!response.ok) throw new Error(response.status === 503 ? "Database setup is not complete yet." : "Unable to load notes.");
         const result = await response.json() as { notes: Note[] };
@@ -208,7 +225,10 @@ export default function App() {
       .catch(error => { if (active) setNotesError(error instanceof Error ? error.message : "Unable to load notes."); })
       .finally(() => { if (active) setNotesLoading(false); });
     return () => { active = false; };
-  }, [user]);
+  }, [user, activeWorkspaceId, showArchived]);
+
+  useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
+  useEffect(() => { setCategoryFilter(""); }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!user) { setUnreadCount(0); return; }
@@ -240,21 +260,25 @@ export default function App() {
   useEffect(() => {
     if (!inviteOpen || !activeWorkspaceId) return;
     let active = true;
+    const owner = workspaces.find(item => item.id === activeWorkspaceId)?.role === "owner";
     setInvitationsLoading(true);
-    fetch("/api/invitations?workspaceId=" + encodeURIComponent(activeWorkspaceId), { credentials: "same-origin" })
-      .then(async response => {
-        if (!response.ok) throw new Error("Unable to load invitations.");
-        const result = await response.json() as { invitations: Invitation[] };
-        if (active) setInvitations(result.invitations);
-        const memberResponse=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members",{credentials:"same-origin"});
-        if(!memberResponse.ok)throw new Error("Unable to load workspace members.");
-        const memberResult=await memberResponse.json() as {members:WorkspaceMember[]};
-        if(active)setWorkspaceMembers(memberResult.members);
-      })
-      .catch(error => { if (active) setInviteCreateError(error instanceof Error ? error.message : "Unable to load invitations."); })
+    const id = encodeURIComponent(activeWorkspaceId);
+    Promise.all([
+      fetch("/api/workspaces/" + id + "/members", { credentials: "same-origin" }),
+      owner ? fetch("/api/invitations?workspaceId=" + id, { credentials: "same-origin" }) : Promise.resolve(null),
+      fetch("/api/workspaces/" + id + "/activity", { credentials: "same-origin" })
+    ]).then(async ([memberResponse, inviteResponse, activityResponse]) => {
+      if (!memberResponse.ok) throw new Error("Unable to load workspace members.");
+      const memberResult = await memberResponse.json() as { members: WorkspaceMember[] };
+      if (inviteResponse && !inviteResponse.ok) throw new Error("Unable to load invitations.");
+      const inviteResult = inviteResponse ? await inviteResponse.json() as { invitations: Invitation[] } : { invitations: [] };
+      const activityResult = activityResponse.ok ? await activityResponse.json() as { activity: ActivityItem[] } : { activity: [] };
+      if (!active) return;
+      setWorkspaceMembers(memberResult.members); setInvitations(inviteResult.invitations); setActivity(activityResult.activity);
+    }).catch(error => { if (active) setInviteCreateError(error instanceof Error ? error.message : "Unable to load sharing details."); })
       .finally(() => { if (active) setInvitationsLoading(false); });
     return () => { active = false; };
-  }, [inviteOpen, activeWorkspaceId, inviteRefresh]);
+  }, [inviteOpen, activeWorkspaceId, inviteRefresh, workspaces]);
 
   useEffect(() => {
     if (view !== "calendar" || !user) return;
@@ -325,6 +349,18 @@ export default function App() {
     return ()=>{active=false;};
   },[user]);
 
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
+      if (event.key === "Escape") { setComposerOpen(false); setAiModalOpen(false); setInviteOpen(false); setEventComposerOpen(false); setCategoryModalOpen(false); setNotificationsOpen(false); return; }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setView("notes"); window.setTimeout(() => searchRef.current?.focus(), 0); return; }
+      if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey && user && event.key === "/") { event.preventDefault(); setView("notes"); window.setTimeout(() => searchRef.current?.focus(), 0); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [user]);
+
   async function installApp(){
     if(installPrompt){
       await installPrompt.prompt();
@@ -394,9 +430,13 @@ export default function App() {
 
   const visibleNotes = useMemo(() => {
     const value = query.trim().toLowerCase();
-    if (!value) return notes;
-    return notes.filter(note => (note.title + " " + note.content + " " + (note.categoryName ?? "")).toLowerCase().includes(value));
-  }, [notes, query]);
+    const filtered = notes.filter(note => (!categoryFilter || (categoryFilter === "__none" ? !note.categoryId : note.categoryId === categoryFilter))
+      && (!value || (note.title + " " + note.content + " " + (note.categoryName ?? "")).toLowerCase().includes(value)));
+    return [...filtered].sort((a, b) => sortMode === "title" ? a.title.localeCompare(b.title) : sortMode === "oldest" ? a.updatedAt.localeCompare(b.updatedAt) : b.updatedAt.localeCompare(a.updatedAt));
+  }, [notes, query, categoryFilter, sortMode]);
+  const sharedWorkspaces = useMemo(() => workspaces.filter(item => item.type === "shared"), [workspaces]);
+  const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId);
+  const canWrite = activeWorkspace ? activeWorkspace.role !== "viewer" : true;
 
   function startNewNote() {
     setEditingNote(null);
@@ -434,6 +474,7 @@ export default function App() {
         : [result.note!, ...current]);
       setComposerOpen(false);
       setEditingNote(null);
+      pushToast(editingNote ? "Note updated" : "Note saved");
     } catch (error) {
       setNotesError(error instanceof Error ? error.message : "Unable to save this note.");
     } finally {
@@ -441,16 +482,31 @@ export default function App() {
     }
   }
 
-  async function archiveNote(note: Note) {
+  async function archiveNote(note: Note, archived = true) {
     try {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
         method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ version: note.version, archived: true })
+        body: JSON.stringify({ version: note.version, archived })
       });
-      if (!response.ok) throw new Error("Unable to archive this note.");
+      if (!response.ok) throw new Error(archived ? "Unable to archive this note." : "Unable to restore this note.");
       setNotes(current => current.filter(item => item.id !== note.id));
+      pushToast(archived ? "Note archived" : "Note restored");
     } catch (error) {
-      setNotesError(error instanceof Error ? error.message : "Unable to archive this note.");
+      pushToast(error instanceof Error ? error.message : "Unable to update this note.", "error");
+    }
+  }
+
+  async function deleteNote(note: Note) {
+    if (!window.confirm("Delete \u201c" + note.title + "\u201d? This cannot be undone from the app.")) return;
+    try {
+      const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
+        method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: note.version })
+      });
+      if (!response.ok) throw new Error("Unable to delete this note.");
+      setNotes(current => current.filter(item => item.id !== note.id));
+      pushToast("Note deleted");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Unable to delete this note.", "error");
     }
   }
 
@@ -684,6 +740,7 @@ export default function App() {
   }
 
   function openNotification(notification:Notification) {
+    if(notification.resourceType==="workspace"&&notification.resourceId&&workspaces.some(item=>item.id===notification.resourceId)){setActiveWorkspaceId(notification.resourceId);setShowArchived(false);setView("notes");void markNotificationRead(notification);setNotificationsOpen(false);return;}
     if(notification.resourceType==="event"||notification.type==="reminder")setView("calendar");
     else if(notification.resourceType==="note"||notification.type==="shared_note")setView("notes");
     void markNotificationRead(notification);
@@ -716,11 +773,6 @@ export default function App() {
         const workspaceResult = await workspaceResponse.json() as { workspaces: Workspace[] };
         setWorkspaces(workspaceResult.workspaces);
         if (result.workspaceId && workspaceResult.workspaces.some(item => item.id === result.workspaceId)) setActiveWorkspaceId(result.workspaceId);
-      }
-      const notesResponse = await fetch("/api/notes", { credentials: "same-origin" });
-      if (notesResponse.ok) {
-        const noteResult = await notesResponse.json() as { notes: Note[] };
-        setNotes(noteResult.notes);
       }
     } catch (error) {
       setInviteStatus("error");
@@ -792,18 +844,117 @@ export default function App() {
 
   async function makeWorkspacePrivate() {
     if(!activeWorkspaceId||workspaceActionBusy)return;
-    if(!window.confirm("Make this workspace private? All other members will immediately lose access. Pending invitations will be revoked. Notes and categories will be kept."))return;
+    if(!window.confirm("Remove all other members? They will immediately lose access. Pending invitations will be revoked. Notes and categories will be kept."))return;
     setWorkspaceActionBusy(true);setInviteCreateError("");
     try{
       const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({action:"make_private"})});
       if(!response.ok)throw new Error("Unable to make workspace private.");
-      setWorkspaces(current=>current.map(item=>item.id===activeWorkspaceId?{...item,type:"personal",role:"owner"}:item));
-      setWorkspaceMembers(current=>current.filter(member=>member.role==="owner"));
+            setWorkspaceMembers(current=>current.filter(member=>member.role==="owner"));
       setInvitations(current=>current.map(item=>item.status==="pending"?{...item,status:"revoked"}:item));
       setInviteOpen(false);
-      setInviteNotice("Workspace is now private. Other members and pending invitations have been revoked.");
+      setInviteNotice("All other members were removed and pending invitations revoked. Notes were kept.");
     }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to make workspace private.");}
     finally{setWorkspaceActionBusy(false);}
+  }
+
+  async function refreshWorkspaces(preferId?: string) {
+    const response = await fetch("/api/workspaces", { credentials: "same-origin" });
+    if (!response.ok) return;
+    const result = await response.json() as { workspaces: Workspace[] };
+    setWorkspaces(result.workspaces);
+    setActiveWorkspaceId(current => preferId && result.workspaces.some(item => item.id === preferId) ? preferId : (result.workspaces.some(item => item.id === current) ? current : (result.workspaces.find(item => item.id === user?.personalWorkspaceId)?.id ?? result.workspaces[0]?.id ?? "")));
+  }
+
+  function openManage(tab: ManageTab = "people") {
+    setManageTab(tab); setInviteCreateError(""); setCopiedInvite(false); setCreatedInvite(null); setInviteOpen(true);
+  }
+
+  async function transferOwnership(member: WorkspaceMember) {
+    if (!activeWorkspace || workspaceActionBusy || member.role === "owner") return;
+    if (!window.confirm("Make " + (member.displayName || member.email) + " the owner of \u201c" + activeWorkspace.name + "\u201d? You will become an editor and lose owner controls.")) return;
+    setWorkspaceActionBusy(true);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(activeWorkspace.id), { method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "transfer_ownership", userId: member.userId }) });
+      if (!response.ok) throw new Error("Unable to transfer ownership.");
+      await refreshWorkspaces(activeWorkspace.id);
+      setInviteOpen(false);
+      pushToast("Ownership transferred");
+    } catch (error) { pushToast(error instanceof Error ? error.message : "Unable to transfer ownership.", "error"); }
+    finally { setWorkspaceActionBusy(false); }
+  }
+
+  async function regenerateInvite(invitation: Invitation) {
+    if (!activeWorkspaceId || inviteSending) return;
+    setInviteSending(true); setInviteCreateError(""); setCreatedInvite(null);
+    try {
+      if (invitation.status === "pending") {
+        const revoked = await fetch("/api/invitations/" + encodeURIComponent(invitation.id), { method: "DELETE", credentials: "same-origin" });
+        if (!revoked.ok) throw new Error("Unable to replace this invitation.");
+      }
+      const response = await fetch("/api/invitations", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: activeWorkspaceId, email: invitation.email, role: invitation.role }) });
+      const result = await response.json() as { invitationUrl?: string; gmailComposeUrl?: string };
+      if (!response.ok || !result.invitationUrl || !result.gmailComposeUrl) throw new Error("Unable to create a new invitation link.");
+      setCreatedInvite({ invitationUrl: result.invitationUrl, gmailComposeUrl: result.gmailComposeUrl });
+      setManageTab("invite"); setInviteRefresh(value => value + 1);
+    } catch (error) { setInviteCreateError(error instanceof Error ? error.message : "Unable to create a new invitation link."); }
+    finally { setInviteSending(false); }
+  }
+
+  function describeActivity(item: ActivityItem): string {
+    const role = typeof item.metadata.role === "string" ? item.metadata.role : "";
+    switch (item.type) {
+      case "invitation.created": return item.actor + " invited " + (item.target ?? "someone") + (role ? " as " + role : "");
+      case "invitation.revoked": return item.actor + " revoked an invitation";
+      case "member.joined": return item.actor + " joined" + (role ? " as " + role : "");
+      case "member.left": return item.actor + " left the space";
+      case "member.removed": return item.actor + " removed " + (item.target ?? "a member");
+      case "member.role_changed": return item.actor + " changed " + (item.target ?? "a member") + " to " + String(item.metadata.to ?? "a new role");
+      case "workspace.members_cleared": return item.actor + " removed all other members";
+      case "workspace.ownership_transferred": return item.actor + " made " + (item.target ?? "a member") + " the owner";
+      default: return item.actor + " · " + item.type;
+    }
+  }
+
+  async function renameWorkspace() {
+    if (!activeWorkspace || workspaceActionBusy) return;
+    const name = window.prompt("Rename this space", activeWorkspace.name)?.trim();
+    if (!name || name === activeWorkspace.name) return;
+    setWorkspaceActionBusy(true);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(activeWorkspace.id), { method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!response.ok) throw new Error("Unable to rename this space.");
+      setWorkspaces(current => current.map(item => item.id === activeWorkspace.id ? { ...item, name } : item));
+      pushToast("Space renamed");
+    } catch (error) { pushToast(error instanceof Error ? error.message : "Unable to rename this space.", "error"); }
+    finally { setWorkspaceActionBusy(false); }
+  }
+
+  async function leaveWorkspace() {
+    if (!activeWorkspace || !user || workspaceActionBusy || activeWorkspace.role === "owner") return;
+    if (!window.confirm("Leave \u201c" + activeWorkspace.name + "\u201d? You will lose access until the owner invites you again.")) return;
+    setWorkspaceActionBusy(true);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(activeWorkspace.id) + "/members/" + encodeURIComponent(user.id), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) throw new Error("Unable to leave this space.");
+      setActiveWorkspaceId(user.personalWorkspaceId ?? "");
+      await refreshWorkspaces(user.personalWorkspaceId ?? undefined);
+      pushToast("You left the space");
+    } catch (error) { pushToast(error instanceof Error ? error.message : "Unable to leave this space.", "error"); }
+    finally { setWorkspaceActionBusy(false); }
+  }
+
+  async function deleteWorkspace() {
+    if (!activeWorkspace || !user || workspaceActionBusy || activeWorkspace.role !== "owner" || activeWorkspace.type !== "shared") return;
+    if (!window.confirm("Permanently delete \u201c" + activeWorkspace.name + "\u201d with all its notes, categories, events and members? This cannot be undone.")) return;
+    setWorkspaceActionBusy(true);
+    try {
+      const response = await fetch("/api/workspaces/" + encodeURIComponent(activeWorkspace.id), { method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" });
+      if (!response.ok) throw new Error("Unable to delete this space.");
+      setInviteOpen(false);
+      await refreshWorkspaces(user.personalWorkspaceId ?? undefined);
+      pushToast("Space deleted");
+    } catch (error) { pushToast(error instanceof Error ? error.message : "Unable to delete this space.", "error"); }
+    finally { setWorkspaceActionBusy(false); }
   }
 
   async function copyInviteLink() {
@@ -827,12 +978,12 @@ export default function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="KitaNotes home">
-          <span className="brand-mark"><Command size={19} /></span>
-          <span>Kita<span className="brand-soft">Notes</span></span>
+          <img className="brand-logo" src="/icons/mark-96.png" alt="" width="34" height="34" />
+          <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <label className="workspace-switch" aria-label="Choose workspace">
           <span className="workspace-avatar">K</span>
-          <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"Shared workspace":"Personal space"}</small></span>
+          <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"Shared space":"Personal · private"}</small></span>
           <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
             {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
           </select>
@@ -859,7 +1010,7 @@ export default function App() {
           <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}</select></label>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
-            {!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
+            <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
             {user ? <span className="signed-in-label">{user.displayName ?? user.email}</span> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
             {user?.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <div className="profile-avatar small">{user?.displayName?.slice(0, 1).toUpperCase() ?? "?"}</div>}
@@ -899,26 +1050,31 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New workspace</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared" && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Manage sharing</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New shared space</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.type==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
             <div className="toolbar">
-              <label className="search-box"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search your notes..." /></label>
-              <span className="filter-button static-filter">Recently updated <ChevronDown size={15} /></span>
+              <label className="search-box"><Search size={17} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search notes  ( / )" />{query&&<button className="mini-icon" onClick={()=>setQuery("")} aria-label="Clear search"><X size={14}/></button>}</label>
+              <label className="filter-button"><select className="sort-select" aria-label="Sort notes" value={sortMode} onChange={event=>setSortMode(event.target.value as SortMode)}><option value="updated">Recently updated</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select></label>
+              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>setShowArchived(value=>!value)}><Archive size={14}/> {showArchived?"Archived":"Archive"}</button>
+            </div>
+            {user&&(categories.length>0)&&<div className="chip-row" role="tablist" aria-label="Filter by category"><button className={!categoryFilter?"chip active":"chip"} onClick={()=>setCategoryFilter("")}>All</button>{categories.map(category=><button key={category.id} className={categoryFilter===category.id?"chip active":"chip"} onClick={()=>setCategoryFilter(category.id)}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/>{category.name}</button>)}<button className={categoryFilter==="__none"?"chip active":"chip"} onClick={()=>setCategoryFilter("__none")}><Tag size={11}/> Uncategorised</button>
+            </div>}
+            <div className="notes-meta">{notesLoading?"":visibleNotes.length+" "+(visibleNotes.length===1?"note":"notes")+(showArchived?" in archive":"")}
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}
             {notesLoading ? <div className="loading-state">Loading your notes…</div> : visibleNotes.length > 0 ? <div className="notes-grid">
               {visibleNotes.map(note => <article className="note-card" key={note.id}>
-                <div className="note-card-top">{note.categoryName && <span className="note-category">{note.categoryName}</span>}<span className="note-date">{new Date(note.updatedAt).toLocaleDateString()}</span></div>
+                <div className="note-card-top">{note.categoryName && <span className="note-category">{note.categoryName}</span>}<span className="note-date">{new Date(note.updatedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}</span></div>
                 <h3>{note.title}</h3><p>{note.content || "No additional details."}</p>
-                <div className="note-card-actions"><button onClick={() => startEditNote(note)}><Pencil size={14} /> Edit</button><button onClick={() => archiveNote(note)}><Archive size={14} /> Archive</button></div>
+                <div className="note-card-actions">{canWrite&&!showArchived&&<button onClick={() => startEditNote(note)}><Pencil size={14} /> Edit</button>}{canWrite&&!showArchived&&<button onClick={() => archiveNote(note)}><Archive size={14} /> Archive</button>}{canWrite&&showArchived&&<button onClick={() => archiveNote(note,false)}><RotateCcw size={14} /> Restore</button>}{canWrite&&showArchived&&<button className="danger-action" onClick={() => deleteNote(note)}><Trash2 size={14} /> Delete</button>}{!canWrite&&<span className="note-date">View only</span>}</div>
               </article>)}
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
-              <h2>{query ? "No notes found" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
-              <p>{query ? "Try another search term." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google to create and sync your notes."}</p>
-              {user ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a> : null}
+              <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
+              <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google to create and sync your notes."}</p>
+              {user&&canWrite&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a> : null}
             </div>}
           </>}
 
@@ -929,7 +1085,7 @@ export default function App() {
             {!eventsLoading&&events.length===0&&<div className="calendar-empty-note">Nothing scheduled in this period. Add an event to start filling the calendar.</div>}
             <div className="calendar-agenda"><h3>Upcoming in this view</h3>{events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)).map(item=><article className="event-card" key={item.id}><div className="event-date-block"><strong>{new Date(item.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:item.timezone})}</strong><span>{new Date(item.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:item.timezone})}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleString(undefined,{timeZone:item.timezone})} · {item.timezone}</p>{item.description&&<small>{item.description}</small>}</div><button className="mini-icon" onClick={()=>startEditEvent(item)} aria-label="Edit event"><Pencil size={15}/></button><button className="mini-icon" onClick={()=>deleteEvent(item)} aria-label="Delete event"><Archive size={15}/></button></article>)}</div>
           </section>}
-          {view === "shared" && <div className="placeholder-panel"><Users size={26} /><h2>Shared notes live in your notes list.</h2><p>Notes shared with you appear alongside your personal notes. Invitations are managed from your workspace.</p><button className="secondary-button" onClick={()=>setView("notes")}>View notes</button></div>}
+          {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
 
           <button className="ai-hint" onClick={()=>{setAiModalOpen(true);setAiError("");}} disabled={!user}><span className="ai-icon"><Sparkles size={17}/></span><div><strong>AI organiser</strong><p>Turn a brain dump into a note, events and reminders.</p></div><span className="coming-soon">{aiStatus?.configured?"OPEN":"SETUP"}</span></button>
         </div>
@@ -944,7 +1100,8 @@ export default function App() {
           <div className="category-list">{categories.map(category=><div key={category.id}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/><strong>{category.name}</strong></div>)}</div>
         </section>
       </div>}
-\n      {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
+
+      {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
         <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
           <header><div><span className="eyebrow">GEMINI FREE TIER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
           {!aiStatus?<p className="ai-privacy-copy">Checking AI configuration…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>Add the Gemini API key as a Cloudflare Worker Secret. No text will be sent until the key and your consent are both present.</p></div>:!aiStatus.consented?<><div className="ai-privacy-card">
@@ -998,36 +1155,54 @@ export default function App() {
         </section>
       </div>}
 
-      {inviteOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setInviteOpen(false); }}>
-        <section className="composer invite-composer" role="dialog" aria-modal="true" aria-labelledby="invite-title">
-          <header><div><span className="eyebrow">SHARE YOUR WORKSPACE</span><h2 id="invite-title">Invite someone</h2></div><button className="icon-button" onClick={() => setInviteOpen(false)} aria-label="Close"><X size={19}/></button></header>
-          {!createdInvite ? <>
-            <label className="field-label">Google email address<input className="invite-input" type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="name@gmail.com" maxLength={254}/></label>
-            <label className="field-label">Permission<select className="invite-input" value={inviteRole} onChange={event => setInviteRole(event.target.value as "editor" | "viewer")}><option value="viewer">Viewer · can read notes</option><option value="editor">Editor · can read and edit notes</option></select></label>
-            {inviteCreateError && <p className="invite-error">{inviteCreateError}</p>}
-            <footer><span>We'll create a secure link. You send it yourself using Gmail.</span><button className="primary-button" onClick={createInvite} disabled={!inviteEmail.trim() || inviteSending}>{inviteSending ? "Creating…" : "Create invitation"}</button></footer>
-          </> : <>
-            <p className="invite-result-copy">Invitation created. It expires in seven days. KitaNotes has not sent an email.</p>
-            <label className="field-label">One-time invitation link<input className="invite-input" readOnly value={createdInvite.invitationUrl}/></label>
-            {inviteCreateError && <p className="invite-error">{inviteCreateError}</p>}
-            <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button><a className="primary-button" href={createdInvite.gmailComposeUrl} target="_blank" rel="noopener noreferrer">Open Gmail draft</a></footer>
-          </>}
-          <div className="invite-list">
-            <div className="invite-list-heading"><strong>Workspace members</strong><span>{workspaceMembers.length}</span></div>
+      {inviteOpen && activeWorkspace && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setInviteOpen(false); }}>
+        <section className="composer invite-composer manage-composer" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+          <header><div><span className="eyebrow">{activeWorkspace.role==="owner"?"MANAGE SPACE":"SHARED SPACE"}</span><h2 id="invite-title">{activeWorkspace.name}</h2></div><button className="icon-button" onClick={() => setInviteOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <div className="manage-tabs" role="tablist">{(["people",...(activeWorkspace.role==="owner"?["invite"]:[]),"activity",...(activeWorkspace.role==="owner"?["settings"]:["leave"])] as string[]).map(tab=><button key={tab} role="tab" aria-selected={manageTab===tab} className={manageTab===tab?"manage-tab active":"manage-tab"} onClick={()=>setManageTab(tab as ManageTab)}>{tab==="people"?"People ("+workspaceMembers.length+")":tab==="invite"?"Invite":tab==="activity"?"Activity":tab==="settings"?"Settings":"Leave"}</button>)}</div>
+          {inviteCreateError && <p className="invite-error">{inviteCreateError}</p>}
+
+          {manageTab==="people"&&<div className="invite-list">
             {invitationsLoading?<p>Loading members…</p>:workspaceMembers.map(member=><div className="invite-list-row" key={member.userId}>
-              <div><strong>{member.displayName||member.email}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()}</small></div>
-              {member.role!=="owner"&&<div className="invite-member-actions"><select className="invite-input" aria-label={"Permission for "+member.email} value={member.role} onChange={event=>updateWorkspaceMemberRole(member,event.target.value as "editor"|"viewer")} disabled={workspaceActionBusy}><option value="viewer">Viewer</option><option value="editor">Editor</option></select><button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button></div>}
+              <div><strong>{member.displayName||member.email}{member.userId===user?.id?" (you)":""}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()}</small></div>
+              {activeWorkspace.role==="owner"&&member.role!=="owner"&&<div className="invite-member-actions"><select className="invite-input" aria-label={"Permission for "+member.email} value={member.role} onChange={event=>updateWorkspaceMemberRole(member,event.target.value as "editor"|"viewer")} disabled={workspaceActionBusy}><option value="viewer">Viewer</option><option value="editor">Editor</option></select><button className="text-action" onClick={()=>transferOwnership(member)} disabled={workspaceActionBusy}>Make owner</button><button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button></div>}
             </div>)}
-          </div>
-          <div className="invite-list">
-            <div className="invite-list-heading"><strong>Workspace invitations</strong><span>{invitations.length}</span></div>
-            {invitationsLoading ? <p>Loading invitations…</p> : invitations.length === 0 ? <p>No invitations yet.</p> : invitations.map(invitation => <div className="invite-list-row" key={invitation.id}>
-              <div><strong>{invitation.email}</strong><small>{invitation.role} · {invitation.status} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></div>
-              {invitation.status === "pending" && <button className="text-action" onClick={() => revokeInvitation(invitation.id)}>Revoke</button>}
-            </div>)}
-            <p className="invite-list-note">Pending invitations expire after seven days. Accepted members keep access until you remove them or make this workspace private.</p>
-          </div>
-          {workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"&&workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner"&&<div className="invite-list"><strong>Workspace privacy</strong><p className="invite-list-note">Making this workspace private keeps all notes but removes every other member and revokes pending invitations.</p><button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>{workspaceActionBusy?"Working…":"Make workspace private"}</button></div>}
+            <p className="invite-list-note">Owners manage people and settings. Editors can change notes, events and categories. Viewers can read only.</p>
+          </div>}
+
+          {manageTab==="invite"&&activeWorkspace.role==="owner"&&<>
+            {!createdInvite ? <>
+              <label className="field-label">Google email address<input className="invite-input" type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="name@gmail.com" maxLength={254}/></label>
+              <label className="field-label">Permission<select className="invite-input" value={inviteRole} onChange={event => setInviteRole(event.target.value as "editor" | "viewer")}><option value="viewer">Viewer · can read notes</option><option value="editor">Editor · can read and edit notes</option></select></label>
+              <footer><span>We create a secure one-time link. You send it yourself using Gmail.</span><button className="primary-button" onClick={createInvite} disabled={!inviteEmail.trim() || inviteSending}>{inviteSending ? "Creating…" : "Create invitation"}</button></footer>
+            </> : <>
+              <p className="invite-result-copy">Invitation created. It expires in seven days. KitaNotes has not sent an email.</p>
+              <label className="field-label">One-time invitation link<input className="invite-input" readOnly value={createdInvite.invitationUrl} onFocus={event=>event.currentTarget.select()}/></label>
+              <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button><a className="primary-button" href={createdInvite.gmailComposeUrl} target="_blank" rel="noopener noreferrer">Open Gmail draft</a></footer>
+              <button className="text-action" onClick={()=>{setCreatedInvite(null);setInviteEmail("");setCopiedInvite(false);}}>Invite someone else</button>
+            </>}
+            <div className="invite-list">
+              <div className="invite-list-heading"><strong>Invitations</strong><span>{invitations.length}</span></div>
+              {invitationsLoading ? <p>Loading invitations…</p> : invitations.length === 0 ? <p>No invitations yet.</p> : invitations.map(invitation => <div className="invite-list-row" key={invitation.id}>
+                <div><strong>{invitation.email}</strong><small>{invitation.role} · {invitation.status} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></div>
+                <div className="invite-member-actions">{(invitation.status==="pending"||invitation.status==="expired"||invitation.status==="revoked")&&<button className="text-action" onClick={()=>regenerateInvite(invitation)} disabled={inviteSending}>{invitation.status==="pending"?"New link":"Re-invite"}</button>}{invitation.status==="pending"&&<button className="text-action" onClick={() => revokeInvitation(invitation.id)}>Revoke</button>}</div>
+              </div>)}
+              <p className="invite-list-note">Invitation links can only be used by the invited Google account. A link is shown once, so use New link if you lose it.</p>
+            </div>
+          </>}
+
+          {manageTab==="activity"&&<div className="invite-list">
+            {invitationsLoading?<p>Loading activity…</p>:activity.length===0?<p>No sharing activity yet.</p>:activity.map(item=><div className="invite-list-row" key={item.id}><div><strong>{describeActivity(item)}</strong><small>{new Date(item.createdAt).toLocaleString()}</small></div></div>)}
+          </div>}
+
+          {manageTab==="settings"&&activeWorkspace.role==="owner"&&<div className="invite-list">
+            <strong>Space settings</strong><p className="invite-list-note">Rename this space, remove everyone else, or delete it with everything inside.</p>
+            <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button><button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Remove all members</button><button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button></div>
+          </div>}
+
+          {manageTab==="leave"&&activeWorkspace.role!=="owner"&&<div className="invite-list">
+            <strong>Leave this space</strong><p className="invite-list-note">You will lose access to its notes and events until the owner invites you again. Your personal workspace is not affected.</p>
+            <div className="invite-member-actions"><button className="secondary-button danger-action" onClick={()=>{setInviteOpen(false);void leaveWorkspace();}} disabled={workspaceActionBusy}>Leave space</button></div>
+          </div>}
         </section>
       </div>}
 
@@ -1038,7 +1213,8 @@ export default function App() {
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>setEventStart(e.target.value)}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>setEventTimezone(e.target.value)} placeholder="Asia/Kuala_Lumpur"/></label>
-          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>\n          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
+          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
           <footer><span>{editingEvent?"Changes use version checking. Existing reminders are retained.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
@@ -1048,11 +1224,12 @@ export default function App() {
         <section className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"SHARED WORKSPACE NOTE":"PERSONAL NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
-          <textarea value={draftContent} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
-          <label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : "Saved to your personal workspace."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
+          <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
+          <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div><label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.type==="shared"?"Saved to this shared workspace.":"Saved to your personal workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
         </section>
       </div>}
+      <div className="toast-stack" role="status" aria-live="polite">{toasts.map(toast=><div key={toast.id} className={"toast "+toast.tone}>{toast.text}</div>)}</div>
     </main>
   );
 }

@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "kitanotes-shell-";
-const CACHE_NAME = CACHE_PREFIX + "v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/icons/kitanotes.svg", "/icons/kitanotes-maskable.svg"];
+const CACHE_NAME = CACHE_PREFIX + "v3";
+const APP_SHELL = ["/", "/manifest.webmanifest", "/icons/kitanotes.svg", "/icons/kitanotes-maskable.svg", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/mark.svg", "/icons/mark-96.png", "/icons/favicon-48.png"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
@@ -35,7 +35,7 @@ self.addEventListener("push", event => {
   const title = typeof data.title === "string" ? data.title.slice(0, 80) : "KitaNotes";
   const body = typeof data.body === "string" ? data.body.slice(0, 160) : "You have a new notification.";
   const target = typeof data.url === "string" && data.url.startsWith("/") && !data.url.startsWith("//") ? data.url : "/";
-  event.waitUntil(self.registration.showNotification(title, { body, icon: "/icons/kitanotes.svg", badge: "/icons/kitanotes.svg", tag: typeof data.tag === "string" ? data.tag.slice(0, 64) : "kitanotes", data: { url: target }, renotify: false }));
+  event.waitUntil(self.registration.showNotification(title, { body, icon: "/icons/icon-192.png", badge: "/icons/favicon-48.png", tag: typeof data.tag === "string" ? data.tag.slice(0, 64) : "kitanotes", data: { url: target }, renotify: false }));
 });
 
 self.addEventListener("notificationclick", event => {

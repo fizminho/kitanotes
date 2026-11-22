@@ -24,6 +24,10 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 - `GET /api/invitations?workspaceId=`: owner-only list without token hashes or raw tokens.
 - `POST /api/invitations/accept`: signed-in user accepts with `{ token }`; verified Google email must match the invitation address.
 - `DELETE /api/invitations/:id`: owner revokes a pending invitation.
+- `GET /api/workspaces`, `POST /api/workspaces` (creates a **shared** space, max 30 owned), `PATCH /api/workspaces/:id` (`{name}` rename; `{action:"make_private"}` removes all other members and revokes invitations; `{action:"transfer_ownership",userId}`), `DELETE /api/workspaces/:id` (owner deletes a shared space and everything in it).
+- `GET /api/workspaces/:id/members`: any member. `PATCH|DELETE /api/workspaces/:id/members/:userId`: owner changes role / removes; a non-owner may `DELETE` their own membership to leave.
+- `GET /api/workspaces/:id/activity`: any member; last 50 sharing events (invitations, joins, leaves, removals, role changes, ownership transfers).
+- Collaboration notifications: invitation accepted and member left (to owner); role changed, removed, ownership received (to the affected member).
 
 Invitation tokens are cryptographically random, stored only as SHA-256 hashes, expire after seven days and are single-use. An SQLite trigger creates membership in the same database transaction as the accepted status update.
 
