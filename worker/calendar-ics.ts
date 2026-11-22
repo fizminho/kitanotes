@@ -64,5 +64,23 @@ async function holidays(request:Request):Promise<Response>{
  try{const response=await fetch("https://holidaywise.wee.my/my/"+STATE_SLUGS[state]+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error("feed");const parsed=parseIcs(await response.text());const events=parsed.filter(e=>e.start.slice(0,10)>=from&&e.start.slice(0,10)<=to).map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true}));return json({state,events,source:"HolidayWise",updatedAt:new Date().toISOString()},200,{"cache-control":"public, max-age=3600, s-maxage=21600"});}catch{return json({error:"HOLIDAY_FEED_UNAVAILABLE",message:"Malaysia holiday calendar is temporarily unavailable."},502);}
 }
 export async function handleCalendarIcsRequest(request:Request,env:AuthEnv):Promise<Response|null>{
- const url=new URL(request.url);if(url.pathname==="/api/calendar/holidays"&&request.method==="GET")return holidays(request);if(!url.pathname.startsWith("/api/calendar/ics/"))return null;if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);const user=await getCurrentUser(request,env);if(!user)return json({error:"UNAUTHENTICATED"},401);if(url.pathname==="/api/calendar/ics/import"&&request.method==="POST")return importIcs(request,env.DB,user.id);if(url.pathname==="/api/calendar/ics/export"&&request.method==="GET")return exportIcs(request,env.DB,user.id);return json({error:"METHOD_NOT_ALLOWED"},405);
+ const url=new URL(request.url);
+ if(url.pathname==="/api/calendar/holidays"&&request.method==="GET")return holidays(request);
+ if(!url.pathname.startsWith("/api/calendar/ics/")&&url.pathname!=="/api/calendar/preferences")return null;
+ if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
+ const user=await getCurrentUser(request,env);if(!user)return json({error:"UNAUTHENTICATED"},401);
+ if(url.pathname==="/api/calendar/preferences"&&request.method==="GET"){
+  const row=await env.DB.prepare("SELECT holiday_state FROM user_calendar_preferences WHERE user_id=?").bind(user.id).first<{holiday_state:string}>();
+  return json({holidayState:row?.holiday_state??"selangor"});
+ }
+ if(url.pathname==="/api/calendar/preferences"&&request.method==="PUT"){
+  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const body=await readJsonBody(request);const state=validState(typeof body?.holidayState==="string"?body.holidayState:null);
+  if(!state)return json({error:"INVALID_STATE"},400);
+  await env.DB.prepare("INSERT INTO user_calendar_preferences (user_id,holiday_state,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET holiday_state=excluded.holiday_state,updated_at=excluded.updated_at").bind(user.id,state,new Date().toISOString()).run();
+  return json({holidayState:state});
+ }
+ if(url.pathname==="/api/calendar/ics/import"&&request.method==="POST")return importIcs(request,env.DB,user.id);
+ if(url.pathname==="/api/calendar/ics/export"&&request.method==="GET")return exportIcs(request,env.DB,user.id);
+ return json({error:"METHOD_NOT_ALLOWED"},405);
 }
