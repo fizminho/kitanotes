@@ -29,7 +29,8 @@ Google OAuth credentials, a dedicated D1 database and a Gemini API key have not 
 - Cloudflare Worker serves static assets and API routes in one deployment.
 - Cloudflare D1 stores users, sessions, workspaces, memberships, invitations, notes, categories, events, reminders, notifications and AI usage/consent metadata.
 - Google OpenID Connect login with state, nonce, PKCE, JWKS signature validation and hashed opaque sessions.
-- Workspace-scoped notes/categories API with role checks, same-origin mutation checks and optimistic note versions.
+- Workspace-scoped notes/categories API with role checks, same-origin mutation checks, optimistic note versions and D1-backed rate limits for OAuth/invitations.
+- Security headers (CSP, HSTS on HTTPS, frame denial, no-sniff and referrer/permissions policies) applied to API, health and static responses.
 - Gemini API free tier only, called server-side through Worker Secrets after explicit privacy consent. Hard allowlist, 10 requests/user/day, no raw prompt persistence and no paid fallback.
 - In-app notification inbox and five-minute Cron reminder delivery. Browser Web Push is not implemented.
 - Invitation links use copy-link and Gmail compose handoff. No paid automated email provider.
