@@ -12,7 +12,7 @@ function pushConfigured(env:VapidEnv):boolean { return Boolean(env.VAPID_PUBLIC_
 function validEndpoint(value:unknown):value is string {
  if(typeof value!=="string"||value.length>2048)return false;
  try {
-  const url=new URL(value); if(url.protocol!=="https:")return false;
+  const url=new URL(value); if(url.protocol!=="https:"||url.port!==""||url.username!==""||url.password!=="")return false;
   const host=url.hostname.toLowerCase();
   return host==="fcm.googleapis.com"||host==="updates.push.services.mozilla.com"||host.endsWith(".push.services.mozilla.com")||host==="web.push.apple.com"||host.endsWith(".push.apple.com")||host.endsWith(".notify.windows.com");
  } catch { return false; }
