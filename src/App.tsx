@@ -27,7 +27,7 @@ type Category = {id:string;workspaceId:string;name:string;color:string|null;sort
 type CalendarEvent = { id:string; source?:"google_calendar"|"kitanotes"; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type GoogleCalendarStatus = {connected:boolean;lastSyncAt:string|null;direction:"google_to_kitanotes";readOnly:boolean};
-type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
+type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
   summary:string; timezone:string;
   note:{title:string;content:string};
@@ -135,7 +135,7 @@ export default function App() {
   const [pushSubscribed,setPushSubscribed]=useState(false);
   const [pushBusy,setPushBusy]=useState(false);
   const [pushError,setPushError]=useState("");
-  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
   const [notificationPrefsLoading,setNotificationPrefsLoading]=useState(false);
   const [notificationPrefsSaving,setNotificationPrefsSaving]=useState(false);
   const [notificationPrefsError,setNotificationPrefsError]=useState("");
@@ -1216,6 +1216,9 @@ export default function App() {
                 <label><input type="checkbox" checked={notificationPrefs.pushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,pushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}}/> Enable push delivery</label>
                 <label><input type="checkbox" checked={notificationPrefs.reminderPushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,reminderPushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Event and reminder alerts</label>
                 <label><input type="checkbox" checked={notificationPrefs.sharedNotePushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,sharedNotePushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> New shared-note alerts</label>
+                <label><input type="checkbox" checked={notificationPrefs.sharedNoteUpdatePushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,sharedNoteUpdatePushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Shared-note updates and deletions</label>
+                <label><input type="checkbox" checked={notificationPrefs.eventPushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,eventPushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Calendar event changes</label>
+                <label><input type="checkbox" checked={notificationPrefs.workspacePushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,workspacePushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Workspace membership and access changes</label>
                 <div className="quiet-hours-fields"><label>Quiet hours start<input type="time" value={notificationPrefs.quietHoursStart??""} onChange={event=>{setNotificationPrefs(value=>({...value,quietHoursStart:event.target.value||null}));setNotificationPrefsSaved(false);}}/></label><label>Quiet hours end<input type="time" value={notificationPrefs.quietHoursEnd??""} onChange={event=>{setNotificationPrefs(value=>({...value,quietHoursEnd:event.target.value||null}));setNotificationPrefsSaved(false);}}/></label></div>
                 <label className="timezone-setting">Timezone<input value={notificationPrefs.timezone} maxLength={64} onChange={event=>{setNotificationPrefs(value=>({...value,timezone:event.target.value}));setNotificationPrefsSaved(false);}} placeholder="Asia/Kuala_Lumpur"/></label>
                 <button className="text-action" onClick={()=>{setNotificationPrefs(value=>({...value,quietHoursStart:null,quietHoursEnd:null}));setNotificationPrefsSaved(false);}}>Clear quiet hours</button>
