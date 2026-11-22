@@ -34,7 +34,7 @@ async function roleFor(db:Db,workspaceId:string,userId:string):Promise<Role|null
 }
 async function writeWorkspace(db:Db,userId:string,requested:unknown):Promise<string|null> {
   const id=requested===undefined||requested===null||requested===""?(
-    await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'").bind(userId).first<{id:string}>()
+    await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND visibility='private'").bind(userId).first<{id:string}>()
   )?.id : (typeof requested==="string"&&requested.length<=64?requested:null);
   if(!id) return null;
   const role=await roleFor(db,id,userId);
