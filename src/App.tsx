@@ -562,7 +562,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
@@ -591,9 +591,45 @@ export default function App() {
           </section>}
           {view === "shared" && <div className="placeholder-panel"><Users size={26} /><h2>Shared notes live in your notes list.</h2><p>Notes shared with you appear alongside your personal notes. Invitations are managed from your workspace.</p><button className="secondary-button" onClick={()=>setView("notes")}>View notes</button></div>}
 
-          <div className="ai-hint"><span className="ai-icon"><Sparkles size={17} /></span><div><strong>A little help from AI</strong><p>Turn a brain dump into tidy notes, tasks and reminders. Coming in a later step.</p></div><span className="coming-soon">COMING SOON</span></div>
+          <button className="ai-hint" onClick={()=>{setAiModalOpen(true);setAiError("");}} disabled={!user}><span className="ai-icon"><Sparkles size={17}/></span><div><strong>AI organiser</strong><p>Turn a brain dump into a note, events and reminders.</p></div><span className="coming-soon">{aiStatus?.configured?"OPEN":"SETUP"}</span></button>
         </div>
       </section>
+
+      {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
+        <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
+          <header><div><span className="eyebrow">GEMINI FREE TIER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          {!aiStatus?<p className="ai-privacy-copy">Checking AI configuration…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>Add the Gemini API key as a Cloudflare Worker Secret. No text will be sent until the key and your consent are both present.</p></div>:!aiStatus.consented?<div className="ai-privacy-card">
+            <strong>Before enabling AI, please review this privacy notice.</strong>
+            <p>Your pasted text will be sent to Google Gemini. Google states that content submitted through its free tier may be used to improve its products. Do not paste passwords, banking details, sensitive personal data or anything you do not want shared with Google.</p>
+            <p>KitaNotes uses only allowlisted free-tier text models, never falls back to a paid model, and stops when the local daily limit or provider quota is reached. Keep the Google Cloud project unlinked from Cloud Billing to maintain the RM0 target.</p>
+            <p>AI results are drafts. KitaNotes will not save a note, create an event or add a reminder until you confirm each action.</p>
+            <label className="ai-consent-check"><input type="checkbox" checked={aiConsentChecked} onChange={event=>setAiConsentChecked(event.target.checked)}/> I understand and consent to sending the text I submit to Google Gemini under these terms.</label>
+            {aiError&&<p className="invite-error">{aiError}</p>}
+            <footer><span>Consent can be revoked at any time.</span><button className="primary-button" onClick={enableAi} disabled={!aiConsentChecked||aiConsentSaving}>{aiConsentSaving?"Saving…":"Agree and enable AI"}</button></footer>
+          </div>:!aiDraft?<div>
+            <p className="ai-privacy-copy">Paste unstructured text. Gemini will suggest a clean note, categories, events, reminders and tasks. Review everything before saving.</p>
+            <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={9} placeholder="Example: Meeting with Sarah next Tuesday at 10am. Prepare the proposal beforehand and remind me 30 minutes before…"/>
+            <div className="ai-usage-row"><span>{aiInput.length.toLocaleString()} / 16,000 characters</span><span>{aiStatus.dailyRemaining} free requests left today</span></div>
+            {aiError&&<p className="invite-error">{aiError}</p>}
+            <footer><button className="text-action" onClick={revokeAiConsent}>Revoke AI consent</button><button className="primary-button" onClick={organizeWithAi} disabled={!aiInput.trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize text"}</button></footer>
+          </div>:<div className="ai-draft">
+            <div className="ai-draft-banner"><Sparkles size={15}/> Draft only. Nothing has been saved yet.</div>
+            <p className="ai-privacy-copy">{aiDraft.summary}</p>
+            <label className="field-label">Note title<input className="invite-input" value={aiDraftTitle} onChange={event=>setAiDraftTitle(event.target.value)} maxLength={200}/></label>
+            <label className="field-label">Note content<textarea className="ai-input" value={aiDraftContent} onChange={event=>setAiDraftContent(event.target.value)} rows={6} maxLength={50000}/></label>
+            {aiDraft.suggestedCategories.length>0&&<div className="ai-draft-section"><strong>Suggested categories</strong>{aiDraft.suggestedCategories.map(category=><div key={category.name}><b>{category.name}</b><small>{category.reason}</small></div>)}</div>}
+            {aiDraft.events.length>0&&<div className="ai-draft-section"><strong>Events</strong>{aiDraft.events.map((event,index)=><div key={index}><b>{event.title}</b><small>{event.startLocal} to {event.endLocal} ({event.timezone}){event.reminderLocal?" · reminder "+event.reminderLocal:""}</small></div>)}</div>}
+            {aiDraft.reminders.length>0&&<div className="ai-draft-section"><strong>Reminders</strong>{aiDraft.reminders.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal} ({item.timezone})</small></div>)}</div>}
+            {aiDraft.tasks.length>0&&<div className="ai-draft-section"><strong>Tasks</strong>{aiDraft.tasks.map((item,index)=><div key={index}><b>{item.title}</b><small>{item.dueLocal||"No due date supplied"}</small></div>)}</div>}
+            {aiDraft.clarifyingQuestions.length>0&&<div className="ai-questions"><strong>Needs clarification</strong>{aiDraft.clarifyingQuestions.map((question,index)=><p key={index}>{question}</p>)}</div>}
+            {aiError&&<p className="invite-error">{aiError}</p>}
+            {aiNoteSaved&&<p className="ai-saved">Note saved to your workspace.</p>}
+            {aiItemsCreated&&<p className="ai-saved">Suggested events and reminders created.</p>}
+            <footer><button className="text-action" onClick={()=>{setAiDraft(null);setAiError("");}}>Start over</button><button className="secondary-button" onClick={createAiItems} disabled={aiCreatingItems||aiItemsCreated||(!aiDraft.events.length&&!aiDraft.reminders.length&&!aiDraft.tasks.some(task=>task.dueLocal))}>{aiCreatingItems?"Creating…":aiItemsCreated?"Items created":"Create events & reminders"}</button><button className="primary-button" onClick={saveAiNote} disabled={aiSavingNote||aiNoteSaved||!aiDraftTitle.trim()}>{aiSavingNote?"Saving…":aiNoteSaved?"Note saved":"Save note"}</button></footer>
+            <button className="text-action ai-revoke" onClick={revokeAiConsent}>Revoke AI consent</button>
+          </div>}
+        </section>
+      </div>}
 
       {inviteOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setInviteOpen(false); }}>
         <section className="composer invite-composer" role="dialog" aria-modal="true" aria-labelledby="invite-title">
