@@ -63,7 +63,6 @@ export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
-  const [workspaceCreating,setWorkspaceCreating]=useState(false);
   const [workspaceModalOpen,setWorkspaceModalOpen]=useState(false);
   const [workspaceName,setWorkspaceName]=useState("");
   const [workspacePurpose,setWorkspacePurpose]=useState("");
@@ -201,7 +200,7 @@ export default function App() {
   }, []);
 
   function createPersonalWorkspace() {
-    if(workspaceCreating)return;
+    if(workspaceModalOpen)return;
     setWorkspaceName("");setWorkspacePurpose("");setWorkspaceAiDraft(null);setWorkspaceAiError("");setWorkspaceModalOpen(true);
   }
 
@@ -1140,7 +1139,7 @@ export default function App() {
           <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}</select></label>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
-            {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={14}/> New space</button>}
+            {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceModalOpen}><Plus size={14}/> New space</button>}
             <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
             {user ? <span className="signed-in-label">{user.displayName ?? user.email}</span> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
