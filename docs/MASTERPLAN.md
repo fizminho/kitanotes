@@ -408,10 +408,10 @@ The layout is a target, not a mandate to create empty directories immediately. K
 ### P1 — Identity and secure collaboration
 
 - [ ] Configure Google OAuth clients for development/staging/production.
-- [ ] Implement OIDC validation and secure sessions.
-- [ ] Implement users and personal workspaces.
-- [ ] Implement notes CRUD and category CRUD.
-- [ ] Implement workspace membership and owner/editor/viewer authorization.
+- [x] Implement Google OIDC ID-token signature/claim validation, state, nonce, PKCE and opaque hashed D1 sessions; unit-tested. Live OAuth flow remains unverified until credentials and D1 are provisioned.
+- [x] Implement user upsert and personal workspace/member creation in the Google login callback. Live database verification remains pending.
+- [x] Implement workspace-scoped notes CRUD, soft delete/archive, categories CRUD/archive, role checks, same-origin mutation checks and optimistic note versions. API integration tests remain outstanding.
+- [x] Implement workspace membership role checks for owner/editor/viewer on note and category reads/writes. Cross-account integration tests remain outstanding.
 - [ ] Implement invitation creation, secure link generation, Gmail compose handoff, acceptance, expiry and revocation.
 - [ ] Add authorization and cross-workspace isolation tests.
 
@@ -517,4 +517,4 @@ MVP is not complete until all of these are demonstrated:
 
 - **2026-11-22:** Initial product and technical masterplan created. No application code or deployment has been implemented yet.
 - **2026-11-22:** Revised architecture to strict free-only Cloudflare Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.
-- **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.\n- **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 initial migration, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
+- **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.\n- **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 migrations, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.\n- **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories API handlers. Added API, authentication and security documentation. CI type-checks Worker TypeScript; OIDC token validation tests pass. Live Google login and D1 persistence remain blocked on dedicated external resources/credentials.
