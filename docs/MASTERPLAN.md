@@ -402,7 +402,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [x] Create architecture, data-model and security baseline documents (ADR-0001 through ADR-0004, DATA_MODEL.md and SECURITY.md). Security review remains open.
 - [x] Bootstrap React/Vite frontend, Worker API and shared route handlers with pinned direct dependencies. A separate shared-contract package is deferred until the API stabilises.
-- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [44997082960](https://github.com/fizminho/kitanotes/actions/runs/44997082960).
+- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [44999942863](https://github.com/fizminho/kitanotes/actions/runs/44999942863).
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
@@ -417,13 +417,14 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P2 — Calendar and notifications
 
-- [ ] Implement internal calendar events linked to notes.
-- [ ] Implement timezone-safe event creation and editing.
-- [ ] Implement durable reminder scheduling and idempotency.
-- [ ] Implement in-app notification inbox.
-- [ ] Implement Gmail compose handoff for invitations; no automated email provider in the free-only MVP.
+- [x] Implement internal calendar event API and UI, including note linking, timezone storage, create/list/delete and version-checked API editing.
+- [x] Implement timezone-safe event/reminder input validation with explicit UTC offsets and IANA timezone retention.
+- [x] Implement durable reminder scheduling, idempotent five-minute Cron delivery and automatic cancellation when linked notes/events are deleted.
+- [x] Implement in-app notification inbox API/UI, unread count, mark-read and mark-all-read.
+- [x] Notify other workspace members when a new shared note is created.
+- [ ] Add event editing UI and month/week calendar views.
 - [ ] Implement PWA service worker and Web Push subscription/delivery.
-- [ ] Implement notification preferences, retries and deduplication.
+- [ ] Implement notification preferences and delivery settings.
 
 ### P3 — Gemini assistant
 
@@ -519,4 +520,4 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Revised architecture to strict free-only Cloudflare Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.
 - **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.
 - **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 migrations, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
-- **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories API handlers, connected the notes UI to those endpoints, and added CSP/security headers. Added API, authentication and security documentation. CI type-checks Worker TypeScript; OIDC and bounded-input tests run in CI. Live Google login and D1 persistence remain blocked on dedicated external resources/credentials.
+- **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories/invitation APIs, connected the notes and sharing UI, and added CSP/security headers. Added API, authentication and security documentation. Offline D1-backed auth, notes, invitation, calendar, reminder and notification integration tests pass in CI. Live Google login and cloud D1 persistence remain blocked on dedicated external resources/credentials.\n- **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
