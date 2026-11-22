@@ -1,3 +1,4 @@
+import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 export type D1Like = {
   prepare(sql: string): {
     bind(...values: unknown[]): {
@@ -152,6 +153,10 @@ async function startGoogleLogin(request: Request, env: AuthEnv): Promise<Respons
   const configError = authConfiguration(env);
   if (configError) return json({ error: "AUTH_NOT_CONFIGURED", message: configError }, 503);
   const origin = baseUrl(request, env);
+  const clientIp = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const fingerprint = await hmac(clientIp, env.SESSION_SECRET!);
+  const rate = await consumeRateLimit(env.DB!, "oauth:start:" + fingerprint, 10, 10 * 60 * 1000);
+  if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
   const requestedReturnTo = new URL(request.url).searchParams.get("returnTo") ?? "/";
   let returnTo = "/";
   if (requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") && !requestedReturnTo.includes("\\")) {
@@ -216,6 +221,10 @@ async function createUserAndSession(
 async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Response> {
   const configError = authConfiguration(env);
   if (configError) return json({ error: "AUTH_NOT_CONFIGURED", message: configError }, 503);
+  const clientIp = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const fingerprint = await hmac(clientIp, env.SESSION_SECRET!);
+  const rate = await consumeRateLimit(env.DB!, "oauth:callback:" + fingerprint, 20, 10 * 60 * 1000);
+  if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
   const headers = new Headers({ "cache-control": "no-store" });
   const stateCookie = getCookie(request, OAUTH_COOKIE);
   clearCookie(headers, OAUTH_COOKIE);
