@@ -51,3 +51,20 @@ test("disabled per-user push preference prevents any subscription lookup", async
   assert.equal(queries.length,1);
   assert.match(queries[0],/notification_preferences/);
 });
+
+
+test("activity-specific preferences suppress their own push category", async () => {
+  const cases=[
+    ["event",{event_push_enabled:0},"event"],
+    ["workspace",{workspace_push_enabled:0},"workspace"],
+    ["shared_note_update",{shared_note_update_push_enabled:0},"shared_note_update"]
+  ];
+  for(const [label,disabled,kind] of cases){
+    const queries=[];
+    const preferences={push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur",...disabled};
+    const db={prepare(sql){queries.push(sql);return{bind(){return{first:async()=>preferences,all:async()=>{throw new Error("Suppressed push must not load subscriptions");}};}};}};
+    await sendPushToUser(db,{VAPID_PUBLIC_KEY:"public",VAPID_PRIVATE_KEY:"private",VAPID_SUBJECT:"mailto:test@example.com"},"user-1",{title:"Activity",body:"Generic update"},kind);
+    assert.equal(queries.length,1,String(label)+" preference should suppress subscription lookup");
+    assert.match(queries[0],/notification_preferences/);
+  }
+});
