@@ -1,10 +1,10 @@
 # KitaNotes — Product & Technical Masterplan
 
-**Status:** P0–P3 application code and initial P4 security hardening implemented; live Cloudflare/Google provisioning and production verification remain open  
+**Status:** P0–P3 application code and initial P4 hardening implemented. An initial production deployment and core two-account collaboration have been exercised; verification of the latest workspace-visibility release, D1 migrations and full production smoke tests remains open.  
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
-**Last updated:** 2026-11-22 (notification/PWA status reconciliation and Gemini OCR roadmap)
+**Last updated:** 2026-11-22 (workspace visibility hardening, OCR workflow and security audit reconciliation)
 
 > This is the source-of-truth planning document for KitaNotes. Update the checkboxes and decision log as implementation progresses. A checked item means it has been implemented and verified, not merely discussed.
 
@@ -39,7 +39,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] Membership roles: owner, editor and viewer.
 - [x] User-defined categories, colours and ordering.
 - [x] Client-side note search and recent-note ordering.
-- [ ] Category filtering and saved views.
+- [x] Category filtering. Saved views remain open.
 - [x] Internal calendar events and reminders; API supports linking them to notes.
 - [x] Add note-link selection to the calendar UI.
 - [x] In-app notification inbox.
@@ -52,13 +52,13 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] Responsive mobile and desktop web experience.
 - [x] PWA install prompt, install metadata and offline application-shell/static-asset cache; private data and edits still require connectivity.
 - [x] Automated tests, CI checks and operational documentation.
-- [ ] Production deployment workflow and smoke tests.
+- [x] Cloudflare Workers Builds deployment path and initial production deployment. Latest-release smoke tests and automated deployment verification remain open.
 
 ### Later releases
 
 - [ ] Optional Google Calendar integration and two-way sync.
 - [ ] Real-time collaborative editing / presence.
-- [ ] Gemini OCR for user-selected images: extract text, then pass it through the existing structured-note flow. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [x] Consent-gated Gemini OCR image-to-text flow with editable output and handoff to the existing organiser. Image preview, client-side EXIF stripping and live provider verification remain open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
 - [ ] Recurring events and advanced reminder rules.
 - [ ] Shared templates and reusable note formats.
@@ -415,7 +415,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P1 — Identity and secure collaboration
 
-- [ ] Configure Google OAuth clients for development/staging/production.
+- [x] Configure the production Google OAuth client; separate development/staging clients remain open.
 - [x] Implement Google OIDC ID-token signature/claim validation, state, nonce, PKCE and opaque hashed D1 sessions; offline D1 + mocked Google callback, personal workspace, session and logout integration tests pass. Real Google credentials/cloud D1 verification remains pending.
 - [x] Implement and integration-test user upsert plus personal workspace/member creation in the Google login callback against SQLite-backed D1 test adapter. Live cloud D1 verification remains pending.
 - [x] Implement and integration-test workspace-scoped notes CRUD, soft delete/archive, categories CRUD/archive, role checks, same-origin mutation checks, bounded JSON parsing and optimistic note versions.
@@ -449,17 +449,17 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Do not persist raw prompts or AI drafts; D1 stores only consent metadata and daily usage counts.
 - [x] Add mocked tests for 404, 429 quota, 503 transient errors, auth failure, malformed JSON, invalid output, provider outage, daily cap and manual-note resilience.
 - [ ] Configure a real Gemini free-tier key from a project with no Cloud Billing and verify a live request/fallback sequence.
-- [ ] Implement Gemini image OCR as a separate consent-gated capability reusing the existing provider adapter, free-model allowlist, quota controls and review-before-save boundary. Design: [OCR_GEMINI.md](OCR_GEMINI.md).
+- [x] Implement consent-gated Gemini image OCR using the existing provider allowlist and review-before-save boundary. Backend and frontend capture/edit/handoff are implemented; preview, EXIF stripping and live model verification remain open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 
 ### P4 — Production hardening
 
 - [x] Apply CSP, HSTS (HTTPS), frame denial, no-sniff, referrer and permissions headers to every Worker response; add regression tests.
-- [x] Add D1-backed rate limits for OAuth initiation (10/IP/10m), callbacks (20/IP/10m) and invitations (10/user/hour); add unit and integration tests.
-- [ ] Deploy frontend and API through Cloudflare Free services only.
-- [ ] Configure domains, TLS, CORS, security headers and secrets.
+- [x] Add D1-backed rate limits for OAuth initiation (10/IP/10m), callbacks (20/IP/10m), invitations (10/user/hour) and OCR (3/user/minute plus 5/day); add tests.
+- [x] Deploy frontend and API through Cloudflare Workers Free; initial production deployment is in use. Latest commit deployment remains to be verified.
+- [x] Configure production domain/TLS, same-origin API policy, security headers and Google/session secrets. Optional Gemini and VAPID secrets remain unverified.
 - [ ] Add database backups, restore test, migrations and rollback.
 - [ ] Add logs, metrics, health checks and error reporting.
-- [ ] Run end-to-end tests across two real Google test accounts.
+- [x] Exercise Google sign-in, invitation acceptance and shared-note collaboration with two real accounts. Full regression of all roles and lifecycle transitions remains open.
 - [ ] Verify invitations, permissions, reminders and notification delivery.
 - [ ] Verify production deployment with smoke tests and record evidence.
 - [ ] Update docs and mark only verified items complete.
@@ -468,7 +468,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 - [ ] Optional Google Calendar sync.
 - [ ] Real-time collaboration.
-- [ ] Gemini image OCR and image-to-note flow. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [ ] OCR image preview, client-side resizing/EXIF stripping and live Gemini model verification. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] PDF text extraction and attachment management.
 - [ ] Recurring events and richer task management.
 - [ ] Offline editing and conflict resolution.
@@ -542,6 +542,8 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
 - **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
 - **2026-11-22:** Added PWA manifest, install prompt, root service worker and network-first offline shell cache. Added per-user Web Push subscriptions, VAPID key generation instructions, generic privacy-preserving reminder/shared-note payloads and expired-subscription cleanup. VAPID configuration and real browser delivery remain pending.
-- **2026-11-22:** Added a staged Gemini OCR roadmap. OCR will reuse the existing Gemini free-tier adapter and structured-note review flow; it is not implemented yet.
+- **2026-11-22:** Implemented the consent-gated Gemini OCR backend and frontend image-picker/editable-text handoff. Added separate daily and burst quotas. Image preview, EXIF stripping and live provider verification remain open.
 - **2026-11-22:** Implemented D1-backed per-user notification preferences, reminder/shared-note push switches, IANA timezone quiet hours (including overnight windows), settings UI, API validation and tests. Quiet hours suppress push attempts rather than queueing them; in-app notifications remain unaffected. Build, tests, SQLite migration validation and Wrangler dry-run passed in run [45010862541](https://github.com/fizminho/kitanotes/actions/runs/45010862541).
 - **2026-11-22:** Added calendar month/week navigation, six-week month loading, event edit UI with version-conflict handling, and timezone-aware date/time editing. GitHub Actions passed TypeScript build, all tests, SQLite migration validation and Wrangler dry-run (runs [45005225542](https://github.com/fizminho/kitanotes/actions/runs/45005225542) and [45005229375](https://github.com/fizminho/kitanotes/actions/runs/45005229375)).
+
+- **2026-11-22:** Security audit found stale `workspace_type='personal'` lookups in notes, calendar and reminder default-workspace resolution after migration `0012`. Updated them to use `visibility='private'`, corrected shared-workspace quota counting, prevented deletion of private workspaces and added regression coverage. Latest commit CI verification is pending.
