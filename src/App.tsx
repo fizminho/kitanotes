@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag, Upload, Download } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag } from "lucide-react";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 
 type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
@@ -858,13 +858,6 @@ export default function App() {
   },[view,user,holidayState,calendarMode,calendarCursor,calendarRefresh]);
   const calendarHeading=calendarMode==="week"?calendarDays[0].toLocaleDateString(undefined,{month:"short",day:"numeric"})+" – "+calendarDays[6].toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});
   function moveCalendar(amount:number){setCalendarCursor(current=>{const next=new Date(current);if(calendarMode==="week")next.setDate(next.getDate()+amount*7);else next.setMonth(next.getMonth()+amount);return next;});}
-  function occursOnDay(item:CalendarItem,day:Date):boolean {
-    const startKey=dateKey(new Date(item.startsAt));
-    const lastVisibleKey=dateKey(new Date(new Date(item.endsAt).getTime()-1));
-    const key=dateKey(day);
-    return key>=startKey&&key<=lastVisibleKey;
-  }
-  function eventsForDay(day:Date):CalendarItem[]{return [...events.filter(item=>occursOnDay(item,day)),...holidays.filter(item=>occursOnDay(item,day))];}
   const calendarAgendaItems=useMemo<CalendarItem[]>(()=>[...events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)),...holidays.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000))].sort((left,right)=>left.startsAt.localeCompare(right.startsAt)) as CalendarItem[],[events,holidays,calendarDays]);
 
   async function importCalendarIcs(file:File){
