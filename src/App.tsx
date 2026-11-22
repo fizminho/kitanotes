@@ -257,6 +257,15 @@ export default function App() {
         </header>
         <div className="content">
           {inviteNotice && <div className="invite-success-banner"><Check size={16}/>{inviteNotice}</div>}
+          {inviteToken && <section className="invite-panel">
+            <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
+              <p>Accept this invitation using the Google account whose email address received it.</p></div>
+            {user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
+              : authStatus === "signed_out" ? <a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Sign in to accept</a>
+              : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>}
+            {inviteError && <p className="invite-error">{inviteError}</p>}
+            {inviteError.includes("different Google email") && user && <button className="text-action" onClick={signOut}>Sign out</button>}
+          </section>}
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
             {view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
