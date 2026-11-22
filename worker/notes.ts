@@ -86,10 +86,11 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
     const workspaceId = url.searchParams.get("workspaceId");
     const query = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+    const archiveFilter = url.searchParams.get("archived") === "1" ? "n.archived_at IS NOT NULL" : "n.archived_at IS NULL";
     if (workspaceId && !(await roleFor(db, workspaceId, userId))) return json({ error: "NOT_FOUND" }, 404);
     const pattern = "%" + query.replace(/[\\%_]/g, "\\$&") + "%";
     const result = workspaceId
-      ? await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND n.archived_at IS NULL AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
+      ? await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(workspaceId, query, pattern, pattern, limit).all<NoteRow>()
       : await db.prepare("SELECT n.*,c.name AS category_name FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id WHERE wm.user_id=? AND n.deleted_at IS NULL AND n.archived_at IS NULL AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(userId, query, pattern, pattern, limit).all<NoteRow>();
