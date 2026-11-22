@@ -14,7 +14,8 @@ test("AI note prompt writes in the user's voice and matches the input language",
   assert.match(prompt,/I am planning to go fishing at xxx/i);
   assert.match(prompt,/Malay stays Malay; English stays English/i);
 });
-\nclass D1TestDatabase {
+
+class D1TestDatabase {
   constructor(){
     this.sqlite=new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
