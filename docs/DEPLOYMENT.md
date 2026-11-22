@@ -28,7 +28,7 @@ npx wrangler deploy --dry-run
 npm run cf:dev
 ```
 
-`npm run cf:dev` builds first and starts Wrangler locally. The health endpoint is `/api/health`. Google auth routes and notes/categories API handlers are implemented, but require a provisioned D1 database and Google OAuth credentials to run. Unimplemented API areas return HTTP 501.
+Copy `.dev.vars.example` to `.dev.vars` for local Google OAuth configuration. Apply local D1 migrations with `npx wrangler d1 migrations apply kitanotes-db --local`.\n\n`npm run cf:dev` builds first and starts Wrangler locally. The health endpoint is `/api/health`. Google auth routes and notes/categories API handlers are implemented, but require a provisioned D1 database and Google OAuth credentials to run. Unimplemented API areas return HTTP 501.
 
 ## Cost guardrails
 
