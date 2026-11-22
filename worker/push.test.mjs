@@ -28,3 +28,18 @@ test("push delivery fails closed when VAPID is not configured", async () => {
   await sendPushToUser(db, {}, "user-1", { title: "Private title", body: "Private body" });
   assert.equal(queried, false);
 });
+
+import { isWithinQuietHours } from "./push.ts";
+
+test("quiet hours handle overnight windows in the user's timezone", () => {
+  const prefs={push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,quiet_hours_start:"22:00",quiet_hours_end:"07:00",timezone:"Asia/Kuala_Lumpur"};
+  assert.equal(isWithinQuietHours(prefs,new Date("2026-11-22T16:30:00.000Z")),true);
+  assert.equal(isWithinQuietHours(prefs,new Date("2026-11-22T08:00:00.000Z")),false);
+});
+
+test("quiet hours handle same-day windows and disabled ranges", () => {
+  const prefs={push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,quiet_hours_start:"09:00",quiet_hours_end:"17:00",timezone:"Asia/Kuala_Lumpur"};
+  assert.equal(isWithinQuietHours(prefs,new Date("2026-11-22T04:00:00.000Z")),true);
+  assert.equal(isWithinQuietHours(prefs,new Date("2026-11-22T10:00:00.000Z")),false);
+  assert.equal(isWithinQuietHours({...prefs,quiet_hours_start:null,quiet_hours_end:null},new Date("2026-11-22T04:00:00.000Z")),false);
+});
