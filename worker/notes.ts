@@ -58,8 +58,9 @@ async function personalWorkspace(db: Db, userId: string): Promise<string | null>
   return row?.id ?? null;
 }
 async function workspaceForWrite(db: Db, userId: string, requested: unknown): Promise<{ id: string; role: Role } | null> {
-  const workspaceId = typeof requested === "string" && requested.length <= 64
-    ? requested : await personalWorkspace(db, userId);
+  const workspaceId = requested === undefined || requested === null || requested === ""
+    ? await personalWorkspace(db, userId)
+    : (typeof requested === "string" && requested.length <= 64 ? requested : null);
   if (!workspaceId) return null;
   const role = await roleFor(db, workspaceId, userId);
   return role && (role === "owner" || role === "editor") ? { id: workspaceId, role } : null;
@@ -130,11 +131,12 @@ async function handleNotes(request: Request, env: AuthEnv, url: URL, userId: str
     const content = body.content === undefined ? row.content : (typeof body.content === "string" && body.content.length <= MAX_NOTE_CONTENT_CHARS ? body.content : null);
     const categoryId = body.categoryId === undefined ? row.category_id : nullableText(body.categoryId, 64);
     const version = Number(body.version);
-    if (!title || content === null || categoryId === undefined || !Number.isInteger(version) || version !== row.version) return json({ error: "INVALID_OR_STALE_NOTE", currentVersion: row.version }, 409);
+    const archivedAt = body.archived === undefined ? row.archived_at : (typeof body.archived === "boolean" ? (body.archived ? new Date().toISOString() : null) : undefined);
+    if (!title || content === null || categoryId === undefined || archivedAt === undefined || !Number.isInteger(version) || version !== row.version) return json({ error: "INVALID_OR_STALE_NOTE", currentVersion: row.version }, 409);
     if (!(await categoryBelongsToWorkspace(db, categoryId, row.workspace_id))) return json({ error: "INVALID_CATEGORY" }, 400);
     const now = new Date().toISOString();
-    const result = await db.prepare("UPDATE notes SET title=?,content=?,category_id=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=? AND version=? AND deleted_at IS NULL")
-      .bind(title, content, categoryId, now, noteId, row.workspace_id, version).run();
+    const result = await db.prepare("undefined")
+      .bind(title, content, categoryId, archivedAt, now, noteId, row.workspace_id, version).run();
     if (changes(result) !== 1) return json({ error: "VERSION_CONFLICT" }, 409);
     const updated = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
       .bind(noteId).first<NoteRow>();
@@ -177,7 +179,7 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
     const id = crypto.randomUUID(); const now = new Date().toISOString();
     try {
       await db.prepare("INSERT INTO categories (id,workspace_id,name,color,sort_order,created_by_user_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(id,workspace.id,name,color,Number.isInteger(body.sortOrder)?body.sortOrder:0,userId,now,now).run();
+        .bind(id,workspace.id,name,color,typeof body.sortOrder === "number" && Number.isInteger(body.sortOrder) ? body.sortOrder : 0,userId,now,now).run();
     } catch {
       return json({ error: "CATEGORY_ALREADY_EXISTS" }, 409);
     }
@@ -197,7 +199,7 @@ async function handleCategories(request: Request, env: AuthEnv, url: URL, userId
     if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
     const name = body.name === undefined ? category.name : textValue(body.name,50);
     const color = body.color === undefined ? category.color : (body.color === null ? null : (typeof body.color==="string" && /^#[0-9a-fA-F]{6}$/.test(body.color) ? body.color : undefined));
-    const sortOrder = body.sortOrder === undefined ? category.sort_order : (Number.isInteger(body.sortOrder) ? Number(body.sortOrder) : undefined);
+    const sortOrder = body.sortOrder === undefined ? category.sort_order : (typeof body.sortOrder === "number" && Number.isInteger(body.sortOrder) ? body.sortOrder : undefined);
     if (!name || color === undefined || sortOrder === undefined) return json({ error: "INVALID_CATEGORY" }, 400);
     const now = new Date().toISOString();
     try {
