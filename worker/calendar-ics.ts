@@ -67,9 +67,37 @@ async function exportIcs(request:Request,db:Db,userId:string):Promise<Response>{
  const content=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//KitaNotes//Calendar 2.0//EN","CALSCALE:GREGORIAN","X-WR-CALNAME:KitaNotes",...rows.results.map(eventIcs),"END:VCALENDAR"].join("\r\n")+"\r\n";
  return new Response(content,{headers:{"content-type":"text/calendar; charset=utf-8",'content-disposition':'attachment; filename="kitanotes-calendar.ics"',"cache-control":"no-store","x-content-type-options":"nosniff"}});
 }
+const GROUP_A_STATES=new Set(["kedah","kelantan","terengganu"]);
+const SCHOOL_BREAKS:Record<number,Record<"A"|"B",Array<{name:string;start:string;end:string}>>>={
+  2026:{
+    A:[{name:"Cuti Penggal 1",start:"2026-03-20",end:"2026-03-28"},{name:"Cuti Pertengahan Tahun",start:"2026-05-22",end:"2026-06-06"},{name:"Cuti Penggal 2",start:"2026-08-28",end:"2026-09-05"},{name:"Cuti Akhir Persekolahan",start:"2026-12-04",end:"2026-12-31"}],
+    B:[{name:"Cuti Penggal 1",start:"2026-03-21",end:"2026-03-29"},{name:"Cuti Pertengahan Tahun",start:"2026-05-23",end:"2026-06-07"},{name:"Cuti Penggal 2",start:"2026-08-29",end:"2026-09-06"},{name:"Cuti Akhir Persekolahan",start:"2026-12-05",end:"2026-12-31"}]
+  },
+  2027:{
+    A:[{name:"Cuti Penggal 1",start:"2027-03-05",end:"2027-03-13"},{name:"Cuti Pertengahan Tahun",start:"2027-05-21",end:"2027-06-05"},{name:"Cuti Penggal 2",start:"2027-08-27",end:"2027-09-04"},{name:"Cuti Akhir Persekolahan",start:"2027-12-03",end:"2027-12-31"}],
+    B:[{name:"Cuti Penggal 1",start:"2027-03-06",end:"2027-03-14"},{name:"Cuti Pertengahan Tahun",start:"2027-05-22",end:"2027-06-06"},{name:"Cuti Penggal 2",start:"2027-08-28",end:"2027-09-05"},{name:"Cuti Akhir Persekolahan",start:"2027-12-04",end:"2027-12-31"}]
+  }
+};
+function addCalendarDays(value:string,days:number):string {
+ const date=new Date(value+"T00:00:00Z");date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);
+}
+function schoolHolidayEvents(state:string,from:string,to:string){
+ const group=GROUP_A_STATES.has(state)?"A":"B";const events=[];
+ for(const [year,groups] of Object.entries(SCHOOL_BREAKS)){
+  for(const period of groups[group]){
+   const endExclusive=addCalendarDays(period.end,1);
+   if(period.end<from||period.start>to)continue;
+   const startUtc=localToUtc(period.start.replace(/-/g,"")+"T000000","Asia/Kuala_Lumpur");
+   const endUtc=localToUtc(endExclusive.replace(/-/g,"")+"T000000","Asia/Kuala_Lumpur");
+   if(!startUtc||!endUtc)continue;
+   events.push({id:"school-"+year+"-"+group+"-"+period.start,title:period.name+" "+year+" (Kumpulan "+group+")",description:"Cuti sekolah rasmi Kementerian Pendidikan Malaysia · Kumpulan "+group,startsAt:startUtc,endsAt:endUtc,timezone:"Asia/Kuala_Lumpur",allDay:true,holiday:true,holidayType:"school" as const});
+  }
+ }
+ return events;
+}
 async function holidays(request:Request):Promise<Response>{
  const url=new URL(request.url);const state=validState(url.searchParams.get("state"));if(!state)return json({error:"INVALID_STATE"},400);const from=url.searchParams.get("from")??new Date().getFullYear()+"-01-01";const to=url.searchParams.get("to")??(new Date().getFullYear()+1)+"-12-31";
- try{const response=await fetch("https://holidaywise.wee.my/my/"+STATE_SLUGS[state]+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error("feed");const parsed=parseIcs(await response.text());const events=parsed.filter(e=>new Date(new Date(e.start).getTime()+8*60*60*1000).toISOString().slice(0,10)>=from&&new Date(new Date(e.start).getTime()+8*60*60*1000).toISOString().slice(0,10)<=to).map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true}));return json({state,events,source:"HolidayWise",updatedAt:new Date().toISOString()},200,{"cache-control":"public, max-age=3600, s-maxage=21600"});}catch{return json({error:"HOLIDAY_FEED_UNAVAILABLE",message:"Malaysia holiday calendar is temporarily unavailable."},502);}
+ try{const response=await fetch("https://holidaywise.wee.my/my/"+STATE_SLUGS[state]+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error("feed");const parsed=parseIcs(await response.text());const publicEvents=parsed.filter(e=>new Date(new Date(e.start).getTime()+8*60*60*1000).toISOString().slice(0,10)>=from&&new Date(new Date(e.start).getTime()+8*60*60*1000).toISOString().slice(0,10)<=to).map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true,holidayType:"public" as const}));const events=[...publicEvents,...schoolHolidayEvents(state,from,to)].sort((a,b)=>a.startsAt.localeCompare(b.startsAt));return json({state,events,source:"HolidayWise + KPM",updatedAt:new Date().toISOString()},200,{"cache-control":"public, max-age=3600, s-maxage=21600"});}catch{return json({error:"HOLIDAY_FEED_UNAVAILABLE",message:"Malaysia holiday calendar is temporarily unavailable."},502);}
 }
 export async function handleCalendarIcsRequest(request:Request,env:AuthEnv):Promise<Response|null>{
  const url=new URL(request.url);
