@@ -43,14 +43,14 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] Internal calendar events and reminders; API supports linking them to notes.
 - [x] Add note-link selection to the calendar UI.
 - [x] In-app notification inbox.
-- [ ] Browser push notifications where permission is granted.
+- [x] Optional per-device Web Push subscriptions, permission flow and best-effort due-reminder delivery; VAPID provisioning and real-device delivery verification remain open.
 - [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.
 - [ ] Add invitation-accepted and other collaboration activity notifications.
 - [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
 - [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
 - [ ] Audit/activity history for sharing and material note changes.
 - [x] Responsive mobile and desktop web experience.
-- [ ] PWA installability and offline support.
+- [x] PWA install prompt, install metadata and offline application-shell/static-asset cache; private data and edits still require connectivity.
 - [x] Automated tests, CI checks and operational documentation.
 - [ ] Production deployment workflow and smoke tests.
 
@@ -536,4 +536,5 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
 - **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
 - **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
+- **2026-11-22:** Added PWA manifest, install prompt, root service worker and network-first offline shell cache. Added per-user Web Push subscriptions, VAPID key generation instructions, generic privacy-preserving reminder payloads and expired-subscription cleanup. VAPID configuration and real browser delivery remain pending.
 - **2026-11-22:** Added calendar month/week navigation, six-week month loading, event edit UI with version-conflict handling, and timezone-aware date/time editing. GitHub Actions passed TypeScript build, all tests, SQLite migration validation and Wrangler dry-run (runs [45005225542](https://github.com/fizminho/kitanotes/actions/runs/45005225542) and [45005229375](https://github.com/fizminho/kitanotes/actions/runs/45005229375)).
