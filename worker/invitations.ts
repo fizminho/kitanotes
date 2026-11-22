@@ -55,6 +55,9 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   const existingMember = await db.prepare("SELECT wm.user_id FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? AND u.email_normalized=?")
     .bind(workspaceId,email).first<{user_id:string}>();
   if (existingMember) return json({ error: "ALREADY_A_MEMBER" }, 409);
+  const checkedAt = new Date().toISOString();
+  await db.prepare("UPDATE invitations SET status='expired' WHERE workspace_id=? AND invited_email_normalized=? AND status='pending' AND expires_at<=?")
+    .bind(workspaceId,email,checkedAt).run();
   const existingInvite = await db.prepare("SELECT id FROM invitations WHERE workspace_id=? AND invited_email_normalized=? AND status='pending' AND expires_at>?")
     .bind(workspaceId,email,new Date().toISOString()).first<{id:string}>();
   if (existingInvite) return json({ error: "INVITATION_ALREADY_PENDING" }, 409);
@@ -64,8 +67,12 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   const now = new Date();
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  await db.prepare("INSERT INTO invitations (id,workspace_id,invited_email_normalized,invited_by_user_id,role,token_hash,status,expires_at,created_at) VALUES (?,?,?,?,?,?,'pending',?,?)")
-    .bind(id,workspaceId,email,userId,role,await tokenHash(token),expiresAt,createdAt).run();
+  try {
+    await db.prepare("INSERT INTO invitations (id,workspace_id,invited_email_normalized,invited_by_user_id,role,token_hash,status,expires_at,created_at) VALUES (?,?,?,?,?,?,'pending',?,?)")
+      .bind(id,workspaceId,email,userId,role,await tokenHash(token),expiresAt,createdAt).run();
+  } catch {
+    return json({ error: "INVITATION_ALREADY_PENDING" },409);
+  }
 
   const url = invitationUrl(request,env,token);
   const subject = "You've been invited to collaborate on KitaNotes";
