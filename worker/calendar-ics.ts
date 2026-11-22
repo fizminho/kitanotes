@@ -6,6 +6,14 @@ type Role = "owner" | "editor" | "viewer";
 type IcsEvent = { uid:string; title:string; description:string; start:string; end:string; timezone:string; allDay:boolean };
 function json(data:unknown,status=200,headers:Record<string,string>={}):Response { return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...headers}}); }
 function sameOrigin(request:Request):boolean { return request.headers.get("origin")===new URL(request.url).origin; }
+async function readCalendarImportBody(request:Request):Promise<Record<string,unknown>|null>{
+ const contentType=request.headers.get("content-type")??"";if(!contentType.toLowerCase().includes("application/json"))return null;
+ const declared=Number(request.headers.get("content-length"));if(Number.isFinite(declared)&&declared>2_100_000)return null;
+ const reader=request.body?.getReader();if(!reader)return null;const chunks:Uint8Array[]=[];let total=0;
+ while(true){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>2_100_000){await reader.cancel();return null;}chunks.push(part.value);}
+ const bytes=new Uint8Array(total);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+ try{const value=JSON.parse(new TextDecoder().decode(bytes));return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:null;}catch{return null;}
+}
 async function roleFor(db:Db,workspaceId:string,userId:string):Promise<Role|null> { const row=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,userId).first<{role:Role}>();return row?.role??null; }
 function clean(value:string):string { return value.replace(/\\n/g,"\n").replace(/\\,/g,",").replace(/\\;/g,";").replace(/\\\\/g,"\\").trim(); }
 function unfold(text:string):string[] { return text.replace(/\r\n[ \t]/g,"").replace(/\n[ \t]/g,"").split(/\r?\n/); }
@@ -43,7 +51,7 @@ function eventIcs(row:{id:string;title:string;description:string;starts_at_utc:s
 const STATE_SLUGS:Record<string,string>={johor:"jhr",kedah:"kdh",kelantan:"ktn",melaka:"mlk","negeri-sembilan":"nsn",pahang:"phg",perak:"prk",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sel",terengganu:"trg","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
 function validState(value:string|null):string|null{return value&&Object.hasOwn(STATE_SLUGS,value)?value:null;}
 async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
- if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);const body=await readJsonBody(request);if(!body||typeof body.ics!=="string"||body.ics.length>2_000_000)return json({error:"INVALID_ICS_FILE"},400);
+ if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);const body=await readCalendarImportBody(request);if(!body||typeof body.ics!=="string"||body.ics.length>2_000_000)return json({error:"INVALID_ICS_FILE"},400);
  const workspaceId=typeof body.workspaceId==="string"?body.workspaceId:"";if(!workspaceId||!(["owner","editor"].includes((await roleFor(db,workspaceId,userId))??"")))return json({error:"WORKSPACE_FORBIDDEN"},403);
  if(!body.ics.includes("BEGIN:VCALENDAR"))return json({error:"INVALID_ICS_FILE"},400);const parsed=parseIcs(body.ics);if(!parsed.length)return json({error:"NO_SUPPORTED_EVENTS"},400);
  const events=parsed.slice(0,500);let imported=0,updated=0,skipped=0;const now=new Date().toISOString();
