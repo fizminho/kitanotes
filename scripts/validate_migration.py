@@ -3,8 +3,32 @@ import sqlite3
 
 db = sqlite3.connect(":memory:")
 db.execute("PRAGMA foreign_keys = ON")
-for migration_path in sorted(Path("migrations").glob("*.sql")):
+migrations = sorted(Path("migrations").glob("*.sql"))
+pre_visibility = [path for path in migrations if path.name < "0011_workspace_visibility.sql"]
+visibility_migrations = [path for path in migrations if path.name >= "0011_workspace_visibility.sql"]
+for migration_path in pre_visibility:
     db.executescript(migration_path.read_text(encoding="utf-8"))
+
+# Seed legacy rows before the visibility/type migrations to verify the data conversion.
+db.execute("INSERT INTO users (id, google_sub, email, email_normalized, email_verified, created_at, updated_at) VALUES ('u1','sub1','a@example.com','a@example.com',1,'now','now')")
+db.execute("INSERT INTO users (id, google_sub, email, email_normalized, email_verified, created_at, updated_at) VALUES ('u2','sub2','b@example.com','b@example.com',1,'now','now')")
+db.execute("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','One','u1','personal','now','now')")
+db.execute("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w2','Two','u2','shared','now','now')")
+db.execute("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner','now')")
+db.execute("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w2','u2','owner','now')")
+try:
+    db.execute("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1b','Duplicate legacy personal','u1','personal','now','now')")
+except sqlite3.IntegrityError:
+    pass
+else:
+    raise SystemExit("Duplicate legacy personal workspace was not rejected")
+
+for migration_path in visibility_migrations:
+    db.executescript(migration_path.read_text(encoding="utf-8"))
+
+workspace_rows = db.execute("SELECT id,workspace_type,visibility FROM workspaces ORDER BY id").fetchall()
+if workspace_rows != [("w1", "shared", "private"), ("w2", "shared", "shared")]:
+    raise SystemExit(f"Workspace visibility/type migration produced unexpected rows: {workspace_rows}")
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences", "ai_ocr_consent", "ai_ocr_usage"}
@@ -12,12 +36,6 @@ missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
 
-db.execute("INSERT INTO users (id, google_sub, email, email_normalized, email_verified, created_at, updated_at) VALUES ('u1','sub1','a@example.com','a@example.com',1,'now','now')")
-db.execute("INSERT INTO users (id, google_sub, email, email_normalized, email_verified, created_at, updated_at) VALUES ('u2','sub2','b@example.com','b@example.com',1,'now','now')")
-db.execute("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','One','u1','personal','now','now')")
-db.execute("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w2','Two','u2','personal','now','now')")
-db.execute("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner','now')")
-db.execute("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w2','u2','owner','now')")
 db.execute("INSERT INTO categories (id,workspace_id,name,created_by_user_id,created_at,updated_at) VALUES ('c2','w2','Private','u2','now','now')")
 
 try:
@@ -34,12 +52,9 @@ visible_to_u2 = db.execute("SELECT n.id FROM notes n JOIN workspace_members wm O
 if visible_to_u2:
     raise SystemExit("Workspace membership query exposed another user's note")
 
-try:
-    db.execute("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1b','Duplicate personal','u1','personal','now','now')")
-except sqlite3.IntegrityError:
-    pass
-else:
-    raise SystemExit("Duplicate personal workspace was not rejected")
+legacy_types = db.execute("SELECT COUNT(*) FROM workspaces WHERE workspace_type <> 'shared'").fetchone()[0]
+if legacy_types:
+    raise SystemExit(f"Legacy workspace types remain after migration: {legacy_types}")
 
 db.execute("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('s1','u1','hash-1','2099-01-01T00:00:00.000Z','now')")
 try:
