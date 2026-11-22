@@ -25,7 +25,7 @@ The initial D1 migration is `migrations/0001_initial.sql`. It creates the identi
 
 ## Migration operation
 
-The migration is committed but has not been applied. Apply it only after creating a separate KitaNotes D1 database and configuring the database ID in Wrangler. Never point KitaNotes migrations at the Investlah database.
+The dedicated KitaNotes D1 database is configured in Wrangler and the application has an existing production deployment. Migrations `0011_workspace_visibility.sql` and `0012_unified_workspace_type.sql` are part of the current source release; confirm their presence in production D1 migration history before relying on the latest workspace semantics. Never point KitaNotes migrations at the Investlah database.
 
 ## Workspace type and visibility
 
