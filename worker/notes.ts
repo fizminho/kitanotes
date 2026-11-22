@@ -131,7 +131,8 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const now = new Date().toISOString();
     await db.prepare("INSERT INTO notes (id,workspace_id,title,content,category_id,created_by_user_id,updated_by_user_id,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?)")
       .bind(id, workspace.id, title, content, categoryId, userId, userId, now, now).run();
-    const row = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
+    await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.created','note',?,'{}',?)").bind(crypto.randomUUID(),workspace.id,userId,id,now).run();
+    const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
     const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"KitaNotes",body:"A new note was shared with your workspace.",url:"/",tag:"shared-note-"+id},"shared_note")));
@@ -141,7 +142,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
   const match = path.match(/^\/api\/notes\/([^/]+)$/);
   if (!match) return null;
   const noteId = decodeURIComponent(match[1]);
-  const row = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=? AND n.deleted_at IS NULL")
+  const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=? AND n.deleted_at IS NULL")
     .bind(noteId).first<NoteRow>();
   if (!row || !(await roleFor(db, row.workspace_id, userId))) return json({ error: "NOT_FOUND" }, 404);
   if (request.method === "GET") return json({ note: noteDto(row) });
@@ -162,7 +163,8 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const result = await db.prepare("UPDATE notes SET title=?,content=?,category_id=?,archived_at=?,updated_by_user_id=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=? AND version=? AND deleted_at IS NULL")
       .bind(title, content, categoryId, archivedAt, userId, now, noteId, row.workspace_id, version).run();
     if (changes(result) !== 1) return json({ error: "VERSION_CONFLICT" }, 409);
-    const updated = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
+    await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.updated','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
+    const updated = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(noteId).first<NoteRow>();
     return json({ note: updated ? noteDto(updated) : null });
   }
@@ -173,7 +175,8 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const now = new Date().toISOString();
     const result = await db.prepare("UPDATE notes SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND workspace_id=? AND deleted_at IS NULL")
       .bind(now, now, userId, noteId, row.workspace_id).run();
-    return changes(result) === 1 ? json({ ok: true }) : json({ error: "NOT_FOUND" }, 404);
+    if(changes(result)===1){await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.deleted','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();return json({ok:true});}
+    return json({error:"NOT_FOUND"},404);
   }
   return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 }
