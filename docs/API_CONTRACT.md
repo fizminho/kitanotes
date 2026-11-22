@@ -29,7 +29,7 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 - `GET /api/workspaces/:id/activity`: any member; last 50 sharing events (invitations, joins, leaves, removals, role changes, ownership transfers).
 - Collaboration notifications: invitation accepted and member left (to owner); role changed, removed, ownership received (to the affected member).
 
-A private workspace is returned to the owner as `type:"personal"`; invitation creation and ownership transfer are disabled for it. Its notes and categories are retained. Invitation tokens are cryptographically random, stored only as SHA-256 hashes, expire after seven days and are single-use. An SQLite trigger creates membership in the same database transaction as the accepted status update.
+Every workspace has `type:"shared"`; `visibility` is the access boundary (`private` or `shared`). A private workspace remains `type:"shared"` and is returned with `visibility:"private"`. Owners can make it shared again; this does not automatically restore removed members. Making a workspace private revokes pending invitations and removes other memberships while retaining notes and categories. Invitation tokens are cryptographically random, stored only as SHA-256 hashes, expire after seven days and are single-use. An SQLite trigger creates membership in the same database transaction as the accepted status update.
 
 ## Calendar events
 
