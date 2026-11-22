@@ -77,9 +77,9 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
     return json({ error: "INVALID_INVITATION" }, 400);
   }
   const db = env.DB!;
-  const ownedWorkspace=await db.prepare("SELECT workspace_type FROM workspaces WHERE id=? AND owner_user_id=?").bind(workspaceId,userId).first<{workspace_type:string}>();
+  const ownedWorkspace=await db.prepare("SELECT workspace_type,visibility FROM workspaces WHERE id=? AND owner_user_id=?").bind(workspaceId,userId).first<{workspace_type:string;visibility:string}>();
   if (!ownedWorkspace) return json({ error: "OWNER_PERMISSION_REQUIRED" },403);
-  if (ownedWorkspace.workspace_type!=="shared") return json({error:"SHARED_WORKSPACE_REQUIRED"},409);
+  if (ownedWorkspace.workspace_type!=="shared" || ownedWorkspace.visibility!=="shared") return json({error:"SHARED_WORKSPACE_REQUIRED"},409);
   const rate = await consumeRateLimit(db, "invitation:create:user:" + userId, 10, 60 * 60 * 1000);
   if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
   const existingMember = await db.prepare("SELECT wm.user_id FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? AND u.email_normalized=?")
@@ -243,10 +243,10 @@ async function listActivity(env: AuthEnv, userId: string, workspaceId: string): 
 
 async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
   const result = await env.DB!.prepare(
-    "SELECT w.id,w.name,w.workspace_type,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.workspace_type='personal' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
-  ).bind(userId).all<{id:string;name:string;workspace_type:"personal"|"shared";role:"owner"|"editor"|"viewer"}>();
+    "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
+  ).bind(userId).all<{id:string;name:string;workspace_type:"personal"|"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
   return json({ workspaces: result.results.map(row => ({
-    id:row.id,name:row.name,type:row.workspace_type,role:row.role
+    id:row.id,name:row.name,type:row.visibility==="private"?"personal":row.workspace_type,role:row.role
   })) });
 }
 
@@ -286,18 +286,18 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
       if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
       const body=await readJsonBody(request);
       if(body?.action==="make_private") {
-        const workspace=await env.DB!.prepare("SELECT id,workspace_type FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared'").bind(id,user.id).first<{id:string;workspace_type:string}>();
+        const workspace=await env.DB!.prepare("SELECT id,workspace_type,visibility FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(id,user.id).first<{id:string;workspace_type:string;visibility:string}>();
         if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
         const now=new Date().toISOString();
         await env.DB!.prepare("UPDATE invitations SET status='revoked' WHERE workspace_id=? AND status='pending'").bind(id).run();
         await env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(id,user.id).run();
         await logActivity(env.DB!,id,user.id,"workspace.members_cleared","workspace",id);
-        await env.DB!.prepare("UPDATE workspaces SET updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id).run();
-        return json({updated:true,id,type:"shared",membersRemoved:true,invitationsRevoked:true});
+        await env.DB!.prepare("UPDATE workspaces SET visibility='private',updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id).run();
+        return json({updated:true,id,type:"personal",visibility:"private",membersRemoved:true,invitationsRevoked:true});
       }
       if(body?.action==="transfer_ownership") {
         const targetId=typeof body.userId==="string"?body.userId:"";
-        const ws=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared'").bind(id,user.id).first<{id:string}>();
+        const ws=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(id,user.id).first<{id:string}>();
         if(!ws) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
         if(!targetId||targetId===user.id||!(await memberRole(env.DB!,id,targetId))) return json({error:"MEMBER_NOT_FOUND"},404);
         const now=new Date().toISOString();
