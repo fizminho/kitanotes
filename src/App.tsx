@@ -16,7 +16,8 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
  for(let i=0;i<3;i++){const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(guess));const p=(t:string)=>Number(parts.find(x=>x.type===t)?.value??0);const represented=Date.UTC(p("year"),p("month")-1,p("day"),p("hour"),p("minute"),p("second"));const next=guess+target-represented;if(next===guess)break;guess=next;}return new Date(guess).toISOString();
 }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
-type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };\ntype WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
+type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
+type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
 type Workspace = {id:string;name:string;type:"personal"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
@@ -71,7 +72,8 @@ export default function App() {
   const [inviteCreateError, setInviteCreateError] = useState("");
   const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string } | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);\n  const [workspaceMembers,setWorkspaceMembers]=useState<WorkspaceMember[]>([]);\n  const [workspaceActionBusy,setWorkspaceActionBusy]=useState(false);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [workspaceMembers,setWorkspaceMembers]=useState<WorkspaceMember[]>([]);\n  const [workspaceActionBusy,setWorkspaceActionBusy]=useState(false);
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
