@@ -133,7 +133,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const row = await db.prepare("SELECT n.*,c.name AS category_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"KitaNotes",body:"A new note was shared with your workspace.",url:"/",tag:"shared-note-"+id},"shared_note"))));
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"KitaNotes",body:"A new note was shared with your workspace.",url:"/",tag:"shared-note-"+id},"shared_note")));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     return json({ note: row ? noteDto(row) : null }, 201);
   }
