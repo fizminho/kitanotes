@@ -6,9 +6,9 @@ KitaNotes is a mobile-first web application for private notes, collaboration, ca
 
 ## Project status
 
-**P0 foundation, P1 identity/notes/sharing, P2 calendar/notifications and P3 AI organiser implementation are complete.** The repository now has a React/Vite interface, a Cloudflare Worker serving static assets and API routes, Google OIDC login/session code, workspace-scoped notes/categories/invitations APIs, internal calendar events, reminders, in-app notifications, D1 migrations, architecture/security docs and CI.
+**P0–P3 application features are implemented and the app has an existing production deployment at https://kitanotes.binalah.com.** Google sign-in, D1-backed note persistence, workspace invitations and collaboration between two Google accounts have been exercised in the project workflow. The latest source changes still require production deployment and live verification; a green GitHub Actions run alone is not proof that the deployed Worker has the latest code or migrations.
 
-Google OAuth credentials, a dedicated D1 database and a Gemini API key have not been provisioned, so live sign-in, persistence and Gemini calls have not been exercised. The AI organiser has consent, free-model allowlisting, daily limits and review-before-save UI, but remains disabled until a key is configured. Google Calendar sync, offline data editing and production deployment remain outstanding. The PWA app shell and month/week calendar are implemented; Web Push code is ready but requires VAPID configuration and real-device verification.
+The current code includes the React/Vite PWA, Cloudflare Worker API, D1 migrations through `0012`, internal calendar/reminders, in-app notifications, optional Web Push, Gemini text organisation and a consent-gated Gemini OCR capture/edit workflow. Live Gemini provider verification and Web Push delivery are not confirmed. Account settings/deletion, backups/restore testing, operational monitoring and production smoke-test automation remain open. Offline editing is not supported.
 
 ## What's new in 0.2
 
@@ -76,10 +76,10 @@ Run the Worker locally after building:
 npm run cf:dev
 ```
 
-The health endpoint is `/api/health`. Authentication routes are documented in [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md). The D1 database ID in `wrangler.toml` is an explicit placeholder and must be replaced only after creating a dedicated KitaNotes database.
+The health endpoint is `/api/health`. Authentication routes are documented in [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md). The D1 database binding in `wrangler.toml` points to the dedicated KitaNotes database. Do not reuse it for another project.
 
 ## Deployment status
 
-No D1 database, Google OAuth client, Worker secrets or production Worker has been provisioned for KitaNotes. CI validates compilation, unit tests, SQL migrations and Wrangler bundling; it does not deploy or create billable resources.
+An initial production deployment and core Google-authenticated collaboration flows have been exercised. GitHub Actions validates compilation, tests, SQL migrations and Wrangler bundling; it does not deploy. Cloudflare Workers Builds handles deployment separately. After changes to `main`, verify the Cloudflare deployment revision and run the production smoke tests before declaring the release complete.
 
 See the masterplan for the prioritised implementation checklist and acceptance criteria.
