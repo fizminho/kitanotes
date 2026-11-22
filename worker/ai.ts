@@ -104,7 +104,7 @@ function buildPrompt(text:string,timezone:string,referenceNow:string,categories:
 async function consentStatus(db:Db,userId:string){
   return db.prepare("SELECT ai_consent_at,ai_consent_policy_version FROM users WHERE id=?").bind(userId).first<{ai_consent_at:string|null;ai_consent_policy_version:string|null}>();
 }
-async function status(request:Request,env:AiEnv,userId:string):Promise<Response>{
+async function status(env:AiEnv,userId:string):Promise<Response>{
   const consent=await consentStatus(env.DB!,userId);
   const day=new Date().toISOString().slice(0,10);
   const usage=await env.DB!.prepare("SELECT request_count FROM ai_request_usage WHERE user_id=? AND usage_date=?").bind(userId,day).first<{request_count:number}>();
@@ -181,7 +181,7 @@ export async function handleAiRequest(request:Request,env:AiEnv):Promise<Respons
   if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
   const user=await getCurrentUser(request,env);
   if(!user)return json({error:"UNAUTHENTICATED"},401);
-  if(url.pathname==="/api/ai/status"&&request.method==="GET")return status(request,env,user.id);
+  if(url.pathname==="/api/ai/status"&&request.method==="GET")return status(env,user.id);
   if(url.pathname==="/api/ai/consent"&&request.method==="POST"){
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
     const body=await readJsonBody(request);
