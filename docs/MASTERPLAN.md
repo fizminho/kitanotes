@@ -1,6 +1,6 @@
 # KitaNotes — Product & Technical Masterplan
 
-**Status:** P0–P3 application code and initial P4 hardening implemented. An initial production deployment and core two-account collaboration have been exercised; verification of the latest workspace-visibility release, D1 migrations and full production smoke tests remains open.  
+**Status:** P0–P3 application code and initial P4 hardening implemented. Production health, sign-in, note persistence, workspace visibility switching and D1 migrations `0011`/`0012` have been user-verified. Full production smoke tests, deployment-revision confirmation and remaining operational checks are still open.  
 **Repository:** `fizminho/kitanotes`  
 **Default branch:** `main`  
 **Document owner:** Product / Engineering  
@@ -461,7 +461,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Add logs, metrics, health checks and error reporting.
 - [x] Exercise Google sign-in, invitation acceptance and shared-note collaboration with two real accounts. Full regression of all roles and lifecycle transitions remains open.
 - [ ] Verify invitations, permissions, reminders and notification delivery.
-- [ ] Verify production deployment with smoke tests and record evidence.
+- [ ] Verify the exact deployed source revision and complete the remaining production smoke tests (invitations, permissions, reminders, notifications and AI/OCR provider paths). Core production checks completed 2026-11-22: `/api/health`, Google sign-in, private-note persistence after refresh, Private ↔ Shared visibility, Invite Member availability, note preservation after returning to Private, and user-confirmed D1 migrations `0011` and `0012` applied.
 - [ ] Update docs and mark only verified items complete.
 
 ### P5 — Enhancements
@@ -546,4 +546,5 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Implemented D1-backed per-user notification preferences, reminder/shared-note push switches, IANA timezone quiet hours (including overnight windows), settings UI, API validation and tests. Quiet hours suppress push attempts rather than queueing them; in-app notifications remain unaffected. Build, tests, SQLite migration validation and Wrangler dry-run passed in run [45010862541](https://github.com/fizminho/kitanotes/actions/runs/45010862541).
 - **2026-11-22:** Added calendar month/week navigation, six-week month loading, event edit UI with version-conflict handling, and timezone-aware date/time editing. GitHub Actions passed TypeScript build, all tests, SQLite migration validation and Wrangler dry-run (runs [45005225542](https://github.com/fizminho/kitanotes/actions/runs/45005225542) and [45005229375](https://github.com/fizminho/kitanotes/actions/runs/45005229375)).
 
+- **2026-11-22:** Production verification completed for the core workspace release. User confirmed `/api/health` responds, Google sign-in and private-note persistence work, Private ↔ Shared switching works, Invite Member appears for shared workspaces, notes remain after switching back to private, and D1 migrations `0011` and `0012` are applied. The exact deployed source revision and remaining production paths are still unverified.
 - **2026-11-22:** Security audit found stale `workspace_type='personal'` lookups in notes, calendar, reminders and AI organiser default-workspace resolution after migration `0012`. Updated all to use `visibility='private'`, corrected shared-workspace quota counting, prevented deletion of private workspaces, made default private-workspace selection deterministic and added migration plus API regression coverage. Build, tests, migration validation and Worker dry-run passed in [run 45029223039](https://github.com/fizminho/kitanotes/actions/runs/45029223039).
