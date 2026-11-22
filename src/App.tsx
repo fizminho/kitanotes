@@ -32,12 +32,13 @@ type AiDraft = {
   summary:string; timezone:string;
   note:{title:string;content:string};
   suggestedCategories:{name:string;reason:string}[];
+  categorySuggestion:{name:string;reason:string;createNew:boolean}|null;
   events:{title:string;description:string;startLocal:string;endLocal:string;reminderLocal:string|null;timezone:string}[];
   reminders:{title:string;dueLocal:string;timezone:string}[];
   tasks:{title:string;dueLocal:string|null}[];
   clarifyingQuestions:string[];
 };
-type AiStatus = {configured:boolean;consented:boolean;dailyLimit:number;dailyUsed:number;dailyRemaining:number};
+type AiStatus = {configured:boolean;dailyLimit:number;dailyUsed:number;dailyRemaining:number};
 type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
@@ -55,6 +56,8 @@ export default function App() {
   const [theme, setTheme] = useState<"light"|"dark">(() => { try { const saved = localStorage.getItem("kitanotes-theme"); if (saved === "dark" || saved === "light") return saved; } catch { /* ignore */ } return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"; });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const pushToast = useCallback((text:string, tone:"ok"|"error"="ok") => {
     const id = Date.now() + Math.random();
     setToasts(current => [...current.slice(-3), { id, text, tone }]);
@@ -138,11 +141,8 @@ export default function App() {
   const [notificationPrefsSaved,setNotificationPrefsSaved]=useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
-  const [aiConsentChecked, setAiConsentChecked] = useState(false);
-  const [aiConsentSaving, setAiConsentSaving] = useState(false);
   const [aiInput, setAiInput] = useState("");
   const [ocrFile,setOcrFile] = useState<File|null>(null);
-  const [ocrConsentChecked,setOcrConsentChecked] = useState(false);
   const [ocrWorking,setOcrWorking] = useState(false);
   const [ocrText,setOcrText] = useState("");
   const [ocrPreviewUrl,setOcrPreviewUrl] = useState("");
@@ -619,27 +619,6 @@ export default function App() {
     finally{setCategorySaving(false);}
   }
 
-  async function enableAi() {
-    if(!aiConsentChecked||aiConsentSaving)return;
-    setAiConsentSaving(true);setAiError("");
-    try{
-      const response=await fetch("/api/ai/consent",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({accepted:true})});
-      if(!response.ok)throw new Error("Unable to save AI consent.");
-      setAiStatus(current=>current?{...current,consented:true}:null);setAiConsentChecked(false);
-    }catch(error){setAiError(error instanceof Error?error.message:"Unable to save AI consent.");}
-    finally{setAiConsentSaving(false);}
-  }
-
-  async function revokeAiConsent() {
-    const response=await fetch("/api/ai/consent",{method:"DELETE",credentials:"same-origin"});
-    if(response.ok){setAiStatus(current=>current?{...current,consented:false}:null);setAiConsentChecked(false);setAiInput("");setAiDraft(null);}
-  }
-
-  async function revokeOcrConsent() {
-    const response=await fetch("/api/ai/ocr/consent",{method:"DELETE",credentials:"same-origin"});
-    if(response.ok){setOcrConsentChecked(false);setOcrFile(null);setOcrText("");}
-  }
-
   async function prepareImageForOcr(file:File):Promise<File> {
     if(!("createImageBitmap" in window))return file;
     const bitmap=await createImageBitmap(file);
@@ -655,21 +634,18 @@ export default function App() {
   }
 
   async function scanImageWithAi() {
-    if(!ocrFile||!ocrConsentChecked||ocrWorking)return;
+    if(!ocrFile||ocrWorking)return;
     setOcrWorking(true);setAiError("");setOcrText("");
     try{
-      const consent=await fetch("/api/ai/ocr/consent",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({accepted:true})});
-      if(!consent.ok)throw new Error("Unable to save OCR consent.");
       const prepared=await prepareImageForOcr(ocrFile);
       if(prepared.size>2*1024*1024)throw new Error("This image is still larger than 2 MB after preparation. Please choose a smaller image.");
       const response=await fetch("/api/ai/ocr",{method:"POST",credentials:"same-origin",headers:{"content-type":prepared.type},body:prepared});
       const result=await response.json() as {text?:string;error?:string};
       if(!response.ok||typeof result.text!=="string"){
         const message=result.error==="OCR_FREE_QUOTA_EXHAUSTED"||result.error==="OCR_DAILY_FREE_LIMIT_REACHED"?"The free OCR limit is reached. Try again after the quota resets."
-          :result.error==="AI_NOT_CONFIGURED"?"Gemini is not configured yet."
-          :result.error==="OCR_CONSENT_REQUIRED"?"Please accept the image-processing notice first."
+          :result.error==="AI_NOT_CONFIGURED"?"AI is not configured yet."
           :result.error==="UNSUPPORTED_IMAGE_TYPE"||result.error==="IMAGE_SIGNATURE_MISMATCH"?"Use a genuine JPEG, PNG or WebP image."
-          :"OCR is temporarily unavailable. Your image has not been saved.";
+          :"Image processing is temporarily unavailable. Your image has not been saved.";
         throw new Error(message);
       }
       setOcrText(result.text);
@@ -679,7 +655,7 @@ export default function App() {
 
   async function organizeWithAi(textOverride?:string) {
     const sourceText=(textOverride??aiInput).trim();
-    if(!sourceText||aiWorking||!aiStatus?.consented)return;
+    if(!sourceText||aiWorking||!aiStatus?.configured)return;
     setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCategoriesCreated(false);setAiCreatedItems([]);
     try{
       const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
@@ -688,13 +664,15 @@ export default function App() {
       const result=await response.json() as {draft?:AiDraft;usage?:{dailyLimit:number;dailyUsed:number;dailyRemaining:number};error?:string};
       if(!response.ok||!result.draft){
         const message=result.error==="AI_FREE_QUOTA_EXHAUSTED"||result.error==="AI_DAILY_FREE_LIMIT_REACHED"?"The free AI limit is reached. Try again after the quota resets."
-          :result.error==="AI_NOT_CONFIGURED"?"Gemini is not configured yet."
-          :result.error==="AI_CONSENT_REQUIRED"?"Please review and accept the AI privacy notice first."
-          :result.error==="AI_INVALID_MODEL_RESPONSE"?"Gemini returned an invalid draft. Please retry with clearer text."
+          :result.error==="AI_NOT_CONFIGURED"?"AI is not configured yet."
+          :result.error==="AI_INVALID_MODEL_RESPONSE"?"The AI service returned an invalid draft. Please retry with clearer text."
           :"AI is temporarily unavailable. Your original text has not been changed.";
         throw new Error(message);
       }
-      setAiDraft(result.draft);setAiDraftTitle(result.draft.note.title);setAiDraftContent(result.draft.note.content);setSelectedCategoryId(categories.find(category=>result.draft!.suggestedCategories.some(item=>item.name.toLowerCase()===category.name.toLowerCase()))?.id??"");
+      setAiDraft(result.draft);setAiDraftTitle(result.draft.note.title);setAiDraftContent(result.draft.note.content);
+      const recommendation=result.draft.categorySuggestion;
+      const existingCategory=recommendation?categories.find(category=>category.name.toLowerCase()===recommendation.name.toLowerCase()):undefined;
+      setSelectedCategoryId(existingCategory?.id??(recommendation?.createNew?"__ai_new_category__":""));
       if(result.usage&&aiStatus)setAiStatus({...aiStatus,dailyUsed:result.usage.dailyUsed,dailyRemaining:result.usage.dailyRemaining});
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to organise this text.");}
     finally{setAiWorking(false);}
