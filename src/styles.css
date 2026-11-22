@@ -188,3 +188,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .toolbar .filter-button:has(.sort-select){font-size:11px;min-width:154px;flex:0 0 auto;gap:6px}
   .toolbar .sort-select{font-size:11px;min-width:0}
 }
+
+/* Notification inbox: keep messages visible before optional delivery controls. */
+.notification-settings{display:block;margin:12px 0 4px;padding:0;border:1px solid #e9e7f7;border-radius:11px;background:#fbfaff}
+.notification-settings>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;padding:11px 12px;color:#55596d}
+.notification-settings>summary::-webkit-details-marker{display:none}
+.notification-settings>summary>span{display:grid;gap:3px}
+.notification-settings>summary strong{font-size:11px}
+.notification-settings>summary small{font-size:10px;color:#9295a4}
+.notification-settings[open]>summary{border-bottom:1px solid #e9e7f7}
+.notification-settings-content{display:grid;gap:10px;padding:12px}
+.notification-settings-note{margin:0;color:#85899a;font-size:10px;line-height:1.45}
+.notification-settings-content>label{display:flex;align-items:center;gap:8px;color:#64687a;font-size:11px}
+.notification-settings-content input[type=checkbox]{accent-color:#6658d9}
+.notification-settings-content .notification-settings-footer{margin-top:2px}
+[data-theme=dark] .notification-settings{background:#1b1c30;border-color:#2c2b52}
+[data-theme=dark] .notification-settings>summary{color:#e6e7f0}
+[data-theme=dark] .notification-settings[open]>summary{border-color:#2c2b52}
+[data-theme=dark] .notification-settings-content>label{color:#c3c5d3}
+[data-theme=dark] .notification-settings-note,[data-theme=dark] .notification-settings>summary small{color:#9a9db0}
