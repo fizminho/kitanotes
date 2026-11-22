@@ -774,6 +774,17 @@ export default function App() {
     }
   }
 
+  async function updateWorkspaceMemberRole(member:WorkspaceMember,role:"editor"|"viewer") {
+    if(!activeWorkspaceId||workspaceActionBusy||member.role==="owner"||member.role===role)return;
+    setWorkspaceActionBusy(true);setInviteCreateError("");
+    try{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members/"+encodeURIComponent(member.userId),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({role})});
+      if(!response.ok)throw new Error("Unable to update member permission.");
+      setInviteRefresh(value=>value+1);
+    }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to update member permission.");}
+    finally{setWorkspaceActionBusy(false);}
+  }
+
   async function removeWorkspaceMember(member:WorkspaceMember) {
     if(!activeWorkspaceId||workspaceActionBusy||member.role==="owner")return;
     if(!window.confirm("Remove "+member.email+" from this workspace? They will immediately lose access, but their own personal workspaces will remain untouched."))return;
@@ -1013,7 +1024,7 @@ export default function App() {
             <div className="invite-list-heading"><strong>Workspace members</strong><span>{workspaceMembers.length}</span></div>
             {invitationsLoading?<p>Loading members…</p>:workspaceMembers.map(member=><div className="invite-list-row" key={member.userId}>
               <div><strong>{member.displayName||member.email}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()}</small></div>
-              {member.role!=="owner"&&<button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button>}
+              {member.role!=="owner"&&<div className="invite-member-actions"><select className="invite-input" aria-label={"Permission for "+member.email} value={member.role} onChange={event=>updateWorkspaceMemberRole(member,event.target.value as "editor"|"viewer")} disabled={workspaceActionBusy}><option value="viewer">Viewer</option><option value="editor">Editor</option></select><button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button></div>}
             </div>)}
           </div>
           <div className="invite-list">
