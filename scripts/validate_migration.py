@@ -7,7 +7,7 @@ for migration_path in sorted(Path("migrations").glob("*.sql")):
     db.executescript(migration_path.read_text(encoding="utf-8"))
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
@@ -69,4 +69,16 @@ visible_push_to_u2 = db.execute("SELECT id FROM push_subscriptions WHERE user_id
 if visible_push_to_u2:
     raise SystemExit("Push subscription query exposed another user's device")
 
-print("D1 migrations valid; foreign keys, workspace/category guard, membership isolation, personal workspace uniqueness, session token uniqueness, request rate limits and per-user push subscriptions verified.")
+# Notification preferences default safely and remain scoped to the owning account.
+db.execute("INSERT INTO notification_preferences (user_id,created_at,updated_at) VALUES ('u1','now','now')")
+prefs = db.execute("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,timezone FROM notification_preferences WHERE user_id='u1'").fetchone()
+if prefs != (1, 1, 1, "Asia/Kuala_Lumpur"):
+    raise SystemExit(f"Unexpected notification preference defaults: {prefs}")
+try:
+    db.execute("INSERT INTO notification_preferences (user_id,quiet_hours_start,quiet_hours_end,created_at,updated_at) VALUES ('u2','22:00',NULL,'now','now')")
+except sqlite3.IntegrityError:
+    pass
+else:
+    raise SystemExit("Incomplete quiet-hours range was accepted")
+
+print("D1 migrations valid; workspace isolation, foreign keys, rate limits, push subscriptions and notification preference defaults/quiet-hours constraints verified.")
