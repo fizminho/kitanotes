@@ -321,14 +321,14 @@ export default function App() {
     try{
       const response=await fetch("/api/ai/consent",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({accepted:true})});
       if(!response.ok)throw new Error("Unable to save AI consent.");
-      setAiStatus(current=>current?{...current,consented:true}:null);
+      setAiStatus(current=>current?{...current,consented:true}:null);setAiConsentChecked(false);
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to save AI consent.");}
     finally{setAiConsentSaving(false);}
   }
 
   async function revokeAiConsent() {
     const response=await fetch("/api/ai/consent",{method:"DELETE",credentials:"same-origin"});
-    if(response.ok)setAiStatus(current=>current?{...current,consented:false}:null);
+    if(response.ok){setAiStatus(current=>current?{...current,consented:false}:null);setAiConsentChecked(false);setAiInput("");setAiDraft(null);}
   }
 
   async function organizeWithAi() {
