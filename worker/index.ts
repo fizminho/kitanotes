@@ -1,3 +1,4 @@
+import { handleAiRequest } from "./ai";
 import { handleEventsRequest } from "./events";
 import { handleRemindersRequest } from "./reminders";
 import { handleNotificationsRequest } from "./notifications";
@@ -22,6 +23,8 @@ export default { async fetch(request:Request,env:Env):Promise<Response> {
  if(remindersResponse) return remindersResponse;
  const notificationsResponse=await handleNotificationsRequest(request,env);
  if(notificationsResponse) return notificationsResponse;
+ const aiResponse=await handleAiRequest(request,env);
+ if(aiResponse) return aiResponse;
  if(url.pathname.startsWith("/api/")) return json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
  const response = await env.ASSETS.fetch(request);
  const headers = new Headers(response.headers);
