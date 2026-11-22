@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil } from "lucide-react";
 
 type View = "notes" | "calendar" | "shared";
+function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
+type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; version:number };
+type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
@@ -36,6 +39,22 @@ export default function App() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState("");
+  const [eventComposerOpen, setEventComposerOpen] = useState(false);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDescription, setEventDescription] = useState("");
+  const [eventStart, setEventStart] = useState(() => localDateTime(new Date(Date.now()+3600000)));
+  const [eventEnd, setEventEnd] = useState(() => localDateTime(new Date(Date.now()+7200000)));
+  const [eventReminderAt, setEventReminderAt] = useState("");
+  const [eventTimezone, setEventTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur");
+  const [eventSaving, setEventSaving] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
 
   useEffect(() => {
     if (inviteToken) window.history.replaceState({}, "", "/");
@@ -298,15 +317,7 @@ export default function App() {
             {inviteError.includes("different Google email") && user && <button className="text-action" onClick={signOut}>Sign out</button>}
           </section>}
           {inviteNotice && <div className="invite-success-banner"><Check size={16}/>{inviteNotice}</div>}
-          {inviteToken && <section className="invite-panel">
-            <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
-              <p>Accept this invitation using the Google account whose email address received it.</p></div>
-            {user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
-              : authStatus === "signed_out" ? <a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Sign in to accept</a>
-              : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>}
-            {inviteError && <p className="invite-error">{inviteError}</p>}
-            {inviteError.includes("different Google email") && user && <button className="text-action" onClick={signOut}>Sign out</button>}
-          </section>}
+
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
             {view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
