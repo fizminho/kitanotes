@@ -12,7 +12,7 @@ async function readPreferences(db:NonNullable<AuthEnv["DB"]>,userId:string):Prom
  const row=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,quiet_hours_start,quiet_hours_end,timezone FROM notification_preferences WHERE user_id=?").bind(userId).first<PreferenceRow>();
  return row?preferenceDto(row):DEFAULTS;
 }
-function validTime(value:unknown):value is string|null{return value===null||(typeof value==="string"&&/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value));}
+function validTime(value:unknown):value is string|null{return value===null||(typeof value==="string"&&/^([01]\d|2[0-3]):[0-5]\d$/.test(value));}
 function validTimezone(value:unknown):value is string{
  if(typeof value!=="string"||value.length<1||value.length>64)return false;
  try{new Intl.DateTimeFormat("en-US",{timeZone:value}).format(new Date());return true;}catch{return false;}
