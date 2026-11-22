@@ -1,13 +1,13 @@
 from pathlib import Path
 import sqlite3
 
-migration = Path("migrations/0001_initial.sql").read_text(encoding="utf-8")
 db = sqlite3.connect(":memory:")
 db.execute("PRAGMA foreign_keys = ON")
-db.executescript(migration)
+for migration_path in sorted(Path("migrations").glob("*.sql")):
+    db.executescript(migration_path.read_text(encoding="utf-8"))
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
@@ -27,4 +27,4 @@ else:
     raise SystemExit("Cross-workspace category assignment was not rejected")
 
 db.execute("INSERT INTO notes (id,workspace_id,title,created_by_user_id,created_at,updated_at) VALUES ('n2','w1','Valid note','u1','now','now')")
-print("D1 migration SQL valid; required tables, foreign keys and workspace-category guard verified.")
+print("D1 migration SQL valid; required tables, foreign keys, session store and workspace-category guard verified.")
