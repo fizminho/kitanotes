@@ -285,6 +285,14 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
     if(request.method==="PATCH") {
       if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
       const body=await readJsonBody(request);
+      if(body?.action==="make_shared") {
+        const workspace=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='private'").bind(id,user.id).first<{id:string}>();
+        if(!workspace) return json({error:"PRIVATE_WORKSPACE_NOT_FOUND"},404);
+        const now=new Date().toISOString();
+        await env.DB!.prepare("UPDATE workspaces SET visibility='shared',updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id).run();
+        await logActivity(env.DB!,id,user.id,"workspace.made_shared","workspace",id);
+        return json({updated:true,id,type:"shared",visibility:"shared"});
+      }
       if(body?.action==="make_private") {
         const workspace=await env.DB!.prepare("SELECT id,workspace_type,visibility FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(id,user.id).first<{id:string;workspace_type:string;visibility:string}>();
         if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
