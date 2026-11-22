@@ -41,6 +41,9 @@ for table in ("notes", "calendar_events"):
     columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     if "created_by_user_id" not in columns or "updated_by_user_id" not in columns:
         raise SystemExit(f"{table} is missing creator/editor audit columns")
+source_columns = {row[1] for row in db.execute("PRAGMA table_info(calendar_events)")}
+if not {"source_created_by", "source_created_at", "source_updated_by", "source_updated_at"}.issubset(source_columns):
+    raise SystemExit("calendar_events is missing Google Calendar source audit columns")
 
 db.execute("INSERT INTO categories (id,workspace_id,name,created_by_user_id,created_at,updated_at) VALUES ('c2','w2','Private','u2','now','now')")
 
