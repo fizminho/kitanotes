@@ -129,3 +129,23 @@ test("expired invitation is marked expired and cannot be accepted", async () => 
     assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id='expired1'").get().status,"expired");
   } finally { db.close(); }
 });
+
+test("invitation creation is limited to ten per owner per hour", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    let last;
+    for (let index = 0; index < 11; index++) {
+      last = await handleInvitationsRequest(request("/api/invitations", tokens.u1, "POST", {
+        workspaceId: "w1",
+        email: "person" + index + "@example.com",
+        role: "viewer"
+      }), env);
+      if (index < 10) assert.equal(last.status, 201);
+    }
+    assert.equal(last.status, 429);
+    assert.equal(last.headers.get("retry-after") !== null, true);
+    assert.equal(db.sqlite.prepare("SELECT request_count FROM request_rate_limits WHERE bucket_key='invitation:create:user:u1'").get().request_count, 10);
+  } finally {
+    db.close();
+  }
+});
