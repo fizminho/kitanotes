@@ -428,14 +428,15 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 ### P3 — Gemini assistant
 
-- [ ] Implement server-side Gemini provider adapter.
-- [ ] Add free-tier model configuration and fallback policy.
-- [ ] Add strict structured-output validation.
-- [ ] Add relative-date resolution using explicit reference time/timezone.
-- [ ] Add preview/confirmation UI.
-- [ ] Save accepted note/category/event drafts transactionally.
-- [ ] Add mocked tests for 429, 500, 503, 404, auth failure, malformed JSON, timeout and total provider outage.
-- [ ] Verify AI failure never blocks manual note creation.
+- [x] Implement server-side Gemini provider adapter using Worker Secrets only.
+- [x] Add hard free-tier model allowlist, bounded model fallback and no paid escalation.
+- [x] Add explicit privacy consent, revocation, 16 KiB input cap and 10 requests/user/UTC-day cap.
+- [x] Add strict structured-output validation for notes, categories, events, reminders, tasks and clarifying questions.
+- [x] Resolve relative dates against a server reference timestamp and supplied IANA timezone; ambiguous dates are surfaced as questions.
+- [x] Add preview/confirmation UI. Notes, categories, events and reminders are created only after explicit user actions.
+- [x] Do not persist raw prompts or AI drafts; D1 stores only consent metadata and daily usage counts.
+- [x] Add mocked tests for 404, 429 quota, 503 transient errors, auth failure, malformed JSON, invalid output, provider outage, daily cap and manual-note resilience.
+- [ ] Configure a real Gemini free-tier key from a project with no Cloud Billing and verify a live request/fallback sequence.
 
 ### P4 — Production hardening
 
