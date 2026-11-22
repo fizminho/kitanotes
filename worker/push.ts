@@ -6,7 +6,7 @@ type StoredSubscription = { id:string; endpoint:string; subscription_json:string
 type PushKind = "reminder" | "shared_note" | "test";
 type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
 
-function inQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
+export function isWithinQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
  if(!row.quiet_hours_start||!row.quiet_hours_end)return false;
  try {
   const parts=new Intl.DateTimeFormat("en-GB",{timeZone:row.timezone,hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(now);
@@ -50,7 +50,7 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  if(preferences.push_enabled!==1)return;
  if(kind==="reminder"&&preferences.reminder_push_enabled!==1)return;
  if(kind==="shared_note"&&preferences.shared_note_push_enabled!==1)return;
- if(kind!=="test"&&inQuietHours(preferences))return;
+ if(kind!=="test"&&isWithinQuietHours(preferences))return;
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  for(const row of rows.results){
   try {
