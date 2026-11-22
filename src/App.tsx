@@ -7,6 +7,16 @@ type SessionUser = { id: string; email: string; displayName: string | null; avat
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
+type AiDraft = {
+  summary:string; timezone:string;
+  note:{title:string;content:string};
+  suggestedCategories:{name:string;reason:string}[];
+  events:{title:string;description:string;startLocal:string;endLocal:string;reminderLocal:string|null;timezone:string}[];
+  reminders:{title:string;dueLocal:string;timezone:string}[];
+  tasks:{title:string;dueLocal:string|null}[];
+  clarifyingQuestions:string[];
+};
+type AiStatus = {configured:boolean;consented:boolean;dailyLimit:number;dailyUsed:number;dailyRemaining:number};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
@@ -55,6 +65,20 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiConsentChecked, setAiConsentChecked] = useState(false);
+  const [aiConsentSaving, setAiConsentSaving] = useState(false);
+  const [aiInput, setAiInput] = useState("");
+  const [aiWorking, setAiWorking] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiDraft, setAiDraft] = useState<AiDraft | null>(null);
+  const [aiDraftTitle, setAiDraftTitle] = useState("");
+  const [aiDraftContent, setAiDraftContent] = useState("");
+  const [aiSavingNote, setAiSavingNote] = useState(false);
+  const [aiCreatingItems, setAiCreatingItems] = useState(false);
+  const [aiNoteSaved, setAiNoteSaved] = useState(false);
+  const [aiItemsCreated, setAiItemsCreated] = useState(false);
 
   useEffect(() => {
     if (inviteToken) window.history.replaceState({}, "", "/");
@@ -113,6 +137,15 @@ export default function App() {
     fetch("/api/notifications?limit=1",{credentials:"same-origin"})
       .then(async response=>{if(!response.ok)return;const result=await response.json() as {unreadCount:number};if(active)setUnreadCount(result.unreadCount);})
       .catch(()=>undefined);
+    return ()=>{active=false;};
+  },[user]);
+
+  useEffect(() => {
+    if (!user) { setAiStatus(null); return; }
+    let active = true;
+    fetch("/api/ai/status",{credentials:"same-origin"})
+      .then(async response=>{if(!response.ok)throw new Error("AI status unavailable");const result=await response.json() as AiStatus;if(active)setAiStatus(result);})
+      .catch(()=>{if(active)setAiStatus(null);});
     return ()=>{active=false;};
   },[user]);
 
