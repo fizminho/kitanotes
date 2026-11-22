@@ -166,23 +166,23 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
     if (pageToken) params.set("pageToken", pageToken);
     let response = await fetch("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(connection.calendar_id) + "/events?" + params.toString(), { headers: { authorization: "Bearer " + token } });
     if (response.status === 410 && syncToken && !reset) {
-      const stale = await db.prepare("SELECT local_event_id FROM google_calendar_event_map WHERE workspace_id=? AND calendar_id=?")
-        .bind(workspaceId, connection.calendar_id).all<{ local_event_id: string }>();
+      const stale = await db.prepare("SELECT local_event_id FROM google_calendar_event_map WHERE workspace_id=? AND connection_user_id=? AND calendar_id=?")
+        .bind(workspaceId, userId, connection.calendar_id).all<{ local_event_id: string }>();
       const resetAt = new Date().toISOString();
       for (const mapped of stale.results) {
         await db.prepare("UPDATE calendar_events SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
           .bind(resetAt, resetAt, userId, mapped.local_event_id).run();
       }
-      await db.prepare("DELETE FROM google_calendar_event_map WHERE workspace_id=? AND calendar_id=?")
-        .bind(workspaceId, connection.calendar_id).run();
+      await db.prepare("DELETE FROM google_calendar_event_map WHERE workspace_id=? AND connection_user_id=? AND calendar_id=?")
+        .bind(workspaceId, userId, connection.calendar_id).run();
       syncToken = undefined; pageToken = undefined; nextSyncToken = undefined; reset = true; page = -1; continue;
     }
     if (!response.ok) return json({ error: "GOOGLE_CALENDAR_API_FAILED", status: response.status }, 502);
     const payload = await response.json() as { items?: GoogleEvent[]; nextPageToken?: string; nextSyncToken?: string };
     for (const item of payload.items ?? []) {
       if (!item.id) { skipped++; continue; }
-      const mapped = await db.prepare("SELECT local_event_id FROM google_calendar_event_map WHERE workspace_id=? AND calendar_id=? AND google_event_id=?")
-        .bind(workspaceId, connection.calendar_id, item.id).first<{ local_event_id: string }>();
+      const mapped = await db.prepare("SELECT local_event_id FROM google_calendar_event_map WHERE workspace_id=? AND connection_user_id=? AND calendar_id=? AND google_event_id=?")
+        .bind(workspaceId, userId, connection.calendar_id, item.id).first<{ local_event_id: string }>();
       const now = new Date().toISOString();
       if (item.status === "cancelled") {
         if (mapped) {
@@ -209,12 +209,12 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
         const localId = crypto.randomUUID();
         await db.prepare("INSERT INTO calendar_events (id,workspace_id,title,description,starts_at_utc,ends_at_utc,timezone,all_day,linked_note_id,created_by_user_id,updated_by_user_id,source_created_by,source_created_at,source_updated_by,source_updated_at,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?,?,?,?,1,?,?)")
           .bind(localId, workspaceId, title, (item.description ?? "").slice(0, 5000), startsAt, endsAt, timezone, allDay ? 1 : 0, userId, userId, sourceCreator, sourceCreatedAt, "Google Calendar", sourceUpdatedAt, now, now).run();
-        await db.prepare("INSERT INTO google_calendar_event_map (workspace_id,calendar_id,google_event_id,local_event_id,google_updated_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
-          .bind(workspaceId, connection.calendar_id, item.id, localId, item.updated ?? null, now, now).run();
+        await db.prepare("INSERT INTO google_calendar_event_map (workspace_id,connection_user_id,calendar_id,google_event_id,local_event_id,google_updated_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
+          .bind(workspaceId, userId, connection.calendar_id, item.id, localId, item.updated ?? null, now, now).run();
         imported++;
       }
-      if (mapped) await db.prepare("UPDATE google_calendar_event_map SET google_updated_at=?,updated_at=? WHERE workspace_id=? AND calendar_id=? AND google_event_id=?")
-        .bind(item.updated ?? null, now, workspaceId, connection.calendar_id, item.id).run();
+      if (mapped) await db.prepare("UPDATE google_calendar_event_map SET google_updated_at=?,updated_at=? WHERE workspace_id=? AND connection_user_id=? AND calendar_id=? AND google_event_id=?")
+        .bind(item.updated ?? null, now, workspaceId, userId, connection.calendar_id, item.id).run();
     }
     pageToken = payload.nextPageToken;
     if (!pageToken) { nextSyncToken = payload.nextSyncToken; break; }
