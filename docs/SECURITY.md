@@ -10,7 +10,11 @@
 - OAuth state is stored in a short-lived signed HttpOnly cookie.
 - Logout requires a same-origin Origin header.
 - OAuth client secret and session signing secret are Worker secrets, never frontend build variables.
-- Notes, categories, invitations, calendar events and reminders are workspace-scoped. Membership and role checks are enforced by API handlers.\n- Invitation tokens are cryptographically random, stored only as hashes, expire after seven days, are single-use and require the invited verified Google email.\n- Mutating notes, categories, invitations, calendar, reminders, notifications and AI consent routes enforce same-origin checks.\n- Reminder notifications use an idempotent D1 batch and a five-minute Cron Trigger. No email or browser push provider is called.\n- Gemini is server-side only. Explicit consent is stored by policy version; raw prompts/drafts are not persisted; the adapter enforces a 16 KiB input limit, 10 requests/user/UTC day and a hard free-model allowlist. No paid-model fallback exists. See [AI privacy policy](AI_PRIVACY.md).
+- Notes, categories, invitations, calendar events and reminders are workspace-scoped. Membership and role checks are enforced by API handlers.
+- Invitation tokens are cryptographically random, stored only as hashes, expire after seven days, are single-use and require the invited verified Google email.
+- Mutating notes, categories, invitations, calendar, reminders, notifications and AI consent routes enforce same-origin checks.
+- Reminder notifications use an idempotent D1 batch and a five-minute Cron Trigger. No email or browser push provider is called.
+- Gemini is server-side only. Explicit consent is stored by policy version; raw prompts/drafts are not persisted; the adapter enforces a 16 KiB input limit, 10 requests/user/UTC day and a hard free-model allowlist. No paid-model fallback exists. See [AI privacy policy](AI_PRIVACY.md).
 
 ## Required controls before production
 
@@ -19,7 +23,8 @@
 - [ ] Set the production `APP_BASE_URL` to the exact HTTPS origin.
 - [ ] Verify login, logout, session expiry and account switching with two real Google accounts.
 - [x] Add CSRF origin validation to every state-changing authenticated API endpoint.
-- [x] Add a per-user daily request cap and input-size limit for AI endpoints.\n- [ ] Add rate limits for login initiation, callbacks and invitation creation.
+- [x] Add a per-user daily request cap and input-size limit for AI endpoints.
+- [ ] Add rate limits for login initiation, callbacks and invitation creation.
 - [x] Add invitation-token hashing, expiry, one-time acceptance and verified-email matching tests.
 - [x] Add workspace isolation and owner/editor/viewer authorization tests.
 - [ ] Review XSS-safe Markdown rendering and content security policy before rendering note content.
