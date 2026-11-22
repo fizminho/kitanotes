@@ -122,6 +122,39 @@ export default function App() {
     return () => { active = false; };
   }, [inviteOpen, user?.personalWorkspaceId, inviteRefresh]);
 
+  useEffect(() => {
+    if (view !== "calendar" || !user) return;
+    let active = true;
+    setEventsLoading(true);
+    setEventsError("");
+    const from = new Date(Date.now()-30*86400000).toISOString();
+    const to = new Date(Date.now()+90*86400000).toISOString();
+    fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"})
+      .then(async response => {
+        if(!response.ok) throw new Error("Unable to load calendar events.");
+        const result = await response.json() as {events:CalendarEvent[]};
+        if(active) setEvents(result.events);
+      })
+      .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
+      .finally(()=>{if(active)setEventsLoading(false);});
+    return ()=>{active=false;};
+  },[view,user]);
+
+  useEffect(() => {
+    if (!notificationsOpen || !user) return;
+    let active = true;
+    setNotificationsLoading(true);
+    fetch("/api/notifications?limit=50",{credentials:"same-origin"})
+      .then(async response=>{
+        if(!response.ok) throw new Error("Unable to load notifications.");
+        const result=await response.json() as {notifications:Notification[];unreadCount:number};
+        if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);}
+      })
+      .catch(error=>{if(active)setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");})
+      .finally(()=>{if(active)setNotificationsLoading(false);});
+    return ()=>{active=false;};
+  },[notificationsOpen,user]);
+
   const visibleNotes = useMemo(() => {
     const value = query.trim().toLowerCase();
     if (!value) return notes;
