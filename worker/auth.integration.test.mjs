@@ -115,3 +115,27 @@ test("Google callback creates user/workspace/session and logout revokes it", asy
     db.close();
   }
 });
+
+test("Google login initiation is rate limited per IP fingerprint", async () => {
+  const db = new D1TestDatabase();
+  const env = {
+    DB: db,
+    GOOGLE_CLIENT_ID: "test-client-id",
+    GOOGLE_CLIENT_SECRET: "test-client-secret",
+    SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters",
+    APP_BASE_URL: "https://kitanotes.test"
+  };
+  try {
+    let last;
+    for (let index = 0; index < 11; index++) {
+      last = await handleAuthRequest(new Request("https://kitanotes.test/auth/google", {
+        headers: { "cf-connecting-ip": "203.0.113.10" }
+      }), env);
+    }
+    assert.equal(last.status, 429);
+    assert.equal(last.headers.get("retry-after") !== null, true);
+    assert.equal(db.sqlite.prepare("SELECT request_count FROM request_rate_limits WHERE bucket_key LIKE 'oauth:start:%'").get().request_count, 10);
+  } finally {
+    db.close();
+  }
+});
