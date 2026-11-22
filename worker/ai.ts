@@ -79,7 +79,7 @@ function retryAfterMs(response:Response,body:string):number{
 }
 function quotaError(status:number,message:string):boolean{return (status===403||status===429)&&/quota|rate limit|resource exhausted|requests per day|limit exceeded/i.test(message);}
 async function workspaceForWrite(db:Db,userId:string,requested:unknown):Promise<string|null>{
-  const workspaceId=typeof requested==="string"&&requested.length<=64?requested:(await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'").bind(userId).first<{id:string}>())?.id;
+  const workspaceId=requested===undefined||requested===null||requested===""?(await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'").bind(userId).first<{id:string}>())?.id:(typeof requested==="string"&&requested.length<=64?requested:null);
   if(!workspaceId)return null;
   const member=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,userId).first<{role:string}>();
   return member?.role==="owner"||member?.role==="editor"?workspaceId:null;
