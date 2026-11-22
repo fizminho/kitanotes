@@ -1335,10 +1335,10 @@ export default function App() {
             <div className="ai-draft-section">
               <strong>Add an image</strong>
               <p className="ai-privacy-copy">Choose an image from your photo library or take a new picture. Images are checked for clear, useful text. Unreadable fragments and visual noise are discarded. Images are not stored by KitaNotes.</p>
-              <input ref={galleryInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
-              <input ref={cameraInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
+              <input ref={galleryInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setAiInput("");}}/>
+              <input ref={cameraInputRef} className="visually-hidden-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setAiInput("");}}/>
               <div className="image-source-actions"><button className="secondary-button" onClick={()=>galleryInputRef.current?.click()}><Plus size={15}/> Choose from gallery</button><button className="secondary-button" onClick={()=>cameraInputRef.current?.click()}><Plus size={15}/> Take a photo</button></div>
-              {ocrFile&&<div className="selected-image-row"><span>{ocrFile.name}</span><button className="text-action" onClick={()=>{setOcrFile(null);setOcrText("");}}>Remove image</button></div>}
+              {ocrFile&&<div className="selected-image-row"><span>{ocrFile.name}</span><button className="text-action" onClick={()=>{setOcrFile(null);setAiInput("");}}>Remove image</button></div>}
               {ocrPreviewUrl&&<img className="ocr-image-preview" src={ocrPreviewUrl} alt="Selected image preview"/>}
               <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||ocrWorking}>{ocrWorking?"Reading image…":"Add extracted text to note"}</button>
 
