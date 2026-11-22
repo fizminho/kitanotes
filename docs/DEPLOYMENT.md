@@ -74,7 +74,7 @@ npm run cf:deploy
 
 For local development, copy `.dev.vars.example` to `.dev.vars` and replace placeholders. Never commit `.dev.vars`. Apply local D1 migrations with `npx wrangler d1 migrations apply kitanotes-db --local`.
 
-`npm run cf:dev` builds first and starts Wrangler locally. The health endpoint is `/api/health`.
+`npm run cf:dev` builds first and starts Wrangler locally. The health endpoint is `/api/health`. A successful CI run does not verify the deployed revision; check the Cloudflare Workers Builds deployment record and then test the production health endpoint and authenticated workflows.
 
 ## Cost guardrails
 
@@ -86,10 +86,10 @@ For local development, copy `.dev.vars.example` to `.dev.vars` and replace place
 
 ## Release verification
 
-After the first successful deployment:
+After each successful deployment (including the current workspace-visibility release):
 
 1. Confirm the Workers Builds run completed both the migration and deploy commands.
-2. Check the D1 database's migration history and confirm migrations `0001` through `0010` are applied.
+2. Check the D1 database's migration history and confirm migrations `0001` through `0012` are applied, especially `0011_workspace_visibility.sql` and `0012_unified_workspace_type.sql`.
 3. Open `https://kitanotes.binalah.com/api/health` and verify a healthy response.
 4. Test Google sign-in and verify the callback creates a D1-backed session.
 5. Test notes and invitation access using two Google test accounts.
