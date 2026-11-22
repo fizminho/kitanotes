@@ -467,6 +467,11 @@ export default function App() {
     if(response.ok){setAiStatus(current=>current?{...current,consented:false}:null);setAiConsentChecked(false);setAiInput("");setAiDraft(null);}
   }
 
+  async function revokeOcrConsent() {
+    const response=await fetch("/api/ai/ocr/consent",{method:"DELETE",credentials:"same-origin"});
+    if(response.ok){setOcrConsentChecked(false);setOcrFile(null);setOcrText("");}
+  }
+
   async function scanImageWithAi() {
     if(!ocrFile||!ocrConsentChecked||ocrWorking)return;
     setOcrWorking(true);setAiError("");setOcrText("");
@@ -858,7 +863,17 @@ export default function App() {
             <p>AI results are drafts. KitaNotes will not save a note, create an event or add a reminder until you confirm each action.</p>
             <label className="ai-consent-check"><input type="checkbox" checked={aiConsentChecked} onChange={event=>setAiConsentChecked(event.target.checked)}/> I understand and consent to sending the text I submit to Google Gemini under these terms.</label>
             {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><span>Consent can be revoked at any time.</span><button className="primary-button" onClick={enableAi} disabled={!aiConsentChecked||aiConsentSaving}>{aiConsentSaving?"Saving…":"Agree and enable AI"}</button></footer>
+            <footer><span>Text AI consent is separate. OCR consent does not enable text organisation.</span><button className="primary-button" onClick={enableAi} disabled={!aiConsentChecked||aiConsentSaving}>{aiConsentSaving?"Saving…":"Agree and enable text AI"}</button></footer>
+            </div>
+            <div className="ai-draft-section">
+              <strong>Use image OCR without enabling text AI</strong>
+              <p className="ai-privacy-copy">OCR consent is separate. Your selected image is sent to Google Gemini for text extraction only, is not stored by KitaNotes, and is not automatically organised or saved.</p>
+              <input className="invite-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event=>{setOcrFile(event.target.files?.[0]??null);setOcrText("");}}/>
+              <label className="ai-consent-check"><input type="checkbox" checked={ocrConsentChecked} onChange={event=>setOcrConsentChecked(event.target.checked)}/> I consent to sending this image to Google Gemini for OCR under its free-tier data terms.</label>
+              <button className="secondary-button" onClick={scanImageWithAi} disabled={!ocrFile||!ocrConsentChecked||ocrWorking}>{ocrWorking?"Reading image…":"Extract text from image"}</button>
+              {ocrText!==""&&<><label className="field-label">Review and edit extracted text<textarea className="ai-input" rows={6} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label><button className="secondary-button" onClick={()=>{setAiInput(ocrText);setAiDraft(null);setAiError("Text AI consent is required before organising this OCR result.");}}>Copy extracted text to organiser</button></>}
+              <button className="text-action" onClick={revokeOcrConsent}>Revoke OCR consent</button>
+            </div>
           </div>:!aiDraft?<div>
             <p className="ai-privacy-copy">Paste unstructured text. Gemini will suggest a clean note, categories, events, reminders and tasks. Review everything before saving.</p>
             <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={9} placeholder="Example: Meeting with Sarah next Tuesday at 10am. Prepare the proposal beforehand and remind me 30 minutes before…"/>
