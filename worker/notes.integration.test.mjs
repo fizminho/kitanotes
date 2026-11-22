@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -149,5 +149,19 @@ test("note delete is soft and removes the note from normal reads", async () => {
     assert.equal(detail.status, 404);
     const row = db.sqlite.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get();
     assert.ok(row.deleted_at);
+  } finally { db.close(); }
+});
+
+test("new shared notes create in-app notifications for other workspace members", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    const created = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "New shared idea", content: "Visible to workspace members", workspaceId: "w1" }), env);
+    assert.equal(created.status, 201);
+    const note = (await created.json()).note;
+    const recipient = db.sqlite.prepare("SELECT notification_type,title,body,resource_id FROM notifications WHERE user_id='u2' AND resource_id=?").get(note.id);
+    assert.equal(recipient.notification_type, "shared_note");
+    assert.equal(recipient.title, "New note shared with you");
+    assert.equal(recipient.body, "New shared idea");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id='u1' AND resource_id=?").get(note.id).count, 0);
   } finally { db.close(); }
 });
