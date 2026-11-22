@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -180,7 +180,9 @@ test("making a shared workspace private removes members and revokes pending invi
     assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id='pending1'").get().status,"revoked");
     assert.equal(db.sqlite.prepare("SELECT title FROM notes WHERE id='n1'").get().title,"Keep me");
     const listed=await handleInvitationsRequest(request("/api/workspaces",tokens.u1),env);
-    assert.equal((await listed.json()).workspaces.find(item=>item.id==="w1").type,"personal");
+    assert.equal((await listed.json()).workspaces.find(item=>item.id==="w1").type,"shared");
+    assert.equal((await listed.json()).workspaces.find(item=>item.id==="w1").visibility,"private");
+    assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"shared");
     const blocked=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"again@example.com",role:"viewer"}),env);
     assert.equal(blocked.status,409);
   } finally { db.close(); }
