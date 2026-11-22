@@ -32,5 +32,5 @@
 - Google JWKS is fetched during callback validation; production hardening may add a bounded in-memory cache with key rotation handling.
 - The current session store has a fixed seven-day expiry. Refresh/rotation and "log out all devices" are not implemented.
 - Authentication has unit coverage for ID-token signature and key OIDC claims, but no real Google OAuth end-to-end test yet.
-- No note CRUD endpoint is exposed until authenticated workspace authorization is implemented.
+- Notes and categories routes are implemented with session and workspace role checks; route-level integration tests remain outstanding.
 - The app is not production-ready while any checklist item above remains open.
