@@ -47,12 +47,22 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.
 - [x] Add invitation-accepted and other collaboration activity notifications.
 - [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
+- [x] Gemini-assisted workspace planning: propose a workspace name and up to eight categories from a user-provided purpose; explicit consent, free-tier quota, preview and user confirmation are required before workspace/category creation. Live Gemini provider verification remains open.
 - [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
 - [x] Audit/activity history for sharing and content: notes/events expose creator and last-editor identity/timestamps, with create/update/delete activity records.
 - [x] Responsive mobile and desktop web experience.
 - [x] PWA install prompt, install metadata and offline application-shell/static-asset cache; private data and edits still require connectivity.
 - [x] Automated tests, CI checks and operational documentation.
 - [x] Cloudflare Workers Builds deployment path and initial production deployment. Latest-release smoke tests and automated deployment verification remain open.
+
+### Workspace and UI consistency follow-up (2026-11-22)
+
+- [x] Replace browser prompt-based workspace creation with a responsive, in-app creation flow.
+- [x] Add a dedicated Gemini workspace-planning endpoint. It returns a draft only; the user confirms the workspace name and category suggestions before anything is written.
+- [x] Reuse the existing explicit Gemini consent and shared daily free-tier request cap. Manual workspace creation remains available if AI is not configured or unavailable.
+- [x] Add shared control sizing, interaction states, focus styles, spacing and dark-mode treatment for the workspace creation flow.
+- [ ] Verify live Gemini configuration and complete a production workspace-creation smoke test.
+- [ ] Confirm Cloudflare Workers Builds deployment and production revision after CI passes.
 
 ### Later releases
 
