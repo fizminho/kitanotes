@@ -2,7 +2,7 @@
 
 ## What is sent
 
-When a signed-in user explicitly enables AI and submits text, KitaNotes sends only:
+When a signed-in user chooses an AI action and submits text or an image, KitaNotes sends only the content needed for that request:
 
 - The text pasted into the AI organiser.
 - A workspace purpose/description entered into the AI-assisted workspace creator, when the user explicitly selects “Suggest with Gemini”.
@@ -35,8 +35,8 @@ Free-tier model availability and quotas can change. Recheck Google's pricing/mod
 
 - The raw prompt and generated draft are not stored in D1 by the AI endpoint.
 - D1 stores only the user's consent timestamp/policy version and daily request count.
-- The response is a draft. The user must separately confirm saving the note, creating events, or creating reminders.
-- Workspace planning also returns a draft only. The user must confirm the workspace name and category suggestions before KitaNotes creates the workspace or its categories. The raw workspace purpose and Gemini draft are not persisted by the AI endpoint.
+- The response is a draft. The user confirms the combined save action before KitaNotes creates the note, events and reminders.
+- Workspace planning also returns a draft only. The user must confirm the workspace name and category suggestions before KitaNotes creates the workspace or its categories. The raw workspace purpose and AI draft are not persisted by the AI endpoint.
 - Dates are returned as local date/time strings with the supplied IANA timezone. Ambiguous dates should produce clarifying questions rather than guessed events.
 - AI outages or quota exhaustion do not affect manual note, calendar, or reminder features.
 
