@@ -45,7 +45,7 @@ function seed(){
   for(const [id,sub,email] of [["u1","sub1","one@example.com"],["u2","sub2","two@example.com"],["u3","sub3","three@example.com"]])
     db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)").run(id,sub,email,email,now,now);
   for(const [id,owner] of [["w1","u1"],["w2","u2"],["w3","u3"]])
-    db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES (?,?,?,'personal',?,?)").run(id,id,owner,now,now);
+    db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,'shared','private',?,?)").run(id,id,owner,now,now);
   for(const [workspace,user,role] of [["w1","u1","owner"],["w1","u2","viewer"],["w2","u2","owner"],["w3","u3","owner"]])
     db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)").run(workspace,user,role,now);
   db.sqlite.prepare("INSERT INTO notes (id,workspace_id,title,content,created_by_user_id,created_at,updated_at) VALUES ('n1','w1','Note one','Body','u1',?,?)").run(now,now);
@@ -87,7 +87,7 @@ test("event deletion cancels linked pending reminders",async()=>{
   try{
     const created=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{title:"Appointment",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur"}),env);
     const event=(await created.json()).event;
-    const reminder=await handleRemindersRequest(request("/api/reminders",tokens.u1,"POST",{workspaceId:"w1",eventId:event.id,title:"Leave home",dueAt:"2026-11-23T08:00:00+08:00",timezone:"Asia/Kuala_Lumpur"}),env);
+    const reminder=await handleRemindersRequest(request("/api/reminders",tokens.u1,"POST",{eventId:event.id,title:"Leave home",dueAt:"2026-11-23T08:00:00+08:00",timezone:"Asia/Kuala_Lumpur"}),env);
     assert.equal(reminder.status,201);
     const reminderId=(await reminder.json()).reminder.id;
     const deleted=await handleEventsRequest(request("/api/events/"+event.id,tokens.u1,"DELETE",{version:1}),env);
