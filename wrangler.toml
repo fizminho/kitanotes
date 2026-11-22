@@ -13,3 +13,9 @@ APP_ENV = "production"
 
 # D1 is intentionally not bound until a KitaNotes-specific database is created.
 # Never reuse the magic-screen / Investlah database_id.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kitanotes-db"
+database_id = "00000000-0000-0000-0000-000000000000" # Replace after creating the dedicated KitaNotes D1 database.
+migrations_dir = "./migrations"
