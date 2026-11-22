@@ -38,6 +38,7 @@ Free-tier model availability and quotas can change. Recheck Google's pricing/mod
 - D1 stores daily request counts. Legacy consent fields remain for compatibility but are no longer required to use the AI actions.
 - The response is a draft. The user confirms the combined save action before KitaNotes creates the note, events and reminders.
 - Workspace planning also returns a draft only. The user must confirm the workspace name and category suggestions before KitaNotes creates the workspace or its categories. The raw workspace purpose and AI draft are not persisted by the AI endpoint.
+- AI note organisation recommends one category. It reuses an existing category when it matches; otherwise the recommended category is created only when the user confirms saving the note.
 - AI note organisation recommends one category. It reuses an existing category when it matches; otherwise the selected new category is created only when the user confirms saving the note.
 - Dates are returned as local date/time strings with the supplied IANA timezone. Ambiguous dates should produce clarifying questions rather than guessed events.
 - AI outages or quota exhaustion do not affect manual note, calendar, or reminder features.
