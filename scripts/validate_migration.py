@@ -7,7 +7,7 @@ for migration_path in sorted(Path("migrations").glob("*.sql")):
     db.executescript(migration_path.read_text(encoding="utf-8"))
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
@@ -49,4 +49,13 @@ except sqlite3.IntegrityError:
 else:
     raise SystemExit("Duplicate session token hash was not rejected")
 
-print("D1 migrations valid; foreign keys, workspace/category guard, membership isolation, personal workspace uniqueness and session token uniqueness verified.")
+# Rate-limit buckets must enforce a non-negative count and a unique key.
+db.execute("INSERT INTO request_rate_limits (bucket_key,window_started_at,request_count,expires_at) VALUES ('test',1000,1,2000)")
+try:
+    db.execute("INSERT INTO request_rate_limits (bucket_key,window_started_at,request_count,expires_at) VALUES ('test',1000,-1,2000)")
+except sqlite3.IntegrityError:
+    pass
+else:
+    raise SystemExit("Negative rate-limit request count was accepted")
+
+print("D1 migrations valid; foreign keys, workspace/category guard, membership isolation, personal workspace uniqueness, session token uniqueness and request rate-limit constraints verified.")
