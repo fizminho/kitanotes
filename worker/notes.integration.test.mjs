@@ -39,7 +39,7 @@ function seed() {
     ["u2", "sub-2", "two@example.com"],
     ["u3", "sub-3", "three@example.com"]
   ]) db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)").run(id,sub,email,email,now,now);
-  for (const [id, owner] of [["w1","u1"],["w2","u2"],["w3","u3"]]) db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES (?,?,?,'personal',?,?)").run(id,id,owner,now,now);
+  for (const [id, owner] of [["w1","u1"],["w2","u2"],["w3","u3"]]) db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,'shared','private',?,?)").run(id,id,owner,now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u2','viewer',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w2','u2','owner',?)").run(now);
@@ -93,6 +93,9 @@ test("viewer can read but cannot modify a shared note", async () => {
 test("note creation rejects cross-workspace access and category assignment", async () => {
   const { db, env, tokens } = seed();
   try {
+    const defaultWorkspace = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "Default workspace note", content: "Uses private workspace" }), env);
+    assert.equal(defaultWorkspace.status, 201);
+    assert.equal((await defaultWorkspace.json()).note.workspaceId, "w1");
     const wrongWorkspace = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "Bad", content: "", workspaceId: "w2" }), env);
     assert.equal(wrongWorkspace.status, 403);
     const wrongCategory = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "Bad", content: "", workspaceId: "w1", categoryId: "c2" }), env);
