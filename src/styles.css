@@ -214,3 +214,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .notification-item strong{-webkit-line-clamp:2;line-height:1.35}
 .notification-item span{-webkit-line-clamp:3;line-height:1.45}
 @media(max-width:760px){.topbar-action.logout-action{width:auto;padding:0 9px;font-size:10px}.topbar-action.logout-action svg{width:13px;height:13px}}
+
+/* Google account control also acts as the sign-out button. */
+.account-control{display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 3px;border:1px solid #e9eaf0;border-radius:999px;background:transparent;color:#777b8e;cursor:pointer;transition:background .15s,border-color .15s}.account-control:hover{background:#f5f4ff;border-color:#dcd8fb}.account-control .profile-avatar{display:block;object-fit:cover}.account-control svg{width:15px;height:15px;flex:none}.account-control:focus-visible{outline:2px solid #8175e8;outline-offset:3px}
