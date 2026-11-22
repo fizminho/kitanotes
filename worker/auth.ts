@@ -260,20 +260,20 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
   }
 }
 
-export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null } | null> {
+export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null } | null> {
   if (!env.DB) return null;
   const token = getCookie(request, SESSION_COOKIE);
   if (!token) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    "SELECT u.id,u.email,u.display_name,u.avatar_url,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
-  ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; expires_at: string }>();
+    "SELECT u.id,u.email,u.display_name,u.avatar_url,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.workspace_type='personal') AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
+  ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; expires_at: string; personal_workspace_id: string | null }>();
   if (!row) return null;
   if (row.expires_at <= new Date().toISOString()) {
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(hash).run();
     return null;
   }
-  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url };
+  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id };
 }
 
 async function logout(request: Request, env: AuthEnv): Promise<Response> {
