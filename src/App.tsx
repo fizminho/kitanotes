@@ -400,12 +400,17 @@ export default function App() {
         <header className="topbar">
           <div className="breadcrumb">My workspace <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
-            <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
+            <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
             {user ? <span className="signed-in-label">{user.displayName ?? user.email}</span> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
             {user?.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <div className="profile-avatar small">{user?.displayName?.slice(0, 1).toUpperCase() ?? "?"}</div>}
           </div>
         </header>
         <div className="content">
+          {notificationsOpen && <section className="notification-panel">
+            <header><strong>Notifications</strong><button className="text-action" onClick={markAllNotificationsRead} disabled={unreadCount===0}>Mark all read</button></header>
+            {notificationError&&<p className="invite-error">{notificationError}</p>}
+            {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=><button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><small>{new Date(notification.createdAt).toLocaleString()}</small></button>)}
+          </section>}
           {inviteToken && <section className="invite-panel">
             <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
               <p>Accept this invitation using the Google account whose email address received it.</p></div>
@@ -419,7 +424,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{user.personalWorkspaceId && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
@@ -442,8 +447,11 @@ export default function App() {
             </div>}
           </>}
 
-          {view === "calendar" && <div className="placeholder-panel"><CalendarDays size={26} /><h2>Your calendar is next.</h2><p>Internal events and reminders will be added after notes and sharing are ready.</p></div>}
-          {view === "shared" && <div className="placeholder-panel"><Users size={26} /><h2>Shared spaces are next.</h2><p>Invite collaborators by verified Google email when workspace invitations are implemented.</p></div>}
+          {view === "calendar" && <section className="calendar-section">
+            {eventsError&&<div className="inline-error">{eventsError}</div>}
+            {eventsLoading?<div className="loading-state">Loading your calendar…</div>:events.length===0?<div className="placeholder-panel"><CalendarDays size={26}/><h2>Your calendar is clear.</h2><p>Add an event and optionally attach a reminder. Event times are stored in UTC with your selected timezone.</p>{user&&<button className="primary-button" onClick={startNewEvent}><Plus size={16}/> Add an event</button>}</div>:<div className="event-list">{events.map(event=><article className="event-card" key={event.id}><div className="event-date-block"><strong>{new Date(event.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:event.timezone})}</strong><span>{new Date(event.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:event.timezone})}</span></div><div className="event-copy"><h3>{event.title}</h3><p>{new Date(event.startsAt).toLocaleString(undefined,{timeZone:event.timezone})} · {event.timezone}</p>{event.description&&<small>{event.description}</small>}</div><button className="mini-icon" onClick={()=>deleteEvent(event)} aria-label="Delete event"><Archive size={15}/></button></article>)}</div>}
+          </section>}
+          {view === "shared" && <div className="placeholder-panel"><Users size={26} /><h2>Shared notes live in your notes list.</h2><p>Notes shared with you appear alongside your personal notes. Invitations are managed from your workspace.</p><button className="secondary-button" onClick={()=>setView("notes")}>View notes</button></div>}
 
           <div className="ai-hint"><span className="ai-icon"><Sparkles size={17} /></span><div><strong>A little help from AI</strong><p>Turn a brain dump into tidy notes, tasks and reminders. Coming in a later step.</p></div><span className="coming-soon">COMING SOON</span></div>
         </div>
@@ -471,6 +479,19 @@ export default function App() {
             </div>)}
             <p className="invite-list-note">A pending link is shown only once. If it was lost, revoke it here and create a fresh invitation.</p>
           </div>
+        </section>
+      </div>}
+
+      {eventComposerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEventComposerOpen(false);}}>
+        <section className="composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
+          <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">New event</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
+          <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
+          <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>setEventStart(e.target.value)}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
+          <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>setEventTimezone(e.target.value)} placeholder="Asia/Kuala_Lumpur"/></label>
+          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
+          {eventsError&&<p className="invite-error">{eventsError}</p>}
+          <footer><span>Reminder delivery appears in the in-app inbox, checked every five minutes.</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":"Save event"}</button></footer>
         </section>
       </div>}
 
