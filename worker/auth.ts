@@ -281,6 +281,7 @@ async function logout(request: Request, env: AuthEnv): Promise<Response> {
 
 export async function handleAuthRequest(request: Request, env: AuthEnv): Promise<Response | null> {
   const url = new URL(request.url);
+  if (url.pathname === "/api/auth/status" && request.method === "GET") return json({ ready: authConfiguration(env) === null });
   if (url.pathname === "/auth/google" && request.method === "GET") return startGoogleLogin(request, env);
   if (url.pathname === "/auth/google/callback" && request.method === "GET") return completeGoogleLogin(request, env);
   if (url.pathname === "/api/auth/me" && request.method === "GET") {
