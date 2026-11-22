@@ -474,9 +474,9 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Notify other workspace members when a new shared note is created.
 - [x] Add event editing UI and month/week calendar views. Event updates use optimistic version checks; event-local date/time values are converted using the event IANA timezone.
 - [x] Implement PWA manifest, install flow, service worker and offline app-shell/static-asset cache; private API data is never cached.
-- [x] Implement per-device Web Push subscription APIs, VAPID key generation helper and best-effort generic push delivery for reminders/shared notes. VAPID provisioning and real-device delivery verification remain open.
-- [x] Implement per-user notification preferences with global push, reminder and shared-note switches; D1-backed API and settings UI are in place.
-- [x] Implement quiet hours with IANA timezone handling, including overnight windows. Quiet hours suppress push attempts (not deferred); in-app notifications remain durable and available.
+- [x] Implement per-device Web Push subscription APIs, VAPID key generation helper and best-effort generic push delivery for reminders, shared-note creation/updates/deletions, calendar event changes and workspace membership/access changes. VAPID provisioning and real-device delivery verification remain open.
+- [x] Implement per-user notification preferences with global push, reminder, shared-note creation/update, calendar-event and workspace-activity switches; D1-backed API and settings UI are in place.
+- [x] Implement quiet hours with IANA timezone handling, including overnight windows. Quiet hours suppress push attempts (not deferred); existing in-app notifications remain available.
 
 ### P3 — Gemini assistant
 
@@ -591,3 +591,4 @@ MVP is not complete until all of these are demonstrated:
 
 - **2026-11-22:** Added image preview and client-side image preparation (maximum 2200-pixel edge, JPEG re-encoding to strip EXIF metadata where supported) to the Gemini OCR UI. OCR output can now be sent directly to the existing AI organiser to draft a note, categories, calendar events and reminders; note and calendar actions remain separately user-confirmed. Live Gemini provider verification remains open.
 \n- **2026-11-22:** Added note/event creator and latest-editor fields, joined user names/emails into the API DTOs, and recorded content create/update/delete activity in workspace history. Added reusable seven-day open invitation links; any Google-authenticated user with a verified email can join while the link remains active. Owners can revoke links and remove members. CI validation pending.\n
+- **2026-11-22:** Expanded Web Push to calendar event create/update/delete, shared-note update/delete and workspace join/leave/removal/role-change events. Added per-activity preference switches and migration `0015_notification_activity_preferences.sql`. Payloads remain generic, exclude the actor, and respect global/category preferences and quiet hours. CI build, all tests, SQLite migration validation and Worker bundle validation passed in run [45041602852](https://github.com/fizminho/kitanotes/actions/runs/45041602852). VAPID provisioning, migration application to production D1 and real-iPhone delivery verification remain open.
