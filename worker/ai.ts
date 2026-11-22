@@ -111,7 +111,6 @@ async function consentStatus(db:Db,userId:string){
   return db.prepare("SELECT ai_consent_at,ai_consent_policy_version FROM users WHERE id=?").bind(userId).first<{ai_consent_at:string|null;ai_consent_policy_version:string|null}>();
 }
 async function status(env:AiEnv,userId:string):Promise<Response>{
-  const consent=await consentStatus(env.DB!,userId);
   const day=new Date().toISOString().slice(0,10);
   const usage=await env.DB!.prepare("SELECT request_count FROM ai_request_usage WHERE user_id=? AND usage_date=?").bind(userId,day).first<{request_count:number}>();
   const used=Number(usage?.request_count??0);
@@ -201,8 +200,6 @@ export function validateWorkspaceAiDraft(value:unknown):WorkspaceAiDraft|null{
 async function organizeWorkspace(request:Request,env:AiEnv,userId:string):Promise<Response>{
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
   if(!env.GEMINI_API_KEY)return json({error:"AI_NOT_CONFIGURED"},503);
-  const consent=await consentStatus(env.DB!,userId);
-  if(consent?.ai_consent_policy_version!==CONSENT_VERSION)return json({error:"AI_CONSENT_REQUIRED",consentPolicyVersion:CONSENT_VERSION},428);
   const body=await readJsonBody(request);
   if(!body)return json({error:"INVALID_JSON_BODY"},400);
   const purpose=typeof body.purpose==="string"?body.purpose.trim():"";
