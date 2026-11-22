@@ -95,7 +95,11 @@ test("note creation rejects cross-workspace access and category assignment", asy
   try {
     const defaultWorkspace = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "Default workspace note", content: "Uses private workspace" }), env);
     assert.equal(defaultWorkspace.status, 201);
-    assert.equal((await defaultWorkspace.json()).note.workspaceId, "w1");
+    const createdNote=(await defaultWorkspace.json()).note;
+    assert.equal(createdNote.workspaceId,"w1");
+    assert.equal(createdNote.createdBy,"u1");
+    assert.equal(createdNote.updatedBy,"u1");
+    assert.ok(createdNote.createdAt&&createdNote.updatedAt);
     const wrongWorkspace = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "Bad", content: "", workspaceId: "w2" }), env);
     assert.equal(wrongWorkspace.status, 403);
     const wrongCategory = await handleNotesRequest(request("/api/notes", tokens.u1, "POST", { title: "Bad", content: "", workspaceId: "w1", categoryId: "c2" }), env);
@@ -110,6 +114,11 @@ test("note updates use optimistic versioning and archive filter", async () => {
     assert.equal(stale.status, 409);
     const archived = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "PATCH", { version: 1, archived: true }), env);
     assert.equal(archived.status, 200);
+    const auditNote=(await archived.json()).note;
+    assert.equal(auditNote.createdBy,"u1");
+    assert.equal(auditNote.updatedBy,"u1");
+    assert.ok(auditNote.createdAt&&auditNote.updatedAt);
+    assert.equal(db.sqlite.prepare("SELECT event_type FROM activity_events WHERE target_type='note' AND target_id='n1' ORDER BY created_at DESC LIMIT 1").get().event_type,"note.updated");
     const active = await handleNotesRequest(request("/api/notes", tokens.u1), env);
     assert.deepEqual((await active.json()).notes, []);
     const archiveList = await handleNotesRequest(request("/api/notes?archived=1", tokens.u1), env);
