@@ -43,7 +43,7 @@ npx wrangler secret put SESSION_SECRET
 
 Generate a strong session secret locally, for example with `openssl rand -base64 48`. Never commit it or paste it into source files. Use separate credentials for local, staging and production.
 
-For local development, use a gitignored `.dev.vars` file and never commit it. The session cookie is Secure; use an HTTPS local tunnel if the browser does not retain Secure cookies on your local setup.
+For local development, copy `.dev.vars.example` to `.dev.vars`, replace the placeholders with your Google OAuth test credentials and a generated session secret, and never commit `.dev.vars`. The session cookie is Secure; use an HTTPS local tunnel if the browser does not retain Secure cookies on your local setup.
 
 ## D1 prerequisites
 
