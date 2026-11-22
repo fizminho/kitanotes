@@ -150,7 +150,19 @@ async function listMembers(env: AuthEnv, userId: string, workspaceId: string): P
     .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null}>();
   return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at})) });
 }
-async function removeMember(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
+async function updateMemberRole(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
+  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const body=await readJsonBody(request);
+  const role=body?.role==="editor"||body?.role==="viewer"?body.role:null;
+  if(!role)return json({error:"INVALID_MEMBER_ROLE"},400);
+  const db=env.DB!;
+  if(!(await ownerFor(db,workspaceId,userId)))return json({error:"OWNER_PERMISSION_REQUIRED"},403);
+  const member=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,memberId).first<{role:string}>();
+  if(!member||member.role==="owner")return json({error:"MEMBER_NOT_FOUND"},404);
+  await db.prepare("UPDATE workspace_members SET role=? WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(role,workspaceId,memberId).run();
+  return json({updated:true,role});
+}
+\nasync function removeMember(request: Request, env: AuthEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
   if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const db=env.DB!;
   if (!(await ownerFor(db,workspaceId,userId))) return json({error:"OWNER_PERMISSION_REQUIRED"},403);
@@ -192,6 +204,7 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
   if (workspaceMatch) {
     const id=decodeURIComponent(workspaceMatch[1]);
     if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
+    if(request.method==="PATCH" && url.pathname.includes("/members/")) return updateMemberRole(request,env,user.id,id,decodeURIComponent(url.pathname.split("/").pop()??""));
     if(request.method==="DELETE" && url.pathname.includes("/members/")) {
       const memberId=decodeURIComponent(url.pathname.split("/").pop()??"");
       return removeMember(request,env,user.id,id,memberId);
