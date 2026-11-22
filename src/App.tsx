@@ -225,6 +225,7 @@ export default function App() {
     setEditingNote(null);
     setDraftTitle("");
     setDraftContent("");
+    setSelectedCategoryId("");
     setComposerOpen(true);
   }
 
@@ -232,6 +233,7 @@ export default function App() {
     setEditingNote(note);
     setDraftTitle(note.title);
     setDraftContent(note.content);
+    setSelectedCategoryId(note.categoryId ?? "");
     setComposerOpen(true);
   }
 
@@ -245,8 +247,8 @@ export default function App() {
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(editingNote
-          ? { title: draftTitle, content: draftContent, version: editingNote.version }
-          : { title: draftTitle, content: draftContent })
+          ? { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, version: editingNote.version }
+          : { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, workspaceId: user?.personalWorkspaceId })
       });
       const result = await response.json() as { note?: Note; error?: string };
       if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "This note changed elsewhere. Refresh and try again." : "Unable to save this note.");
