@@ -39,6 +39,7 @@ type AiDraft = {
   clarifyingQuestions:string[];
 };
 type AiStatus = {configured:boolean;dailyLimit:number;dailyUsed:number;dailyRemaining:number};
+type ExistingNoteProposal = {noteId:string;categoryName:string;reason:string;selected:boolean;applied?:boolean};
 type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
@@ -141,6 +142,11 @@ export default function App() {
   const [notificationPrefsSaved,setNotificationPrefsSaved]=useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [existingOrganizerOpen,setExistingOrganizerOpen]=useState(false);
+  const [existingOrganizerBusy,setExistingOrganizerBusy]=useState(false);
+  const [existingOrganizerError,setExistingOrganizerError]=useState("");
+  const [existingOrganizerProposals,setExistingOrganizerProposals]=useState<ExistingNoteProposal[]>([]);
+  const [selectedOrganizerNoteIds,setSelectedOrganizerNoteIds]=useState<string[]>([]);
   const [aiInput, setAiInput] = useState("");
   const [ocrFile,setOcrFile] = useState<File|null>(null);
   const [ocrWorking,setOcrWorking] = useState(false);
@@ -605,6 +611,74 @@ export default function App() {
       if(!blob)return file;
       return new File([blob],file.name.replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg",lastModified:Date.now()});
     }finally{bitmap.close();}
+  }
+
+
+  function openExistingOrganizer(){
+    setExistingOrganizerError("");setExistingOrganizerProposals([]);
+    setSelectedOrganizerNoteIds(notes.slice(0,30).map(note=>note.id));
+    setExistingOrganizerOpen(true);
+  }
+
+  async function suggestExistingNoteCategories(){
+    if(existingOrganizerBusy||!activeWorkspaceId||selectedOrganizerNoteIds.length===0||selectedOrganizerNoteIds.length>30)return;
+    setExistingOrganizerBusy(true);setExistingOrganizerError("");setExistingOrganizerProposals([]);
+    try{
+      const response=await fetch("/api/ai/organize-existing",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId,noteIds:selectedOrganizerNoteIds})});
+      const result=await response.json() as {assignments?:Array<{noteId:string;categoryName:string;reason:string}>;error?:string;usage?:{dailyLimit:number;dailyUsed:number;dailyRemaining:number}};
+      if(!response.ok||!result.assignments){
+        const message=result.error==="AI_DAILY_FREE_LIMIT_REACHED"||result.error==="AI_FREE_QUOTA_EXHAUSTED"?"The AI daily limit has been reached. Try again after it resets."
+          :result.error==="AI_NOT_CONFIGURED"?"AI is not configured yet."
+          :result.error==="NOTE_SELECTION_TOO_LARGE"?"Choose fewer or shorter notes for this run."
+          :result.error==="NOTES_NOT_FOUND_OR_UNAVAILABLE"?"Some selected notes are no longer available. Refresh and try again."
+          :result.error==="AI_INVALID_MODEL_RESPONSE"?"The AI returned an incomplete category plan. Please retry."
+          :"Unable to organise these notes right now.";
+        throw new Error(message);
+      }
+      setExistingOrganizerProposals(result.assignments.map(item=>({...item,selected:true})));
+      if(result.usage&&aiStatus)setAiStatus({...aiStatus,dailyUsed:result.usage.dailyUsed,dailyRemaining:result.usage.dailyRemaining});
+    }catch(error){setExistingOrganizerError(error instanceof Error?error.message:"Unable to organise existing notes.");}
+    finally{setExistingOrganizerBusy(false);}
+  }
+
+  async function applyExistingNoteCategories(){
+    if(existingOrganizerBusy||!activeWorkspaceId)return;
+    const pending=existingOrganizerProposals.filter(item=>item.selected&&!item.applied);
+    if(!pending.length)return;
+    setExistingOrganizerBusy(true);setExistingOrganizerError("");
+    try{
+      let available=categories.slice();
+      const categoryIds=new Map(available.map(category=>[category.name.toLowerCase(),category.id]));
+      for(const proposal of pending){
+        let categoryId=categoryIds.get(proposal.categoryName.toLowerCase());
+        if(!categoryId){
+          const created=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId,name:proposal.categoryName,color:"#766bd0",sortOrder:available.length})});
+          const payload=await created.json() as {category?:Category};
+          if(created.status===409){
+            const refreshed=await fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"});
+            const list=await refreshed.json() as {categories:Category[]};
+            available=list.categories;
+            const match=available.find(item=>item.name.toLowerCase()===proposal.categoryName.toLowerCase());
+            if(!match)throw new Error("Could not find the category "+proposal.categoryName+".");
+            categoryId=match.id;
+          }else if(!created.ok||!payload.category)throw new Error("Could not create category "+proposal.categoryName+".");
+          else{available=[...available,payload.category];categoryId=payload.category.id;}
+          categoryIds.set(proposal.categoryName.toLowerCase(),categoryId);
+        }
+        const note=notes.find(item=>item.id===proposal.noteId);
+        if(!note)throw new Error("A selected note is no longer loaded. Refresh notes and retry.");
+        const updated=await fetch("/api/notes/"+encodeURIComponent(note.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({title:note.title,content:note.content,categoryId,version:note.version})});
+        const result=await updated.json() as {note?:Note};
+        if(!updated.ok||!result.note)throw new Error("Could not update “"+note.title+"”. It may have changed elsewhere. Refresh and retry.");
+        setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));
+        setExistingOrganizerProposals(current=>current.map(item=>item.noteId===proposal.noteId?{...item,applied:true}:item));
+      }
+      setCategories(available);
+      if(existingOrganizerProposals.filter(item=>item.selected).every(item=>item.applied||pending.some(p=>p.noteId===item.noteId))) {
+        setExistingOrganizerOpen(false);pushToast("Existing notes organised into categories");
+      }
+    }catch(error){setExistingOrganizerError(error instanceof Error?error.message:"Unable to apply category changes.");}
+    finally{setExistingOrganizerBusy(false);}
   }
 
   async function scanImageWithAi() {
@@ -1201,7 +1275,10 @@ export default function App() {
           </section>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
 
-          <button className="ai-hint" onClick={()=>{setAiModalOpen(true);setAiError("");}} disabled={!user}><span className="ai-icon"><Sparkles size={17}/></span><div><strong>AI organiser</strong><p>Turn a brain dump into a note, events and reminders.</p></div><span className="coming-soon">{aiStatus?.configured?"OPEN":"SETUP"}</span></button>
+          <div className="ai-actions">
+            <button className="ai-hint" onClick={openExistingOrganizer} disabled={!user||!activeWorkspaceId||notes.length===0||showArchived||workspaces.find(item=>item.id===activeWorkspaceId)?.role==="viewer"}><span className="ai-icon"><Sparkles size={17}/></span><div><strong>AI Organizer</strong><p>Reorganise existing notes into the right categories.</p></div><span className="coming-soon">{aiStatus?.configured?"OPEN":"SETUP"}</span></button>
+            <button className="ai-hint" onClick={()=>{setAiModalOpen(true);setAiError("");}} disabled={!user}><span className="ai-icon"><Plus size={17}/></span><div><strong>AI Note Assistant</strong><p>Create notes, extract text and draft calendar events.</p></div><span className="coming-soon">{aiStatus?.configured?"OPEN":"SETUP"}</span></button>
+          </div>
         </div>
       </section>
 
@@ -1228,11 +1305,29 @@ export default function App() {
         </section>
       </div>}
 
+      {existingOrganizerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&!existingOrganizerBusy)setExistingOrganizerOpen(false);}}>
+        <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="existing-organizer-title">
+          <header><div><span className="eyebrow">REORGANISE EXISTING NOTES</span><h2 id="existing-organizer-title">AI Organizer</h2></div><button className="icon-button" onClick={()=>setExistingOrganizerOpen(false)} aria-label="Close" disabled={existingOrganizerBusy}><X size={19}/></button></header>
+          {!aiStatus?.configured?<div className="ai-privacy-card"><strong>AI is not available yet.</strong><p>Try again when the service is configured.</p></div>:existingOrganizerProposals.length===0?<div>
+            <p className="ai-privacy-copy">Choose up to 30 existing notes. AI will recommend an existing category or suggest a new one. It will not rewrite your notes. Nothing changes until you review and apply the plan.</p>
+            <div className="organizer-selection-heading"><strong>{selectedOrganizerNoteIds.length} of 30 selected</strong><button className="text-action" onClick={()=>setSelectedOrganizerNoteIds(notes.slice(0,30).map(note=>note.id))}>Select first 30</button></div>
+            <div className="organizer-note-list">{notes.filter(note=>!note.archivedAt).map(note=><label key={note.id} className="organizer-note-option"><input type="checkbox" checked={selectedOrganizerNoteIds.includes(note.id)} disabled={!selectedOrganizerNoteIds.includes(note.id)&&selectedOrganizerNoteIds.length>=30} onChange={event=>setSelectedOrganizerNoteIds(current=>event.target.checked?[...current,note.id]:current.filter(id=>id!==note.id))}/><span><strong>{note.title}</strong><small>{note.categoryName||"Uncategorised"} · {note.content.slice(0,90)}</small></span></label>)}</div>
+            {existingOrganizerError&&<p className="invite-error">{existingOrganizerError}</p>}
+            <footer><span>Only selected notes will be analysed.</span><button className="primary-button" onClick={suggestExistingNoteCategories} disabled={selectedOrganizerNoteIds.length===0||selectedOrganizerNoteIds.length>30||existingOrganizerBusy}>{existingOrganizerBusy?"Reviewing notes…":"Suggest categories"}</button></footer>
+          </div>:<div>
+            <p className="ai-privacy-copy">Review the proposed category for each note. New categories are created only when you apply the plan.</p>
+            <div className="organizer-proposal-list">{existingOrganizerProposals.map(proposal=>{const note=notes.find(item=>item.id===proposal.noteId);return <label key={proposal.noteId} className={proposal.applied?"organizer-proposal applied":"organizer-proposal"}><input type="checkbox" checked={proposal.selected} disabled={proposal.applied||existingOrganizerBusy} onChange={event=>setExistingOrganizerProposals(current=>current.map(item=>item.noteId===proposal.noteId?{...item,selected:event.target.checked}:item))}/><span><strong>{note?.title||"Note unavailable"}</strong><span>{proposal.categoryName}</span><small>{proposal.reason||"Suggested from the note content."}</small></span><small>{proposal.applied?"Applied":categories.some(category=>category.name.toLowerCase()===proposal.categoryName.toLowerCase())?"Existing":"New category"}</small></label>;})}</div>
+            {existingOrganizerError&&<p className="invite-error">{existingOrganizerError}</p>}
+            <footer><button className="secondary-button" onClick={()=>setExistingOrganizerProposals([])} disabled={existingOrganizerBusy}>Back</button><button className="primary-button" onClick={applyExistingNoteCategories} disabled={existingOrganizerBusy||!existingOrganizerProposals.some(item=>item.selected&&!item.applied)}>{existingOrganizerBusy?"Applying…":"Apply selected changes"}</button></footer>
+          </div>}
+        </section>
+      </div>}
+
       {aiModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setAiModalOpen(false);}}>
         <section className="composer ai-composer" role="dialog" aria-modal="true" aria-labelledby="ai-title">
-          <header><div><span className="eyebrow">SMART ORGANISER</span><h2 id="ai-title">Organize with AI</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <header><div><span className="eyebrow">CREATE WITH AI</span><h2 id="ai-title">AI Note Assistant</h2></div><button className="icon-button" onClick={()=>setAiModalOpen(false)} aria-label="Close"><X size={19}/></button></header>
           {!aiStatus?<p className="ai-privacy-copy">Checking AI availability…</p>:!aiStatus.configured?<div className="ai-privacy-card"><strong>AI is not configured yet.</strong><p>AI features will be available once the service is configured.</p></div>:!aiDraft?<div>
-            <p className="ai-privacy-copy">Add text or an image. AI can prepare a note, recommend its category, and identify calendar events, reminders and tasks. Your submitted content is sent to an external AI service for processing. Review all suggestions before saving.</p>
+            <p className="ai-privacy-copy">Start with a text prompt or an image. AI can extract text, draft a note, and suggest calendar events and reminders. Your submitted content is sent to an external AI service for processing. Review all suggestions before saving.</p>
             <textarea className="ai-input" value={aiInput} onChange={event=>setAiInput(event.target.value)} maxLength={16000} rows={7} placeholder="Example: Meeting with Sarah next Tuesday at 10am. Prepare the proposal beforehand and remind me 30 minutes before…"/>
             <div className="ai-usage-row"><span>{aiInput.length.toLocaleString()} / 16,000 characters</span></div>
             <div className="ai-draft-section">
@@ -1247,7 +1342,7 @@ export default function App() {
               {ocrText!==""&&<label className="field-label">Review extracted text<textarea className="ai-input" rows={5} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label>}
             </div>
             {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><button className="primary-button" onClick={()=>organizeWithAi(ocrText||aiInput)} disabled={!(ocrText||aiInput).trim()||aiWorking}>{aiWorking?"Organizing…":"Organize"}</button></footer>
+            <footer><button className="primary-button" onClick={()=>organizeWithAi(ocrText||aiInput)} disabled={!(ocrText||aiInput).trim()||aiWorking}>{aiWorking?"Preparing…":"Create draft"}</button></footer>
           </div>:<div className="ai-draft">
             <div className="ai-draft-banner"><Sparkles size={15}/> Review your suggestions before saving.</div>
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
