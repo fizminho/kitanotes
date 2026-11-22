@@ -1,10 +1,8 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { getFreeGeminiModelCandidates } from "./ai.ts";
-import { readJsonBody } from "./notes.ts";
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 
 type Env = AuthEnv & { GEMINI_API_KEY?:string; GEMINI_MODEL?:string; GEMINI_MODEL_FALLBACKS?:string };
-const POLICY="gemini-image-ocr-free-tier-2026-11-22";
 const MAX_IMAGE_BYTES=2*1024*1024;
 const DAILY_LIMIT=5;
 const MIME=new Set(["image/jpeg","image/png","image/webp"]);
