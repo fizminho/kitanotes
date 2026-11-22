@@ -125,3 +125,29 @@ test("mutations require same-origin Origin header", async () => {
     assert.equal(response.status, 403);
   } finally { db.close(); }
 });
+
+test("category management is workspace-scoped and viewers cannot create categories", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    const created = await handleNotesRequest(request("/api/categories", tokens.u1, "POST", { name: "Work", color: "#6658d9", sortOrder: 2 }), env);
+    assert.equal(created.status, 201);
+    const list = await handleNotesRequest(request("/api/categories", tokens.u1), env);
+    assert.equal((await list.json()).categories[0].name, "Work");
+    const viewerCreate = await handleNotesRequest(request("/api/categories", tokens.u2, "POST", { name: "No access", workspaceId: "w1" }), env);
+    assert.equal(viewerCreate.status, 403);
+    const outsiderRead = await handleNotesRequest(request("/api/categories?workspaceId=w1", tokens.u3), env);
+    assert.equal(outsiderRead.status, 404);
+  } finally { db.close(); }
+});
+
+test("note delete is soft and removes the note from normal reads", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    const deleted = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "DELETE", {}), env);
+    assert.equal(deleted.status, 200);
+    const detail = await handleNotesRequest(request("/api/notes/n1", tokens.u1), env);
+    assert.equal(detail.status, 404);
+    const row = db.sqlite.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get();
+    assert.ok(row.deleted_at);
+  } finally { db.close(); }
+});
