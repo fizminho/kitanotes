@@ -39,7 +39,7 @@ function seed() {
     ["u3","sub3","other@example.com"]
   ];
   for (const [id,sub,email] of users) db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)").run(id,sub,email,email,now,now);
-  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','Shared','u1','shared',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('w1','Shared','u1','shared','shared',?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u3','viewer',?)").run(now);
   const tokens = { u1:"owner-session",u2:"invitee-session",u3:"other-session" };
@@ -187,6 +187,9 @@ test("making a shared workspace private removes members and revokes pending invi
     assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"shared");
     const blocked=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"again@example.com",role:"viewer"}),env);
     assert.equal(blocked.status,409);
+    const deletePrivate=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"DELETE"),env);
+    assert.equal(deletePrivate.status,404);
+    assert.equal(db.sqlite.prepare("SELECT title FROM notes WHERE id='n1'").get().title,"Keep me");
     const reShared=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"make_shared"}),env);
     assert.equal(reShared.status,200);
     assert.equal(db.sqlite.prepare("SELECT visibility FROM workspaces WHERE id='w1'").get().visibility,"shared");
