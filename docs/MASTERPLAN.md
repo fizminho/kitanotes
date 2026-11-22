@@ -137,8 +137,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 - Use Google OpenID Connect and validate issuer, audience, signature, expiry and nonce/state.
 - Use Google's immutable `sub` as the identity key. Email is a mutable contact/ invitation attribute.
 - Require a verified email for invitation matching and delivery.
-- Keep login scopes minimal: `openid`, `email`, `profile`. Google Calendar is a separate opt-in flow using read-only `calendar.events.readonly`; it must never be requested during ordinary sign-in.
-- Google Calendar scopes must be separately requested only when the user enables calendar sync.
+- Keep login scopes minimal: `openid`, `email`, `profile`. Calendar interoperability uses `.ics` files and does not request Google Calendar API permissions.
 - Use secure, HttpOnly, SameSite cookies for the application session where supported.
 - Protect OAuth callback and state-changing requests against CSRF.
 - Never store Google client secrets or Gemini keys in frontend source, Vite environment variables, public build artifacts or Git.
