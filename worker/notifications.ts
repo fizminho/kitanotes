@@ -59,7 +59,7 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
   await db.prepare("UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL").bind(now,user.id).run();
   return json({ok:true});
  }
- const match=url.pathname.match(/^\\/api\\/notifications\\/([^/]+)\\/read$/);
+ const match=url.pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
  if(match&&request.method==="POST"){
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const id=decodeURIComponent(match[1]);const now=new Date().toISOString();
