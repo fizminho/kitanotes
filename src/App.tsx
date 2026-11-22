@@ -16,7 +16,7 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
  for(let i=0;i<3;i++){const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(guess));const p=(t:string)=>Number(parts.find(x=>x.type===t)?.value??0);const represented=Date.UTC(p("year"),p("month")-1,p("day"),p("hour"),p("minute"),p("second"));const next=guess+target-represented;if(next===guess)break;guess=next;}return new Date(guess).toISOString();
 }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
-type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
+type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };\ntype WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
 type Workspace = {id:string;name:string;type:"personal"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
@@ -71,7 +71,7 @@ export default function App() {
   const [inviteCreateError, setInviteCreateError] = useState("");
   const [createdInvite, setCreatedInvite] = useState<{ invitationUrl: string; gmailComposeUrl: string } | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);\n  const [workspaceMembers,setWorkspaceMembers]=useState<WorkspaceMember[]>([]);\n  const [workspaceActionBusy,setWorkspaceActionBusy]=useState(false);
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -252,6 +252,10 @@ export default function App() {
         if (!response.ok) throw new Error("Unable to load invitations.");
         const result = await response.json() as { invitations: Invitation[] };
         if (active) setInvitations(result.invitations);
+        const memberResponse=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members",{credentials:"same-origin"});
+        if(!memberResponse.ok)throw new Error("Unable to load workspace members.");
+        const memberResult=await memberResponse.json() as {members:WorkspaceMember[]};
+        if(active)setWorkspaceMembers(memberResult.members);
       })
       .catch(error => { if (active) setInviteCreateError(error instanceof Error ? error.message : "Unable to load invitations."); })
       .finally(() => { if (active) setInvitationsLoading(false); });
@@ -768,6 +772,35 @@ export default function App() {
     }
   }
 
+  async function removeWorkspaceMember(member:WorkspaceMember) {
+    if(!activeWorkspaceId||workspaceActionBusy||member.role==="owner")return;
+    if(!window.confirm("Remove "+member.email+" from this workspace? They will immediately lose access, but their own personal workspaces will remain untouched."))return;
+    setWorkspaceActionBusy(true);setInviteCreateError("");
+    try{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members/"+encodeURIComponent(member.userId),{method:"DELETE",credentials:"same-origin"});
+      const result=await response.json() as {error?:string};
+      if(!response.ok)throw new Error(result.error==="MEMBER_NOT_FOUND"?"This member is no longer in the workspace.":"Unable to remove member.");
+      setInviteRefresh(value=>value+1);
+    }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to remove member.");}
+    finally{setWorkspaceActionBusy(false);}
+  }
+
+  async function makeWorkspacePrivate() {
+    if(!activeWorkspaceId||workspaceActionBusy)return;
+    if(!window.confirm("Make this workspace private? All other members will immediately lose access. Pending invitations will be revoked. Notes and categories will be kept."))return;
+    setWorkspaceActionBusy(true);setInviteCreateError("");
+    try{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({action:"make_private"})});
+      if(!response.ok)throw new Error("Unable to make workspace private.");
+      setWorkspaces(current=>current.map(item=>item.id===activeWorkspaceId?{...item,type:"personal",role:"owner"}:item));
+      setWorkspaceMembers(current=>current.filter(member=>member.role==="owner"));
+      setInvitations(current=>current.map(item=>item.status==="pending"?{...item,status:"revoked"}:item));
+      setInviteOpen(false);
+      setInviteNotice("Workspace is now private. Other members and pending invitations have been revoked.");
+    }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to make workspace private.");}
+    finally{setWorkspaceActionBusy(false);}
+  }
+
   async function copyInviteLink() {
     if (!createdInvite) return;
     try {
@@ -796,7 +829,7 @@ export default function App() {
           <span className="workspace-avatar">K</span>
           <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"Shared workspace":"Personal space"}</small></span>
           <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
-            {workspaces.filter(workspace=>showSharedWorkspaces||workspace.type==="personal").map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
+            {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
           </select>
           <ChevronDown size={16} />
         </label>
@@ -861,7 +894,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><label className="show-shared-toggle"><input type="checkbox" checked={showSharedWorkspaces} onChange={event=>setShowSharedWorkspaces(event.target.checked)}/> Show shared</label><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New workspace</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New workspace</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
@@ -975,13 +1008,21 @@ export default function App() {
             <footer><button className="secondary-button" onClick={copyInviteLink}>{copiedInvite ? "Copied" : "Copy link"}</button><a className="primary-button" href={createdInvite.gmailComposeUrl} target="_blank" rel="noopener noreferrer">Open Gmail draft</a></footer>
           </>}
           <div className="invite-list">
+            <div className="invite-list-heading"><strong>Workspace members</strong><span>{workspaceMembers.length}</span></div>
+            {invitationsLoading?<p>Loading members…</p>:workspaceMembers.map(member=><div className="invite-list-row" key={member.userId}>
+              <div><strong>{member.displayName||member.email}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()}</small></div>
+              {member.role!=="owner"&&<button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button>}
+            </div>)}
+          </div>
+          <div className="invite-list">
             <div className="invite-list-heading"><strong>Workspace invitations</strong><span>{invitations.length}</span></div>
             {invitationsLoading ? <p>Loading invitations…</p> : invitations.length === 0 ? <p>No invitations yet.</p> : invitations.map(invitation => <div className="invite-list-row" key={invitation.id}>
               <div><strong>{invitation.email}</strong><small>{invitation.role} · {invitation.status} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></div>
               {invitation.status === "pending" && <button className="text-action" onClick={() => revokeInvitation(invitation.id)}>Revoke</button>}
             </div>)}
-            <p className="invite-list-note">A pending link is shown only once. If it was lost, revoke it here and create a fresh invitation.</p>
+            <p className="invite-list-note">Pending invitations expire after seven days. Accepted members keep access until you remove them or make this workspace private.</p>
           </div>
+          {workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"&&workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner"&&<div className="invite-list"><strong>Workspace privacy</strong><p className="invite-list-note">Making this workspace private keeps all notes but removes every other member and revokes pending invitations.</p><button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>{workspaceActionBusy?"Working…":"Make workspace private"}</button></div>}
         </section>
       </div>}
 
