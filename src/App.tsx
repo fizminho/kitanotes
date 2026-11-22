@@ -6,7 +6,7 @@ function localDateTime(value: Date): string { const pad=(n:number)=>String(n).pa
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
-type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; version:number };
+type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type AiDraft = {
   summary:string; timezone:string;
@@ -65,6 +65,7 @@ export default function App() {
   const [eventStart, setEventStart] = useState(() => localDateTime(new Date(Date.now()+3600000)));
   const [eventEnd, setEventEnd] = useState(() => localDateTime(new Date(Date.now()+7200000)));
   const [eventReminderAt, setEventReminderAt] = useState("");
+  const [eventLinkedNoteId, setEventLinkedNoteId] = useState("");
   const [eventTimezone, setEventTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur");
   const [eventSaving, setEventSaving] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -416,6 +417,7 @@ export default function App() {
     setEventStart(localDateTime(new Date(Date.now()+3600000)));
     setEventEnd(localDateTime(new Date(Date.now()+7200000)));
     setEventReminderAt("");
+    setEventLinkedNoteId("");
     setEventsError("");
     setEventComposerOpen(true);
   }
@@ -426,7 +428,7 @@ export default function App() {
     try {
       const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
         workspaceId:user.personalWorkspaceId,title:eventTitle,description:eventDescription,
-        startsAt:new Date(eventStart).toISOString(),endsAt:new Date(eventEnd).toISOString(),timezone:eventTimezone
+        startsAt:new Date(eventStart).toISOString(),endsAt:new Date(eventEnd).toISOString(),timezone:eventTimezone,linkedNoteId:eventLinkedNoteId||null
       })});
       const result=await response.json() as {event?:CalendarEvent};
       if(!response.ok||!result.event)throw new Error("Unable to save this event.");
@@ -730,7 +732,7 @@ export default function App() {
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>setEventStart(e.target.value)}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>setEventTimezone(e.target.value)} placeholder="Asia/Kuala_Lumpur"/></label>
-          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
+          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===user?.personalWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>\n          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
           <footer><span>Reminder delivery appears in the in-app inbox, checked every five minutes.</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":"Save event"}</button></footer>
         </section>
