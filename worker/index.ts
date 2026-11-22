@@ -8,7 +8,7 @@ import { deliverDueReminders } from "./reminder-cron";
 import { handleInvitationsRequest } from "./invitations";
 import { handleNotesRequest } from "./notes";
 import { handleAuthRequest } from "./auth";
-import { handleGoogleCalendarRequest } from "./google-calendar";
+import { handleCalendarIcsRequest } from "./calendar-ics";
 import { applySecurityHeaders } from "./security-headers";
 
 interface Env {
@@ -32,7 +32,7 @@ export default {
     if(url.pathname==="/api/health") {
       response=json({service:"kitanotes",environment:env.APP_ENV??"development",ok:true});
     } else {
-      response=await handleGoogleCalendarRequest(request,env)
+      response=await handleCalendarIcsRequest(request,env)
         ?? await handleAuthRequest(request,env)
         ?? await handleNotesRequest(request,env,ctx)
         ?? await handleInvitationsRequest(request,env)
