@@ -168,8 +168,9 @@ async function removeMember(request: Request, env: AuthEnv, userId: string, work
   const db=env.DB!;
   if (!(await ownerFor(db,workspaceId,userId))) return json({error:"OWNER_PERMISSION_REQUIRED"},403);
   if(memberId===userId) return json({error:"OWNER_CANNOT_REMOVE_SELF"},409);
-  const result=await db.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,memberId).run();
-  if(!result.meta.changes) return json({error:"MEMBER_NOT_FOUND"},404);
+  const member=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,memberId).first<{user_id:string}>();
+  if(!member)return json({error:"MEMBER_NOT_FOUND"},404);
+  await db.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,memberId).run();
   return json({removed:true});
 }
 
@@ -218,11 +219,9 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
         const workspace=await env.DB!.prepare("SELECT id,workspace_type FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared'").bind(id,user.id).first<{id:string;workspace_type:string}>();
         if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
         const now=new Date().toISOString();
-        await env.DB!.batch([
-          env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(id,user.id),
-          env.DB!.prepare("UPDATE invitations SET status='revoked' WHERE workspace_id=? AND status='pending'").bind(id),
-          env.DB!.prepare("UPDATE workspaces SET workspace_type='personal',updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id)
-        ]);
+        await env.DB!.prepare("UPDATE invitations SET status='revoked' WHERE workspace_id=? AND status='pending'").bind(id).run();
+        await env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(id,user.id).run();
+        await env.DB!.prepare("UPDATE workspaces SET workspace_type='personal',updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id).run();
         return json({updated:true,id,type:"personal",membersRemoved:true,invitationsRevoked:true});
       }
       const name=typeof body?.name==="string"?body.name.trim():"";
