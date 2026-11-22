@@ -170,8 +170,9 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
         .bind(workspaceId, userId, connection.calendar_id).all<{ local_event_id: string }>();
       const resetAt = new Date().toISOString();
       for (const mapped of stale.results) {
-        await db.prepare("UPDATE calendar_events SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
+        const removed = await db.prepare("UPDATE calendar_events SET deleted_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
           .bind(resetAt, resetAt, userId, mapped.local_event_id).run();
+        if (Number((removed as { meta?: { changes?: number } })?.meta?.changes ?? 0)) deleted++;
       }
       await db.prepare("DELETE FROM google_calendar_event_map WHERE workspace_id=? AND connection_user_id=? AND calendar_id=?")
         .bind(workspaceId, userId, connection.calendar_id).run();
