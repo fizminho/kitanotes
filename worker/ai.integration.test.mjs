@@ -95,7 +95,7 @@ test("consented organiser falls back from a missing model to the next free model
     assert.equal(payload.requiresUserConfirmation,true);
     assert.equal(payload.draft.events[0].startLocal,"2026-11-23T10:00");
     assert.equal(models.length,2);
-    assert.ok(models.every(url=>/gemini-(3\.1-flash-lite|3\.5-flash-lite|3\.6-flash|3\.5-flash):generateContent/.test(url)));
+    assert.ok(models.every(url=>/gemini-(3\.1-flash-lite|3-flash-preview|2\.5-flash-lite|2\.5-flash):generateContent/.test(url)));
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM ai_request_usage").get().count,1);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notes").get().count,0);
   }finally{globalThis.fetch=originalFetch;db.close();}
