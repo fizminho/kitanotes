@@ -66,6 +66,7 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   if (existingInvite) return json({ error: "INVITATION_ALREADY_PENDING" }, 409);
 
   const token = randomToken();
+  const url = invitationUrl(request,env,token);
   const id = crypto.randomUUID();
   const now = new Date();
   const createdAt = now.toISOString();
@@ -77,7 +78,6 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
     return json({ error: "INVITATION_ALREADY_PENDING" },409);
   }
 
-  const url = invitationUrl(request,env,token);
   const subject = "You've been invited to collaborate on KitaNotes";
   const bodyText = "You have been invited to a KitaNotes workspace as a " + role + ".\n\nOpen this secure, one-time invitation link: " + url + "\n\nThis invitation expires on " + expiresAt + ".";
   const compose = new URL("https://mail.google.com/mail/");
