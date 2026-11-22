@@ -679,21 +679,46 @@ export default function App() {
   }
 
   async function saveAiNote() {
-    if(!aiDraft||!activeWorkspaceId||aiSavingNote||aiNoteSaved)return;
+    if(!aiDraft||!activeWorkspaceId||aiSavingNote)return;
     setAiSavingNote(true);setAiError("");
     try{
-      const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        workspaceId:activeWorkspaceId,title:aiDraftTitle,content:aiDraftContent,categoryId:selectedCategoryId||null
-      })});
-      const result=await response.json() as {note?:Note};
-      if(!response.ok||!result.note)throw new Error("Unable to save the note draft.");
-      setNotes(current=>[result.note!,...current]);setAiNoteSaved(true);
-    }catch(error){setAiError(error instanceof Error?error.message:"Unable to save the note draft.");}
+      let categoryId=selectedCategoryId||null;
+      if(!aiNoteSaved&&categoryId==="__ai_new_category__"&&aiDraft.categorySuggestion){
+        const categoryResponse=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:activeWorkspaceId,name:aiDraft.categorySuggestion.name,color:"#766bd0",sortOrder:categories.length})});
+        const categoryResult=await categoryResponse.json() as {category?:Category};
+        if(categoryResponse.status===409){
+          const refresh=await fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"});
+          const list=await refresh.json() as {categories:Category[]};
+          const existing=list.categories.find(item=>item.name.toLowerCase()===aiDraft.categorySuggestion!.name.toLowerCase());
+          if(!existing)throw new Error("The suggested category already exists but could not be loaded.");
+          categoryId=existing.id;setCategories(list.categories);
+        }else if(!categoryResponse.ok||!categoryResult.category)throw new Error("Unable to create the suggested category.");
+        else{categoryId=categoryResult.category.id;setCategories(current=>[...current,categoryResult.category!]);}
+        setSelectedCategoryId(categoryId??"");
+      }
+      if(!aiNoteSaved){
+        const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+          workspaceId:activeWorkspaceId,title:aiDraftTitle,content:aiDraftContent,categoryId
+        })});
+        const result=await response.json() as {note?:Note};
+        if(!response.ok||!result.note)throw new Error("Unable to save the note.");
+        setNotes(current=>[result.note!,...current]);setAiNoteSaved(true);
+      }
+      const hasCalendarItems=Boolean(aiDraft.events.length||aiDraft.reminders.length||aiDraft.tasks.some(task=>task.dueLocal));
+      if(hasCalendarItems&&!aiItemsCreated){
+        const itemsSaved=await createAiItems();
+        if(!itemsSaved)return;
+      }
+      setAiModalOpen(false);setAiDraft(null);setAiInput("");setOcrFile(null);setOcrText("");
+      pushToast(hasCalendarItems?"Note and calendar items saved":"Note saved");
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to save this note.");}
     finally{setAiSavingNote(false);}
   }
 
-  async function createAiItems() {
-    if(!aiDraft||!activeWorkspaceId||aiCreatingItems||aiItemsCreated)return;
+  async function createAiItems():Promise<boolean> {
+    if(!aiDraft||!activeWorkspaceId)return false;
+    if(aiItemsCreated)return true;
+    if(aiCreatingItems)return false;
     setAiCreatingItems(true);setAiError("");
     const completed=new Set(aiCreatedItems);
     try{
@@ -704,7 +729,7 @@ export default function App() {
         if(!completed.has(eventKey)){
           const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
             workspaceId:activeWorkspaceId,title:event.title,description:event.description,
-            startsAt:new Date(event.startLocal).toISOString(),endsAt:new Date(event.endLocal).toISOString(),timezone:event.timezone
+            startsAt:zonedDateTimeToIso(event.startLocal,event.timezone),endsAt:zonedDateTimeToIso(event.endLocal,event.timezone),timezone:event.timezone
           })});
           const result=await response.json() as {event?:CalendarEvent};
           if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
@@ -714,7 +739,7 @@ export default function App() {
         }
         if(event.reminderLocal&&!completed.has("event-reminder:"+index)&&eventId){
           const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-            workspaceId:activeWorkspaceId,eventId,title:event.title,dueAt:new Date(event.reminderLocal).toISOString(),timezone:event.timezone
+            workspaceId:activeWorkspaceId,eventId,title:event.title,dueAt:zonedDateTimeToIso(event.reminderLocal,event.timezone),timezone:event.timezone
           })});
           if(!reminderResponse.ok)throw new Error("Event created, but its reminder could not be saved.");
           completed.add("event-reminder:"+index);setAiCreatedItems([...completed]);
@@ -724,13 +749,13 @@ export default function App() {
       for(const reminder of standalone){
         if(completed.has(reminder.key))continue;
         const response=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:activeWorkspaceId,title:reminder.title,dueAt:new Date(reminder.dueLocal).toISOString(),timezone:reminder.timezone
+          workspaceId:activeWorkspaceId,title:reminder.title,dueAt:zonedDateTimeToIso(reminder.dueLocal,reminder.timezone),timezone:reminder.timezone
         })});
         if(!response.ok)throw new Error("Unable to create reminder: "+reminder.title);
         completed.add(reminder.key);setAiCreatedItems([...completed]);
       }
-      setAiItemsCreated(true);
-    }catch(error){setAiError(error instanceof Error?error.message:"Unable to create suggested events or reminders.");}
+      setAiItemsCreated(true);setCalendarRefresh(value=>value+1);return true;
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to create suggested events or reminders.");return false;}
     finally{setAiCreatingItems(false);}
   }
 
