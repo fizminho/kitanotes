@@ -3,6 +3,20 @@ import { getCurrentUser, type AuthEnv } from "./auth.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
+type PushKind = "reminder" | "shared_note" | "test";
+type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
+
+function inQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
+ if(!row.quiet_hours_start||!row.quiet_hours_end)return false;
+ try {
+  const parts=new Intl.DateTimeFormat("en-GB",{timeZone:row.timezone,hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(now);
+  const part=(type:string)=>Number(parts.find(item=>item.type===type)?.value??0);
+  const current=part("hour")*60+part("minute");
+  const start=Number(row.quiet_hours_start.slice(0,2))*60+Number(row.quiet_hours_start.slice(3));
+  const end=Number(row.quiet_hours_end.slice(0,2))*60+Number(row.quiet_hours_end.slice(3));
+  return start<end?current>=start&&current<end:current>=start||current<end;
+ } catch { return true; }
+}
 
 function json(data:unknown,status=200):Response { return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}}); }
 function sameOrigin(request:Request):boolean { return request.headers.get("origin")===new URL(request.url).origin; }
