@@ -199,7 +199,7 @@ test("iCalendar import is idempotent and export returns valid VEVENTs",async()=>
 test("Malaysia holiday feed is state-specific and returns all-day public holidays",async()=>{
  const originalFetch=globalThis.fetch;
  globalThis.fetch=async input=>{
-  assert.equal(String(input),"https://holidaywise.wee.my/my/sel/nat-state.ics");
+  assert.equal(String(input),"https://holidaywise.wee.my/my/sgr/nat-state.ics");
   return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
  };
  try{
