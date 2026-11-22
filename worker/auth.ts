@@ -1,8 +1,9 @@
-type D1Like = {
+export type D1Like = {
   prepare(sql: string): {
     bind(...values: unknown[]): {
       run(): Promise<unknown>;
       first<T = Record<string, unknown>>(): Promise<T | null>;
+      all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
     };
   };
 };
@@ -252,7 +253,7 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
   }
 }
 
-async function currentUser(request: Request, env: AuthEnv): Promise<Record<string, unknown> | null> {
+export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null } | null> {
   if (!env.DB) return null;
   const token = getCookie(request, SESSION_COOKIE);
   if (!token) return null;
@@ -284,7 +285,7 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
   if (url.pathname === "/auth/google/callback" && request.method === "GET") return completeGoogleLogin(request, env);
   if (url.pathname === "/api/auth/me" && request.method === "GET") {
     if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
-    const user = await currentUser(request, env);
+    const user = await getCurrentUser(request, env);
     return user ? json({ authenticated: true, user }) : json({ authenticated: false }, 401);
   }
   if (url.pathname === "/api/auth/logout" && request.method === "POST") return logout(request, env);
