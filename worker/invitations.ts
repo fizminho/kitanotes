@@ -301,11 +301,16 @@ export async function handleInvitationsRequest(request: Request, env: AuthEnv): 
         if(!ws) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
         if(!targetId||targetId===user.id||!(await memberRole(env.DB!,id,targetId))) return json({error:"MEMBER_NOT_FOUND"},404);
         const now=new Date().toISOString();
-        await env.DB!.batch([
+        const ownershipChanges = [
           env.DB!.prepare("UPDATE workspace_members SET role='editor' WHERE workspace_id=? AND user_id=?").bind(id,user.id),
           env.DB!.prepare("UPDATE workspace_members SET role='owner' WHERE workspace_id=? AND user_id=?").bind(id,targetId),
           env.DB!.prepare("UPDATE workspaces SET owner_user_id=?,updated_at=? WHERE id=?").bind(targetId,now,id)
-        ]);
+        ];
+        if (env.DB!.batch) {
+          await env.DB!.batch(ownershipChanges);
+        } else {
+          for (const statement of ownershipChanges) await statement.run();
+        }
         await logActivity(env.DB!,id,user.id,"workspace.ownership_transferred","user",targetId);
         await notifyUser(env.DB!,targetId,id,"ownership_transferred","You now own a space",(await displayName(env.DB!,user.id))+" made you the owner of "+(await workspaceName(env.DB!,id))+".","workspace",id,"ownership:"+id+":"+targetId+":"+Date.now());
         return json({updated:true,ownerUserId:targetId});
