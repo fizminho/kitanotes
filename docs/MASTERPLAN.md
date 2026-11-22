@@ -239,7 +239,34 @@ Delivery channels:
 
 Add per-user preferences, quiet hours, deduplication, retry/backoff and delivery status. Never send note content in push/email by default; use a secure deep link requiring login.
 
-## 8. Gemini AI integration
+## 8. AI workflows
+
+KitaNotes has two distinct AI workflows. Keep their purpose, entry points and confirmation behavior separate.
+
+### AI Organizer: existing notes
+
+- Organises notes that already exist in the selected workspace. It does not create a new note, rewrite note content, or create calendar events.
+- The user selects up to 30 active notes per run. The AI proposes one category per selected note, preferring existing categories and suggesting a new category only when needed.
+- Show a reviewable plan with note title, category, reason, and whether the category is existing or new.
+- Do not create categories or move notes until the user explicitly applies selected changes.
+- Apply category changes using the note version to protect against concurrent edits. Preserve title and content exactly.
+- Re-run in batches for larger workspaces. Never silently reorganise notes on load or in the background.
+
+### AI Note Assistant: new input
+
+- Starts from user-entered text or OCR text extracted from a selected/captured image.
+- Creates a draft note and may identify supported tasks, calendar events and reminders.
+- The user reviews and edits the draft before saving. Calendar events/reminders are created only after explicit confirmation.
+- OCR is an input method for this assistant, not part of AI Organizer.
+
+### Provider and cost guardrails
+
+- The frontend calls KitaNotes API; provider keys remain Worker secrets.
+- Keep model allowlisting, bounded retries, per-user request limits and no paid fallback.
+- The user initiates each AI request. Disclose that submitted text or images are sent to an external AI service.
+- Do not send unrelated existing notes, calendar contents, contacts, or workspace membership data.
+
+## 9. Gemini AI integration
 
 ### Server-side provider adapter
 
