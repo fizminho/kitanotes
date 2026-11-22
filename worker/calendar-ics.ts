@@ -48,7 +48,7 @@ function eventIcs(row:{id:string;title:string;description:string;starts_at_utc:s
  const end=row.all_day?"DTEND;VALUE=DATE:"+icsDate(row.ends_at_utc,row.timezone):"DTEND:"+new Date(row.ends_at_utc).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z");
  return ["BEGIN:VEVENT","UID:"+(row.source_uid||row.id+"@kitanotes.binalah.com"),"DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z"),start,end,"SUMMARY:"+escapeIcs(row.title),"DESCRIPTION:"+escapeIcs(row.description??""),"END:VEVENT"].map(foldLine).join("\r\n");
 }
-const STATE_SLUGS:Record<string,string>={johor:"jhr",kedah:"kdh",kelantan:"ktn",melaka:"mlk","negeri-sembilan":"nsn",pahang:"phg",perak:"prk",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sel",terengganu:"trg","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
+const STATE_SLUGS:Record<string,string>={johor:"jhr",kedah:"kdh",kelantan:"ktn",melaka:"mlk","negeri-sembilan":"nsn",pahang:"phg",perak:"prk",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sgr",terengganu:"trg","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
 function validState(value:string|null):string|null{return value&&Object.hasOwn(STATE_SLUGS,value)?value:null;}
 async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);const body=await readCalendarImportBody(request);if(!body||typeof body.ics!=="string"||body.ics.length>2_000_000)return json({error:"INVALID_ICS_FILE"},400);
@@ -112,6 +112,19 @@ async function cachedHolidayEvents(db:Db|undefined,state:string,from:string,to:s
  }
  return{events,years};
 }
+async function savePublicHolidayCache(db:Db|undefined,state:string,events:HolidayApiEvent[],syncedAt=new Date().toISOString()):Promise<Set<number>> {
+ const grouped=new Map<number,HolidayApiEvent[]>();
+ for(const event of events){
+  const year=Number(eventLocalDate(event.startsAt,event.timezone).slice(0,4));
+  const list=grouped.get(year)??[];list.push(event);grouped.set(year,list);
+ }
+ if(db){
+  for(const [year,items] of grouped){
+   await db.prepare("INSERT INTO calendar_holiday_cache (state,holiday_year,source,events_json,synced_at) VALUES (?,?,?,?,?) ON CONFLICT(state,holiday_year,source) DO UPDATE SET events_json=excluded.events_json,synced_at=excluded.synced_at").bind(state,year,"public",JSON.stringify(items),syncedAt).run();
+  }
+ }
+ return new Set(grouped.keys());
+}
 async function holidays(request:Request,db?:Db):Promise<Response>{
  const url=new URL(request.url);const state=validState(url.searchParams.get("state"));if(!state)return json({error:"INVALID_STATE"},400);
  const from=url.searchParams.get("from")??new Date().getFullYear()+"-01-01";const to=url.searchParams.get("to")??(new Date().getFullYear()+1)+"-12-31";
@@ -128,9 +141,11 @@ async function holidays(request:Request,db?:Db):Promise<Response>{
    if(!response.ok)throw new Error("HolidayWise returned HTTP "+response.status);
    const parsed=parseIcs(await response.text());
    if(!parsed.length)throw new Error("HolidayWise feed returned no readable calendar events");
-   const fresh=parsed.filter(e=>{const day=eventLocalDate(e.start,e.timezone);return day>=from&&day<=to;}).map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true,holidayType:"public" as const}));
+   const allEvents=parsed.map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true,holidayType:"public" as const}));
+   const availableYears=await savePublicHolidayCache(db,state,allEvents);
+   const fresh=allEvents.filter(e=>{const day=eventLocalDate(e.startsAt,e.timezone);return day>=from&&day<=to;});
    if(fresh.length>0||publicCache.events.length===0)publicEvents=fresh;
-   holidayWiseAvailable=true;
+   holidayWiseAvailable=requestedYears.every(year=>availableYears.has(year));
   }catch(error){
    holidayWiseError=error instanceof Error?error.message:"HolidayWise feed unavailable";
    publicEvents=publicCache.events;

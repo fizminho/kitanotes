@@ -199,7 +199,7 @@ test("iCalendar import is idempotent and export returns valid VEVENTs",async()=>
 test("Malaysia holiday feed is state-specific and returns all-day public holidays",async()=>{
  const originalFetch=globalThis.fetch;
  globalThis.fetch=async input=>{
-  assert.equal(String(input),"https://holidaywise.wee.my/my/sel/nat-state.ics");
+  assert.equal(String(input),"https://holidaywise.wee.my/my/sgr/nat-state.ics");
   return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
  };
  try{
@@ -252,5 +252,33 @@ test("annual holiday sync caches HolidayWise public holidays and KPM school brea
   assert.equal(result.sources.holidayWise,true);
   assert.ok(result.events.some(event=>event.holidayType==="public"&&event.title==="Birthday of the Sultan of Selangor"));
   assert.ok(result.events.some(event=>event.holidayType==="school"&&event.title.includes("Cuti Akhir Persekolahan 2026")));
+ }finally{globalThis.fetch=originalFetch;db.close();}
+});
+
+
+test("Selangor public holiday feed uses the SGR feed slug and caches a successful live fetch",async()=>{
+ const {db}=seed();const originalFetch=globalThis.fetch;let calls=0;
+ globalThis.fetch=async input=>{
+  calls++;
+  assert.equal(String(input),"https://holidaywise.wee.my/my/sgr/nat-state.ics");
+  return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
+ };
+ try{
+  const request=new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-01-01&to=2026-12-31");
+  const response=await handleCalendarIcsRequest(request,{DB:db});
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.sources.holidayWise,true);
+  assert.equal(result.sources.publicHolidayCount,1);
+  assert.equal(result.events.some(event=>event.title==="Birthday of the Sultan of Selangor"),true);
+  assert.equal(calls,1);
+  const cached=db.sqlite.prepare("SELECT events_json FROM calendar_holiday_cache WHERE state='selangor' AND holiday_year=2026 AND source='public'").get();
+  assert.ok(cached);
+  globalThis.fetch=async()=>{throw new Error("cached feed should avoid a network request");};
+  const cachedResponse=await handleCalendarIcsRequest(request,{DB:db});
+  assert.equal(cachedResponse.status,200);
+  const cachedResult=await cachedResponse.json();
+  assert.equal(cachedResult.sources.holidayWise,true);
+  assert.equal(cachedResult.sources.publicHolidayCount,1);
  }finally{globalThis.fetch=originalFetch;db.close();}
 });

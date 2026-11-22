@@ -23,4 +23,5 @@ database_id = "cb4cb9e3-eab9-47d6-9e56-49c6b52b2062"
 migrations_dir = "./migrations"
 
 [triggers]
-crons = ["*/5 * * * *", "0 2 1 8-12 *", "0 2 31 12 *"]
+# One account-level cron trigger handles reminders and annual holiday refresh.
+crons = ["*/5 * * * *"]
