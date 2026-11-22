@@ -7,7 +7,7 @@ for migration_path in sorted(Path("migrations").glob("*.sql")):
     db.executescript(migration_path.read_text(encoding="utf-8"))
 
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences"}
+required = {"users", "workspaces", "workspace_members", "invitations", "categories", "notes", "activity_events", "sessions", "calendar_events", "reminders", "notifications", "ai_request_usage", "request_rate_limits", "push_subscriptions", "notification_preferences", "ai_ocr_consent", "ai_ocr_usage"}
 missing = required - tables
 if missing:
     raise SystemExit(f"Missing expected tables: {sorted(missing)}")
@@ -81,4 +81,10 @@ except sqlite3.IntegrityError:
 else:
     raise SystemExit("Incomplete quiet-hours range was accepted")
 
-print("D1 migrations valid; workspace isolation, foreign keys, rate limits, push subscriptions and notification preference defaults/quiet-hours constraints verified.")
+# OCR consent and usage are separate from text-AI consent and are user-scoped.
+db.execute("INSERT INTO ai_ocr_consent (user_id,accepted_at,policy_version) VALUES ('u1','now','ocr-policy')")
+db.execute("INSERT INTO ai_ocr_usage (user_id,usage_date,request_count) VALUES ('u1','2026-11-22',1)")
+if db.execute("SELECT COUNT(*) FROM ai_ocr_consent WHERE user_id='u2'").fetchone()[0] != 0:
+    raise SystemExit("OCR consent leaked across users")
+
+print("D1 migrations valid; workspace isolation, foreign keys, rate limits, push subscriptions, notification preferences and isolated OCR consent/usage verified.")
