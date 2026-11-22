@@ -2,6 +2,7 @@ import { handleAiRequest } from "./ai";
 import { handleEventsRequest } from "./events";
 import { handleRemindersRequest } from "./reminders";
 import { handleNotificationsRequest } from "./notifications";
+import { handlePushRequest } from "./push";
 import { deliverDueReminders } from "./reminder-cron";
 import { handleInvitationsRequest } from "./invitations";
 import { handleNotesRequest } from "./notes";
@@ -16,6 +17,9 @@ interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   SESSION_SECRET?: string;
   APP_BASE_URL?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}});
 
@@ -32,6 +36,7 @@ export default {
         ?? await handleEventsRequest(request,env)
         ?? await handleRemindersRequest(request,env)
         ?? await handleNotificationsRequest(request,env)
+        ?? await handlePushRequest(request,env)
         ?? await handleAiRequest(request,env);
       if(!response && url.pathname.startsWith("/api/")) {
         response=json({error:"NOT_IMPLEMENTED",message:"This API route is not available yet."},501);
@@ -41,6 +46,6 @@ export default {
     return applySecurityHeaders(response,request);
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void> {
-    if(env.DB) ctx.waitUntil(deliverDueReminders(env.DB));
+    if(env.DB) ctx.waitUntil(deliverDueReminders(env.DB,env));
   }
 } satisfies ExportedHandler<Env>;
