@@ -12,7 +12,8 @@ test("AI note prompt writes in the user's voice and preserves English and Malay 
   assert.match(prompt,/write the note as if you are the user/i);
   assert.match(prompt,/never describe the user in third person/i);
   assert.match(prompt,/I am planning to go fishing at xxx/i);
-  assert.match(prompt,/Preserve the source language for English and Bahasa Malaysia \(Malay\) notes/i);\n  assert.match(prompt,/If the source is primarily in any other language, translate the note into clear, natural English/i);
+  assert.match(prompt,/Preserve the source language for English and Bahasa Malaysia \(Malay\) notes/i);
+  assert.match(prompt,/If the source is primarily in any other language, translate the note into clear, natural English/i);
 });
 
 class D1TestDatabase {
