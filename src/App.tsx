@@ -313,12 +313,14 @@ export default function App() {
 
   useEffect(() => {
     if (!user) { setAiStatus(null); return; }
+    if (!aiModalOpen && !workspaceModalOpen && !existingOrganizerOpen) return;
+    if (aiStatus) return;
     let active = true;
     fetch("/api/ai/status",{credentials:"same-origin"})
       .then(async response=>{if(!response.ok)throw new Error("AI status unavailable");const result=await response.json() as AiStatus;if(active)setAiStatus(result);})
       .catch(()=>{if(active)setAiStatus(null);});
     return ()=>{active=false;};
-  },[user]);
+  },[user,aiModalOpen,workspaceModalOpen,existingOrganizerOpen,aiStatus]);
 
   useEffect(() => {
     if (!inviteOpen || !activeWorkspaceId) return;
