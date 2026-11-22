@@ -1,6 +1,6 @@
 # KitaNotes Gemini OCR — Design and Implementation Plan
 
-**Status:** Core backend and frontend capture/edit/handoff workflow implemented; image preview, client-side image preparation and live provider verification remain open  
+**Status:** Core backend and frontend capture/preview/preparation/edit/AI-organiser handoff implemented; live provider verification remains open  
 **Priority:** P5 enhancement; backend foundation started after notification preferences  
 **Budget:** RM0 recurring spend; Gemini free tier only  
 **Related:** [Masterplan](MASTERPLAN.md), [AI privacy policy](AI_PRIVACY.md)
@@ -15,7 +15,7 @@ OCR must be an optional input method for the existing AI organiser, not a separa
 
 1. User opens Scan with AI from the note composer.
 2. User captures an image with the camera or selects an image from the device.
-3. The browser retains the selected file locally and lets the user replace it. A dedicated rendered image preview is not implemented yet.
+3. The browser retains the selected file locally, shows a preview, and lets the user replace it. Before upload, it resizes oversized images to a maximum 2200-pixel edge, re-encodes as JPEG and strips embedded EXIF metadata where browser decoding is supported.
 4. Before the first OCR request, show a clear disclosure that the image will be sent to Google's Gemini API under the free-tier privacy terms. Require explicit OCR consent; existing text-AI consent must not silently imply consent to image processing.
 5. Browser sends the image to an authenticated KitaNotes Worker endpoint over HTTPS.
 6. Worker validates the session, same-origin mutation, image MIME type, encoded and decoded size, user quota and AI configuration.
@@ -41,9 +41,9 @@ Defer multi-page PDFs, batch scanning, automatic document classification, backgr
 ### Frontend
 
 - Add a dedicated image picker/camera capture control with image/jpeg,image/png,image/webp and capture=environment where supported.
-- Show a local preview before upload.
-- Resize large photos in the browser while preserving readability; do not upscale small images.
-- Strip EXIF metadata where practical, especially GPS location.
+- [x] Show a local preview before upload.
+- [x] Resize large photos in the browser while preserving readability; do not upscale small images (maximum 2200-pixel edge, JPEG quality 0.88).
+- [x] Re-encode supported images to JPEG to strip EXIF metadata, including GPS, where browser decoding is supported.
 - Provide clear progress, retry and cancel states.
 - Do not persist image bytes in local storage, IndexedDB, service-worker cache or analytics.
 - Clear the selected image and extracted text when the user discards the draft or signs out.
@@ -122,7 +122,7 @@ Implemented endpoint: POST /api/ai/ocr. Consent endpoints: POST/DELETE /api/ai/o
 
 ## 9. Acceptance criteria
 
-1. User can capture/select a supported image and preview it before upload.
+1. [x] User can capture/select a supported image and preview it before upload.
 2. OCR runs only after explicit image-processing consent.
 3. Extracted text is editable and can be passed to the existing Gemini organiser.
 4. No note, category, event or reminder is created automatically.
@@ -143,4 +143,4 @@ The OCR backend and first frontend workflow slice are committed:
 - OCR returns editable plain text and explicitly flags that user review is required. It does not create notes or events.
 - Automated tests cover separate consent, signature validation, extraction, no automatic note writes and quota exhaustion.
 
-**Remaining:** a rendered image preview, client-side resizing/EXIF stripping, and runtime verification of the 2 MiB limit plus the configured Gemini model's image-input support/free-tier availability. The frontend already has an image file picker, explicit OCR consent, editable extracted text and handoff to the existing organiser. The Worker now enforces a separate 3-requests-per-minute burst limit in addition to the 5-per-day OCR quota. Do not describe OCR as production-verified until a live Gemini request succeeds.
+**Remaining:** runtime verification of the 2 MiB limit plus the configured Gemini model's image-input support/free-tier availability. The frontend now has image preview, client-side resize/re-encoding and EXIF stripping, separate OCR consent, editable extracted text and a direct action to prepare a note/calendar draft using the existing text organiser. The user reviews and separately confirms note saving and calendar/reminder creation. The Worker enforces a separate 3-requests-per-minute burst limit in addition to the 5-per-day OCR quota. Do not describe OCR as production-verified until a live Gemini request succeeds.
