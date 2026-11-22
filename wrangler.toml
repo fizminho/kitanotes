@@ -9,15 +9,14 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [vars]
-APP_ENV = "development"
-
-# D1 is intentionally not bound until a KitaNotes-specific database is created.
-# Never reuse the magic-screen / Investlah database_id.
+APP_ENV = "production"
+GOOGLE_CLIENT_ID = "762562595362-p71q7ujjuuni41s6ouo9g0gim6rfnv6o.apps.googleusercontent.com"
+APP_BASE_URL = "https://kitanotes.binalah.com"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "kitanotes-db"
-database_id = "cb4cb9e3-eab9-47d6-9e56-49c6b52b2062" # Replace after creating the dedicated KitaNotes D1 database.
+database_id = "cb4cb9e3-eab9-47d6-9e56-49c6b52b2062"
 migrations_dir = "./migrations"
 
 [triggers]
