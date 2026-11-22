@@ -124,7 +124,7 @@ function eventTime(value: { dateTime?: string; date?: string } | undefined, isEn
   }
   return null;
 }
-type GoogleEvent = { id: string; status?: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string; timeZone?: string }; end?: { dateTime?: string; date?: string; timeZone?: string }; updated?: string };
+type GoogleEvent = { id: string; status?: string; summary?: string; description?: string; created?: string; creator?: { email?: string; displayName?: string }; start?: { dateTime?: string; date?: string; timeZone?: string }; end?: { dateTime?: string; date?: string; timeZone?: string }; updated?: string };
 async function syncWorkspace(request: Request, env: CalendarEnv, userId: string): Promise<Response> {
   const db = env.DB!;
   if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
@@ -170,18 +170,21 @@ async function syncWorkspace(request: Request, env: CalendarEnv, userId: string)
       }
       const startsAt = eventTime(item.start, false), endsAt = eventTime(item.end, true);
       const title = (item.summary ?? "Untitled Google Calendar event").trim().slice(0, 200);
+      const sourceCreator = item.creator?.displayName ?? item.creator?.email ?? "Google Calendar";
+      const sourceCreatedAt = item.created ?? now;
+      const sourceUpdatedAt = item.updated ?? now;
       if (!startsAt || !endsAt || endsAt <= startsAt || !title) { skipped++; continue; }
       const allDay = Boolean(item.start?.date);
       const timezone = item.start?.timeZone ?? item.end?.timeZone ?? TIMEZONE_FALLBACK;
       if (mapped) {
-        const result = await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
-          .bind(title, (item.description ?? "").slice(0, 5000), startsAt, endsAt, timezone, allDay ? 1 : 0, now, userId, mapped.local_event_id).run();
+        const result = await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,source_updated_by=?,source_updated_at=?,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND deleted_at IS NULL")
+          .bind(title, (item.description ?? "").slice(0, 5000), startsAt, endsAt, timezone, allDay ? 1 : 0, "Google Calendar", sourceUpdatedAt, now, userId, mapped.local_event_id).run();
         if (Number((result as { meta?: { changes?: number } })?.meta?.changes ?? 0)) updated++;
         else skipped++;
       } else {
         const localId = crypto.randomUUID();
-        await db.prepare("INSERT INTO calendar_events (id,workspace_id,title,description,starts_at_utc,ends_at_utc,timezone,all_day,linked_note_id,created_by_user_id,updated_by_user_id,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,NULL,?,?,1,?,?)")
-          .bind(localId, workspaceId, title, (item.description ?? "").slice(0, 5000), startsAt, endsAt, timezone, allDay ? 1 : 0, userId, userId, now, now).run();
+        await db.prepare("INSERT INTO calendar_events (id,workspace_id,title,description,starts_at_utc,ends_at_utc,timezone,all_day,linked_note_id,created_by_user_id,updated_by_user_id,source_created_by,source_created_at,source_updated_by,source_updated_at,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?,?,?,?,1,?,?)")
+          .bind(localId, workspaceId, title, (item.description ?? "").slice(0, 5000), startsAt, endsAt, timezone, allDay ? 1 : 0, userId, userId, sourceCreator, sourceCreatedAt, "Google Calendar", sourceUpdatedAt, now, now).run();
         await db.prepare("INSERT INTO google_calendar_event_map (workspace_id,calendar_id,google_event_id,local_event_id,google_updated_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
           .bind(workspaceId, connection.calendar_id, item.id, localId, item.updated ?? null, now, now).run();
         imported++;
