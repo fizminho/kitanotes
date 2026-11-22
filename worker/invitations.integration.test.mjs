@@ -38,7 +38,7 @@ function seed() {
     ["u3","sub3","other@example.com"]
   ];
   for (const [id,sub,email] of users) db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)").run(id,sub,email,email,now,now);
-  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','Shared','u1','personal',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','Shared','u1','shared',?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u3','viewer',?)").run(now);
   const tokens = { u1:"owner-session",u2:"invitee-session",u3:"other-session" };
@@ -148,4 +148,35 @@ test("invitation creation is limited to ten per owner per hour", async () => {
   } finally {
     db.close();
   }
+});
+
+
+test("workspace owner can list members, change permissions, and remove a member", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const listed=await handleInvitationsRequest(request("/api/workspaces/w1/members",tokens.u1),env);
+    assert.equal(listed.status,200);
+    assert.equal((await listed.json()).members.length,2);
+    const changed=await handleInvitationsRequest(request("/api/workspaces/w1/members/u3",tokens.u1,"PATCH",{role:"editor"}),env);
+    assert.equal(changed.status,200);
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u3'").get().role,"editor");
+    const removed=await handleInvitationsRequest(request("/api/workspaces/w1/members/u3",tokens.u1,"DELETE",{}),env);
+    assert.equal(removed.status,200);
+    assert.equal(db.sqlite.prepare("SELECT user_id FROM workspace_members WHERE workspace_id='w1' AND user_id='u3'").get(),undefined);
+  } finally { db.close(); }
+});
+
+test("making a shared workspace private removes members and revokes pending invitations without deleting notes", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const now=new Date().toISOString();
+    db.sqlite.prepare("INSERT INTO invitations (id,workspace_id,invited_email_normalized,invited_by_user_id,role,token_hash,status,expires_at,created_at) VALUES ('pending1','w1','new@example.com','u1','viewer','hash-pending','pending','2099-01-01T00:00:00.000Z',?)").run(now);
+    db.sqlite.prepare("INSERT INTO notes (id,workspace_id,title,content,created_by_user_id,created_at,updated_at) VALUES ('n1','w1','Keep me','Body','u1',?,?)").run(now,now);
+    const response=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"make_private"}),env);
+    assert.equal(response.status,200);
+    assert.equal(db.sqlite.prepare("SELECT workspace_type FROM workspaces WHERE id='w1'").get().workspace_type,"personal");
+    assert.deepEqual(db.sqlite.prepare("SELECT user_id FROM workspace_members WHERE workspace_id='w1'").all().map(row=>row.user_id),["u1"]);
+    assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id='pending1'").get().status,"revoked");
+    assert.equal(db.sqlite.prepare("SELECT title FROM notes WHERE id='n1'").get().title,"Keep me");
+  } finally { db.close(); }
 });
