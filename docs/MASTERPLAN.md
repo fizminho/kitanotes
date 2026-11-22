@@ -435,8 +435,8 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Add event editing UI and month/week calendar views. Event updates use optimistic version checks; event-local date/time values are converted using the event IANA timezone.
 - [x] Implement PWA manifest, install flow, service worker and offline app-shell/static-asset cache; private API data is never cached.
 - [x] Implement per-device Web Push subscription APIs, VAPID key generation helper and best-effort generic push delivery for reminders/shared notes. VAPID provisioning and real-device delivery verification remain open.
-- [ ] Implement per-user notification preferences (reminder/shared-note push toggles) and delivery settings.
-- [ ] Implement quiet hours with explicit timezone handling; in-app notifications must remain available even when push is suppressed.
+- [x] Implement per-user notification preferences with global push, reminder and shared-note switches; D1-backed API and settings UI are in place.
+- [x] Implement quiet hours with IANA timezone handling, including overnight windows. Quiet hours suppress push attempts (not deferred); in-app notifications remain durable and available.
 
 ### P3 — Gemini assistant
 
@@ -542,5 +542,6 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
 - **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
 - **2026-11-22:** Added PWA manifest, install prompt, root service worker and network-first offline shell cache. Added per-user Web Push subscriptions, VAPID key generation instructions, generic privacy-preserving reminder/shared-note payloads and expired-subscription cleanup. VAPID configuration and real browser delivery remain pending.
-- **2026-11-22:** Added a staged Gemini OCR roadmap. OCR will reuse the existing Gemini free-tier adapter and structured-note review flow; it is not implemented yet. Notification preferences and quiet-hours behavior are also tracked as the next P2 implementation.
+- **2026-11-22:** Added a staged Gemini OCR roadmap. OCR will reuse the existing Gemini free-tier adapter and structured-note review flow; it is not implemented yet.
+- **2026-11-22:** Implemented D1-backed per-user notification preferences, reminder/shared-note push switches, IANA timezone quiet hours (including overnight windows), settings UI, API validation and tests. Quiet hours suppress push attempts rather than queueing them; in-app notifications remain unaffected. Build, tests, SQLite migration validation and Wrangler dry-run passed in run [45010862541](https://github.com/fizminho/kitanotes/actions/runs/45010862541).
 - **2026-11-22:** Added calendar month/week navigation, six-week month loading, event edit UI with version-conflict handling, and timezone-aware date/time editing. GitHub Actions passed TypeScript build, all tests, SQLite migration validation and Wrangler dry-run (runs [45005225542](https://github.com/fizminho/kitanotes/actions/runs/45005225542) and [45005229375](https://github.com/fizminho/kitanotes/actions/runs/45005229375)).
