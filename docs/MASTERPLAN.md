@@ -304,7 +304,6 @@ Proposed relational entities (final schema follows implementation review):
 - `event_reminders`
 - `notifications`
 - `push_subscriptions`
-- Invitation delivery status is tracked on `invitations`; no outbound email delivery provider is used in the free-only MVP.
 - `activity_events`
 - `ai_generation_runs`
 - `oauth_connections` (only for optional Google Calendar integration)
@@ -344,7 +343,7 @@ Use UUID text primary keys, SQLite foreign keys, useful indexes, UTC timestamps 
 - Configure custom domain, TLS certificate, cache policy and security headers.
 - Keep API URLs and public OAuth client ID environment-specific; neither is a secret.
 
-### API deployment
+### Worker bindings and release
 
 - Serve API routes from the same Worker deployment as the frontend.
 - Bind Gemini key as a Cloudflare Worker Secret (server-side only).
@@ -399,11 +398,11 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 - [x] Inspect and document the exact Investlah Cloudflare Worker deployment workflow and reusable GitHub Actions. See ADR-0001.
 - [x] Confirm Worker Static Assets for the frontend and API. See ADR-0001.
-- [x] Create the initial D1 workspace/notes migration and add SQLite validation to CI. D1 resource provisioning and quota monitoring remain open.
+- [ ] Create and verify the initial D1 workspace/notes migration with SQLite validation in CI. D1 resource provisioning and quota monitoring remain open.
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [x] Create architecture and data-model decision records (ADR-0001 through ADR-0004). Security-specific design review remains open.
 - [x] Bootstrap React/Vite frontend and minimal Worker API shell with pinned direct dependencies. Shared contracts remain outstanding.
-- [x] Add TypeScript build, Node regression tests, SQLite migration validation and Wrangler dry-run CI. First full run including migration validation is pending.
+- [ ] Verify TypeScript build, Node regression tests, SQLite migration validation and Wrangler dry-run in CI.
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
@@ -517,4 +516,5 @@ MVP is not complete until all of these are demonstrated:
 ## Change log
 
 - **2026-11-22:** Initial product and technical masterplan created. No application code or deployment has been implemented yet.
-- **2026-11-22:** Revised architecture to strict free-only Cloudflare Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.\n- **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.\n- **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 initial migration, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
+- **2026-11-22:** Revised architecture to strict free-only Cloudflare Workers/D1 + Gemini free tier. Removed S3/CloudFront, PostgreSQL and automated outbound email from the MVP. No paid fallback is permitted.
+- **2026-11-22:** Inspected Investlah's Worker Static Assets deployment, Wrangler D1 binding pattern, GitHub Actions build/deploy workflow and Gemini model allowlist/failover implementation. Selected Worker Static Assets; created ADR-0001 through ADR-0004.\n- **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 initial migration, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
