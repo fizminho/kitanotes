@@ -3,6 +3,17 @@ import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, S
 
 type View = "notes" | "calendar" | "shared";
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
+function dateKey(value:Date):string { return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0"); }
+function dateTimeInputFor(value:string,timezone:string):string {
+ const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(value));
+ const part=(type:string)=>parts.find(item=>item.type===type)?.value??"00";
+ return part("year")+"-"+part("month")+"-"+part("day")+"T"+part("hour")+":"+part("minute");
+}
+function zonedDateTimeToIso(value:string,timezone:string):string {
+ const m=value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/); if(!m)throw new Error("Enter a valid event date and time.");
+ const target=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5]); let guess=target;
+ for(let i=0;i<3;i++){const parts=new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(guess));const p=(t:string)=>Number(parts.find(x=>x.type===t)?.value??0);const represented=Date.UTC(p("year"),p("month")-1,p("day"),p("hour"),p("minute"),p("second"));const next=guess+target-represented;if(next===guess)break;guess=next;}return new Date(guess).toISOString();
+}
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
@@ -57,6 +68,9 @@ export default function App() {
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [calendarMode,setCalendarMode]=useState<"month"|"week">("month");
+  const [calendarCursor,setCalendarCursor]=useState(()=>new Date());
+  const [editingEvent,setEditingEvent]=useState<CalendarEvent|null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState("");
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
@@ -188,8 +202,12 @@ export default function App() {
     let active = true;
     setEventsLoading(true);
     setEventsError("");
-    const from = new Date(Date.now()-30*86400000).toISOString();
-    const to = new Date(Date.now()+90*86400000).toISOString();
+    const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
+    const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
+    if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
+    else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setDate(rangeEnd.getDate()+((7-rangeEnd.getDay())%7));}
+    const from = new Date(rangeStart.getTime()-86400000).toISOString();
+    const to = new Date(rangeEnd.getTime()+86400000).toISOString();
     fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"})
       .then(async response => {
         if(!response.ok) throw new Error("Unable to load calendar events.");
@@ -199,7 +217,7 @@ export default function App() {
       .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
       .finally(()=>{if(active)setEventsLoading(false);});
     return ()=>{active=false;};
-  },[view,user]);
+  },[view,user,calendarMode,calendarCursor]);
 
   useEffect(() => {
     if (!notificationsOpen || !user) return;
@@ -412,6 +430,7 @@ export default function App() {
 
 
   function startNewEvent() {
+    setEditingEvent(null);
     setEventTitle("");
     setEventDescription("");
     setEventStart(localDateTime(new Date(Date.now()+3600000)));
@@ -422,27 +441,36 @@ export default function App() {
     setEventComposerOpen(true);
   }
 
+  function startEditEvent(item:CalendarEvent) {
+    setEditingEvent(item);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
+    setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
+    setEventReminderAt("");setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
+  }
+
   async function saveEvent() {
     if(!user?.personalWorkspaceId||!eventTitle.trim()||eventSaving)return;
     setEventSaving(true);setEventsError("");
     try {
-      const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        workspaceId:user.personalWorkspaceId,title:eventTitle,description:eventDescription,
-        startsAt:new Date(eventStart).toISOString(),endsAt:new Date(eventEnd).toISOString(),timezone:eventTimezone,linkedNoteId:eventLinkedNoteId||null
-      })});
+      const payload={title:eventTitle,description:eventDescription,startsAt:zonedDateTimeToIso(eventStart,eventTimezone),endsAt:zonedDateTimeToIso(eventEnd,eventTimezone),timezone:eventTimezone,linkedNoteId:eventLinkedNoteId||null};
+      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:user.personalWorkspaceId})});
       const result=await response.json() as {event?:CalendarEvent};
-      if(!response.ok||!result.event)throw new Error("Unable to save this event.");
-      setEvents(current=>[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
-      if(eventReminderAt){
+      if(!response.ok||!result.event)throw new Error(response.status===409?"This event changed elsewhere. Close and reopen it before saving.":"Unable to save this event.");
+      setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
+      if(eventReminderAt&&!editingEvent){
         const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
           workspaceId:user.personalWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:new Date(eventReminderAt).toISOString(),timezone:eventTimezone
         })});
         if(!reminderResponse.ok)setEventsError("Event saved, but its reminder could not be created.");
       }
-      setEventComposerOpen(false);
+      setEventComposerOpen(false);setEditingEvent(null);
     }catch(error){setEventsError(error instanceof Error?error.message:"Unable to save this event.");}
     finally{setEventSaving(false);}
   }
+
+  const calendarDays=useMemo(()=>{const start=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);if(calendarMode==="week")start.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));else start.setDate(start.getDate()-((start.getDay()+6)%7));return Array.from({length:calendarMode==="week"?7:42},(_,i)=>{const day=new Date(start);day.setDate(start.getDate()+i);return day;});},[calendarCursor,calendarMode]);
+  const calendarHeading=calendarMode==="week"?calendarDays[0].toLocaleDateString(undefined,{month:"short",day:"numeric"})+" – "+calendarDays[6].toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):calendarCursor.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  function moveCalendar(amount:number){setCalendarCursor(current=>{const next=new Date(current);if(calendarMode==="week")next.setDate(next.getDate()+amount*7);else next.setMonth(next.getMonth()+amount);return next;});}
+  function eventsForDay(day:Date){return events.filter(item=>dateKey(new Date(item.startsAt))===dateKey(day));}
 
   async function deleteEvent(event:CalendarEvent) {
     try {
@@ -646,7 +674,10 @@ export default function App() {
 
           {view === "calendar" && <section className="calendar-section">
             {eventsError&&<div className="inline-error">{eventsError}</div>}
-            {eventsLoading?<div className="loading-state">Loading your calendar…</div>:events.length===0?<div className="placeholder-panel"><CalendarDays size={26}/><h2>Your calendar is clear.</h2><p>Add an event and optionally attach a reminder. Event times are stored in UTC with your selected timezone.</p>{user&&<button className="primary-button" onClick={startNewEvent}><Plus size={16}/> Add an event</button>}</div>:<div className="event-list">{events.map(event=><article className="event-card" key={event.id}><div className="event-date-block"><strong>{new Date(event.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:event.timezone})}</strong><span>{new Date(event.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:event.timezone})}</span></div><div className="event-copy"><h3>{event.title}</h3><p>{new Date(event.startsAt).toLocaleString(undefined,{timeZone:event.timezone})} · {event.timezone}</p>{event.description&&<small>{event.description}</small>}</div><button className="mini-icon" onClick={()=>deleteEvent(event)} aria-label="Delete event"><Archive size={15}/></button></article>)}</div>}
+            <div className="calendar-toolbar"><div className="calendar-navigation"><button className="secondary-button" onClick={()=>setCalendarCursor(new Date())}>Today</button><button className="calendar-arrow" onClick={()=>moveCalendar(-1)} aria-label="Previous period">‹</button><button className="calendar-arrow" onClick={()=>moveCalendar(1)} aria-label="Next period">›</button><h2>{calendarHeading}</h2></div><div className="calendar-mode"><button className={calendarMode==="month"?"active":""} onClick={()=>setCalendarMode("month")}>Month</button><button className={calendarMode==="week"?"active":""} onClick={()=>setCalendarMode("week")}>Week</button></div></div>
+            {eventsLoading?<div className="loading-state">Loading your calendar…</div>:<div className="calendar-grid">{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=><div className="calendar-weekday" key={day}>{day}</div>)}{calendarDays.map(day=><div className={"calendar-day"+(day.getMonth()!==calendarCursor.getMonth()&&calendarMode==="month"?" outside":"")+(dateKey(day)===dateKey(new Date())?" today":"")} key={dateKey(day)}><div className="calendar-day-heading"><span>{day.getDate()}</span>{calendarMode==="week"&&<small>{day.toLocaleDateString(undefined,{month:"short"})}</small>}</div><div className="calendar-day-events">{eventsForDay(day).map(item=><button className="calendar-event-chip" key={item.id} onClick={()=>startEditEvent(item)} title={item.title}><span>{new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</span>{item.title}</button>)}</div>{calendarMode==="week"&&eventsForDay(day).length===0&&<span className="calendar-empty-day">No events</span>}</div>)}</div>}
+            {!eventsLoading&&events.length===0&&<div className="calendar-empty-note">Nothing scheduled in this period. Add an event to start filling the calendar.</div>}
+            <div className="calendar-agenda"><h3>Upcoming in this view</h3>{events.filter(item=>new Date(item.endsAt)>=new Date(calendarDays[0].getTime()-86400000)&&new Date(item.startsAt)<new Date(calendarDays[calendarDays.length-1].getTime()+2*86400000)).map(item=><article className="event-card" key={item.id}><div className="event-date-block"><strong>{new Date(item.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:item.timezone})}</strong><span>{new Date(item.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:item.timezone})}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{new Date(item.startsAt).toLocaleString(undefined,{timeZone:item.timezone})} · {item.timezone}</p>{item.description&&<small>{item.description}</small>}</div><button className="mini-icon" onClick={()=>startEditEvent(item)} aria-label="Edit event"><Pencil size={15}/></button><button className="mini-icon" onClick={()=>deleteEvent(item)} aria-label="Delete event"><Archive size={15}/></button></article>)}</div>
           </section>}
           {view === "shared" && <div className="placeholder-panel"><Users size={26} /><h2>Shared notes live in your notes list.</h2><p>Notes shared with you appear alongside your personal notes. Invitations are managed from your workspace.</p><button className="secondary-button" onClick={()=>setView("notes")}>View notes</button></div>}
 
@@ -727,14 +758,14 @@ export default function App() {
 
       {eventComposerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEventComposerOpen(false);}}>
         <section className="composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
-          <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">New event</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">{editingEvent?"Edit event":"New event"}</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
           <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>setEventStart(e.target.value)}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>setEventTimezone(e.target.value)} placeholder="Asia/Kuala_Lumpur"/></label>
           <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===user?.personalWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>\n          <label className="field-label">Reminder (optional)<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>setEventReminderAt(e.target.value)}/></label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
-          <footer><span>Reminder delivery appears in the in-app inbox, checked every five minutes.</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":"Save event"}</button></footer>
+          <footer><span>{editingEvent?"Changes use version checking. Existing reminders are retained.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
       </div>}
 
