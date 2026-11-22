@@ -140,12 +140,22 @@ async function revokeInvitation(request: Request, env: AuthEnv, userId: string, 
   return json({ revoked:true });
 }
 
+async function listWorkspaces(env: AuthEnv, userId: string): Promise<Response> {
+  const result = await env.DB!.prepare(
+    "SELECT w.id,w.name,w.workspace_type,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.workspace_type='personal' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
+  ).bind(userId).all<{id:string;name:string;workspace_type:"personal"|"shared";role:"owner"|"editor"|"viewer"}>();
+  return json({ workspaces: result.results.map(row => ({
+    id:row.id,name:row.name,type:row.workspace_type,role:row.role
+  })) });
+}
+
 export async function handleInvitationsRequest(request: Request, env: AuthEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/invitations")) return null;
   if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" },503);
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
+  if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(env,user.id);
   if (url.pathname === "/api/invitations" && request.method === "POST") return createInvitation(request,env,user.id);
   if (url.pathname === "/api/invitations" && request.method === "GET") return listInvitations(request,env,user.id);
   if (url.pathname === "/api/invitations/accept" && request.method === "POST") return acceptInvitation(request,env,user.id);
