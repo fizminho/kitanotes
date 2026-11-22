@@ -76,4 +76,4 @@ The AI endpoint does not persist prompts or drafts. It stores only consent metad
 - Category name is limited to 50 characters; colors must be six-digit hex.
 - Category assignment must point to a category in the same workspace.
 - Note updates use optimistic concurrency through `version`.
-- Invitations, shared workspace creation, collaboration notifications and full API integration tests are not implemented yet.
+- Workspace invitations and verified-email acceptance are implemented. New shared-note notifications are created by a D1 trigger. Integration tests use a SQLite-backed D1 adapter; live Cloudflare D1 and Google OAuth verification remain pending.
