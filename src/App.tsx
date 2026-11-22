@@ -333,7 +333,7 @@ export default function App() {
 
   async function organizeWithAi() {
     if(!aiInput.trim()||aiWorking||!aiStatus?.consented)return;
-    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCreatedItems([]);
+    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCategoriesCreated(false);setAiCreatedItems([]);
     try{
       const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
         text:aiInput,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:user?.personalWorkspaceId
@@ -347,7 +347,7 @@ export default function App() {
           :"AI is temporarily unavailable. Your original text has not been changed.";
         throw new Error(message);
       }
-      setAiDraft(result.draft);setAiDraftTitle(result.draft.note.title);setAiDraftContent(result.draft.note.content);
+      setAiDraft(result.draft);setAiDraftTitle(result.draft.note.title);setAiDraftContent(result.draft.note.content);setSelectedCategoryId(categories.find(category=>result.draft!.suggestedCategories.some(item=>item.name.toLowerCase()===category.name.toLowerCase()))?.id??"");
       if(result.usage&&aiStatus)setAiStatus({...aiStatus,dailyUsed:result.usage.dailyUsed,dailyRemaining:result.usage.dailyRemaining});
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to organise this text.");}
     finally{setAiWorking(false);}
