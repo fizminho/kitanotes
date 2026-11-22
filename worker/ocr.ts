@@ -42,8 +42,6 @@ async function consent(request:Request,env:Env,userId:string):Promise<Response>{
 async function recognize(request:Request,env:Env,userId:string):Promise<Response>{
  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
  if(!env.GEMINI_API_KEY)return json({error:"AI_NOT_CONFIGURED"},503);
- const accepted=await env.DB!.prepare("SELECT policy_version FROM ai_ocr_consent WHERE user_id=?").bind(userId).first<{policy_version:string}>();
- if(accepted?.policy_version!==POLICY)return json({error:"OCR_CONSENT_REQUIRED",policyVersion:POLICY},428);
  const rate=await consumeRateLimit(env.DB!,"ai:ocr:user:"+userId,3,60*1000);
  if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
  const mime=(request.headers.get("content-type")??"").toLowerCase().split(";")[0].trim();
