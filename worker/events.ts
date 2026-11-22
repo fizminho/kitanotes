@@ -8,7 +8,7 @@ type Role = "owner" | "editor" | "viewer";
 type EventRow = {
   id:string; workspace_id:string; title:string; description:string; starts_at_utc:string; ends_at_utc:string;
   timezone:string; all_day:number; linked_note_id:string|null; created_by_user_id:string; created_by_name?:string|null; created_by_email?:string|null; updated_by_user_id?:string|null; updated_by_name?:string|null; updated_by_email?:string|null; version:number;
-  created_at:string; updated_at:string; deleted_at:string|null;
+  created_at:string; updated_at:string; deleted_at:string|null; source_created_by?:string|null; source_created_at?:string|null; source_updated_by?:string|null; source_updated_at?:string|null;
 };
 
 function json(data:unknown,status=200):Response {
