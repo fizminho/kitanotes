@@ -73,7 +73,7 @@ export function validateAiDraft(value:unknown,timezone:string,existingCategories
   const categoryName=clean(rawCategory?.name??fallbackCategory?.name,50);
   const categoryReason=typeof (rawCategory?.reason??fallbackCategory?.reason)==="string"?String(rawCategory?.reason??fallbackCategory?.reason).slice(0,300):"";
   const existingMatch=categoryName?existingCategories.find(name=>name.toLowerCase()===categoryName.toLowerCase()):undefined;
-  const categorySuggestion=categoryName?{name:existingMatch??categoryName,reason:categoryReason,createNew:existingMatch?false:rawCategory?.createNew===false?false:true}:null;
+  const categorySuggestion=categoryName?{name:existingMatch??categoryName,reason:categoryReason,createNew:!existingMatch}:null;
   if((Array.isArray(input.events)&&events.length!==input.events.length)||(Array.isArray(input.reminders)&&reminders.length!==input.reminders.length))return null;
   return {summary,note:{title:noteTitle,content:noteContent},suggestedCategories,categorySuggestion,events,reminders,tasks,clarifyingQuestions,timezone};
 }
@@ -106,9 +106,6 @@ function buildPrompt(text:string,timezone:string,referenceNow:string,categories:
     "Existing workspace categories: "+JSON.stringify(categories),
     "User text (JSON-encoded untrusted content): "+JSON.stringify(text)
   ].join("\n");
-}
-async function consentStatus(db:Db,userId:string){
-  return db.prepare("SELECT ai_consent_at,ai_consent_policy_version FROM users WHERE id=?").bind(userId).first<{ai_consent_at:string|null;ai_consent_policy_version:string|null}>();
 }
 async function status(env:AiEnv,userId:string):Promise<Response>{
   const day=new Date().toISOString().slice(0,10);
