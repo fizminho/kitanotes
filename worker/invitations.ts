@@ -71,9 +71,10 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   const body = await readJsonBody(request);
   if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
   const workspaceId = typeof body.workspaceId === "string" && body.workspaceId.length <= 64 ? body.workspaceId : "";
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const suppliedEmail = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const email = suppliedEmail || "*";
   const role = body.role === "viewer" || body.role === "editor" ? body.role : null;
-  if (!workspaceId || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !role) {
+  if (!workspaceId || (email !== "*" && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) || !role) {
     return json({ error: "INVALID_INVITATION" }, 400);
   }
   const db = env.DB!;
@@ -82,9 +83,11 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   if (ownedWorkspace.workspace_type!=="shared" || ownedWorkspace.visibility!=="shared") return json({error:"SHARED_WORKSPACE_REQUIRED"},409);
   const rate = await consumeRateLimit(db, "invitation:create:user:" + userId, 10, 60 * 60 * 1000);
   if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
-  const existingMember = await db.prepare("SELECT wm.user_id FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? AND u.email_normalized=?")
-    .bind(workspaceId,email).first<{user_id:string}>();
-  if (existingMember) return json({ error: "ALREADY_A_MEMBER" }, 409);
+  if(email!=="*"){
+    const existingMember = await db.prepare("SELECT wm.user_id FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? AND u.email_normalized=?")
+      .bind(workspaceId,email).first<{user_id:string}>();
+    if (existingMember) return json({ error: "ALREADY_A_MEMBER" }, 409);
+  }
   const checkedAt = new Date().toISOString();
   await db.prepare("UPDATE invitations SET status='expired' WHERE workspace_id=? AND invited_email_normalized=? AND status='pending' AND expires_at<=?")
     .bind(workspaceId,email,checkedAt).run();
@@ -108,12 +111,12 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   await logActivity(db,workspaceId,userId,"invitation.created","invitation",id,{email,role});
   const subject = "You've been invited to collaborate on KitaNotes";
   const bodyText = "You have been invited to a KitaNotes workspace as a " + role + ".\n\nOpen this secure, one-time invitation link: " + url + "\n\nThis invitation expires on " + expiresAt + ".";
-  const compose = new URL("https://mail.google.com/mail/");
-  compose.search = new URLSearchParams({ view:"cm", fs:"1", to:email, su:subject, body:bodyText }).toString();
+  const compose = email==="*" ? null : new URL("https://mail.google.com/mail/");
+  if(compose)compose.search = new URLSearchParams({ view:"cm", fs:"1", to:email, su:subject, body:bodyText }).toString();
   return json({
-    invitation: { id, workspaceId, email, role, status:"pending", createdAt, expiresAt },
+    invitation: { id, workspaceId, email:email==="*"?"Anyone with link":email, role, status:"pending", createdAt, expiresAt },
     invitationUrl: url,
-    gmailComposeUrl: compose.toString(),
+    gmailComposeUrl: compose?.toString() ?? null,
     delivery: "manual_gmail_handoff"
   },201);
 }
@@ -140,6 +143,19 @@ async function acceptInvitation(request: Request, env: AuthEnv, userId: string):
   if (!user || user.email_verified !== 1) return json({ error: "VERIFIED_EMAIL_REQUIRED" },403);
   const hash = await tokenHash(token);
   const now = new Date().toISOString();
+  const openLink = await db.prepare("SELECT workspace_id,role,expires_at,status FROM invitations WHERE token_hash=? AND invited_email_normalized='*'")
+    .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";expires_at:string;status:string}>();
+  if(openLink){
+    if(openLink.status!=="pending")return json({error:"INVITATION_INVALID_OR_ALREADY_USED"},400);
+    if(openLink.expires_at<=now){await db.prepare("UPDATE invitations SET status='expired' WHERE token_hash=? AND status='pending'").bind(hash).run();return json({error:"INVITATION_EXPIRED"},410);}
+    const ws=await db.prepare("SELECT visibility,owner_user_id FROM workspaces WHERE id=?").bind(openLink.workspace_id).first<{visibility:string;owner_user_id:string}>();
+    if(!ws||ws.visibility!=="shared")return json({error:"WORKSPACE_NOT_SHARED"},410);
+    const existingMember=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(openLink.workspace_id,userId).first<{role:string}>();
+    if(!existingMember)await db.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)").bind(openLink.workspace_id,userId,openLink.role,now).run();
+    await logActivity(db,openLink.workspace_id,userId,"member.joined","user",userId,{role:openLink.role,via:"invite_link"});
+    if(ws.owner_user_id!==userId)await notifyUser(db,ws.owner_user_id,openLink.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".","workspace",openLink.workspace_id,"invite-link-join:"+openLink.workspace_id+":"+userId);
+    return json({accepted:true,workspaceId:openLink.workspace_id,role:existingMember?.role??openLink.role,alreadyMember:Boolean(existingMember)});
+  }
   const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? RETURNING workspace_id,role")
     .bind(userId,now,hash,user.email_normalized,now).first<{workspace_id:string;role:"editor"|"viewer"}>();
   if (!accepted) {
