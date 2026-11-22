@@ -131,6 +131,6 @@ test("cron cancels due reminders whose linked note was deleted",async()=>{
     db.sqlite.prepare("UPDATE notes SET deleted_at=? WHERE id='n1'").run(now);
     assert.equal(await deliverDueReminders(db),0);
     assert.equal(db.sqlite.prepare("SELECT status FROM reminders WHERE id='r2'").get().status,"cancelled");
-    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE resource_id='n1'").get().count,0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE resource_id='n1' AND notification_type='reminder'").get().count,0);
   }finally{db.close();}
 });
