@@ -26,3 +26,7 @@ The initial D1 migration is `migrations/0001_initial.sql`. It creates the identi
 ## Migration operation
 
 The migration is committed but has not been applied. Apply it only after creating a separate KitaNotes D1 database and configuring the database ID in Wrangler. Never point KitaNotes migrations at the Investlah database.
+
+## Workspace type and visibility
+
+All workspaces use `workspace_type = 'shared'`. The `visibility` column controls access: `private` means only the owner has membership; `shared` means the owner may invite members. Converting to private removes other memberships and revokes pending invitations without changing workspace type or deleting notes/categories. Making it shared again allows new invitations but does not restore removed members.
