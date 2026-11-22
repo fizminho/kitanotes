@@ -79,6 +79,7 @@ export default function App() {
   const [aiCreatingItems, setAiCreatingItems] = useState(false);
   const [aiNoteSaved, setAiNoteSaved] = useState(false);
   const [aiItemsCreated, setAiItemsCreated] = useState(false);
+  const [aiCreatedItems, setAiCreatedItems] = useState<string[]>([]);
 
   useEffect(() => {
     if (inviteToken) window.history.replaceState({}, "", "/");
@@ -275,7 +276,7 @@ export default function App() {
 
   async function organizeWithAi() {
     if(!aiInput.trim()||aiWorking||!aiStatus?.consented)return;
-    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);
+    setAiWorking(true);setAiError("");setAiDraft(null);setAiNoteSaved(false);setAiItemsCreated(false);setAiCreatedItems([]);
     try{
       const response=await fetch("/api/ai/organize",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
         text:aiInput,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"Asia/Kuala_Lumpur",workspaceId:user?.personalWorkspaceId
@@ -296,7 +297,7 @@ export default function App() {
   }
 
   async function saveAiNote() {
-    if(!aiDraft||!user?.personalWorkspaceId||aiSavingNote)return;
+    if(!aiDraft||!user?.personalWorkspaceId||aiSavingNote||aiNoteSaved)return;
     setAiSavingNote(true);setAiError("");
     try{
       const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
@@ -312,35 +313,45 @@ export default function App() {
   async function createAiItems() {
     if(!aiDraft||!user?.personalWorkspaceId||aiCreatingItems||aiItemsCreated)return;
     setAiCreatingItems(true);setAiError("");
+    const completed=new Set(aiCreatedItems);
     try{
-      const createdEvents:CalendarEvent[]=[];
-      for(const event of aiDraft.events){
-        const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:user.personalWorkspaceId,title:event.title,description:event.description,
-          startsAt:new Date(event.startLocal).toISOString(),endsAt:new Date(event.endLocal).toISOString(),timezone:event.timezone
-        })});
-        const result=await response.json() as {event?:CalendarEvent};
-        if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
-        createdEvents.push(result.event);
-        if(event.reminderLocal){
+      for(let index=0;index<aiDraft.events.length;index++){
+        const event=aiDraft.events[index];
+        const eventKey="event:"+index;
+        let eventId:string|undefined;
+        if(!completed.has(eventKey)){
+          const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+            workspaceId:user.personalWorkspaceId,title:event.title,description:event.description,
+            startsAt:new Date(event.startLocal).toISOString(),endsAt:new Date(event.endLocal).toISOString(),timezone:event.timezone
+          })});
+          const result=await response.json() as {event?:CalendarEvent};
+          if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
+          eventId=result.event.id;completed.add(eventKey);setEvents(current=>[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));setAiCreatedItems([...completed]);
+        }else{
+          eventId=events.find(item=>item.title===event.title&&item.startsAt===new Date(event.startLocal).toISOString())?.id;
+        }
+        if(event.reminderLocal&&!completed.has("event-reminder:"+index)&&eventId){
           const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-            workspaceId:user.personalWorkspaceId,eventId:result.event.id,title:event.title,dueAt:new Date(event.reminderLocal).toISOString(),timezone:event.timezone
+            workspaceId:user.personalWorkspaceId,eventId,title:event.title,dueAt:new Date(event.reminderLocal).toISOString(),timezone:event.timezone
           })});
           if(!reminderResponse.ok)throw new Error("Event created, but its reminder could not be saved.");
+          completed.add("event-reminder:"+index);setAiCreatedItems([...completed]);
         }
       }
-      const standalone=[...aiDraft.reminders.map(item=>({title:item.title,dueLocal:item.dueLocal,timezone:item.timezone})),...aiDraft.tasks.filter(item=>item.dueLocal).map(item=>({title:item.title,dueLocal:item.dueLocal!,timezone:aiDraft.timezone}))];
+      const standalone=[...aiDraft.reminders.map(item=>({title:item.title,dueLocal:item.dueLocal,timezone:item.timezone,key:"reminder:"+item.title+":"+item.dueLocal})),...aiDraft.tasks.filter(item=>item.dueLocal).map(item=>({title:item.title,dueLocal:item.dueLocal!,timezone:aiDraft.timezone,key:"task:"+item.title+":"+item.dueLocal}))];
       for(const reminder of standalone){
+        if(completed.has(reminder.key))continue;
         const response=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
           workspaceId:user.personalWorkspaceId,title:reminder.title,dueAt:new Date(reminder.dueLocal).toISOString(),timezone:reminder.timezone
         })});
         if(!response.ok)throw new Error("Unable to create reminder: "+reminder.title);
+        completed.add(reminder.key);setAiCreatedItems([...completed]);
       }
-      setEvents(current=>[...current,...createdEvents].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
       setAiItemsCreated(true);
     }catch(error){setAiError(error instanceof Error?error.message:"Unable to create suggested events or reminders.");}
     finally{setAiCreatingItems(false);}
   }
+
 
   function startNewEvent() {
     setEventTitle("");
