@@ -27,6 +27,30 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 
 Invitation tokens are cryptographically random, stored only as SHA-256 hashes, expire after seven days and are single-use. An SQLite trigger creates membership in the same database transaction as the accepted status update.
 
+## Calendar events
+
+- `GET /api/events?from=&to=&workspaceId=&limit=100`: list events overlapping the requested range in workspaces the user belongs to. Default range is 30 days back through 90 days ahead.
+- `POST /api/events`: create event. Body: `{ title, description?, startsAt, endsAt, timezone, allDay?, linkedNoteId?, workspaceId? }`.
+- `GET /api/events/:id`: retrieve an event with workspace membership.
+- `PATCH /api/events/:id`: update event with optimistic `version`.
+- `DELETE /api/events/:id`: soft-delete event and cancel pending linked reminders.
+
+Timestamps must include an explicit UTC offset or `Z`; the API stores UTC instants and retains the IANA timezone for display. End must be after start. A linked note must belong to the same workspace.
+
+## Reminders
+
+- `GET /api/reminders?workspaceId=&limit=50`: list reminders in accessible workspaces.
+- `POST /api/reminders`: create a reminder. Body: `{ title, dueAt, timezone, workspaceId?, eventId?, noteId? }`.
+- `DELETE /api/reminders/:id`: cancel a pending reminder.
+
+## Notifications
+
+- `GET /api/notifications?limit=50&unreadOnly=1`: return the signed-in user's in-app inbox and unread count.
+- `POST /api/notifications/:id/read`: mark one notification read.
+- `POST /api/notifications/read-all`: mark all of the current user's notifications read.
+
+A free Cloudflare Cron Trigger runs every five minutes. Due reminders create idempotent in-app notifications for workspace members. Deleted linked notes/events cancel pending reminders. This MVP does not send email or browser push notifications.
+
 ## Categories
 
 - `GET /api/categories?workspaceId=`: list active categories in accessible workspaces.
