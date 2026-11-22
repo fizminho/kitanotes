@@ -6,9 +6,9 @@ KitaNotes is a mobile-first web application for private notes, collaboration, ca
 
 ## Project status
 
-**P0 foundation complete; P1 identity and notes APIs in progress.** The repository now has a React/Vite interface, a Cloudflare Worker serving static assets and API routes, Google OIDC login/session code, workspace-scoped notes and categories API handlers, D1 migrations, architecture/security docs and CI.
+**P0 foundation complete; P1 identity and notes APIs in progress.** The repository now has a React/Vite interface, a Cloudflare Worker serving static assets and API routes, Google OIDC login/session code, workspace-scoped notes/categories APIs, one-time verified-email invitations with Gmail compose handoff, D1 migrations, architecture/security docs and CI.
 
-Google OAuth credentials and a dedicated D1 database have not been provisioned, so sign-in and persistence have not been exercised against a live Cloudflare environment. Invitations, real-time sharing, calendar, notifications, Gemini and production deployment remain outstanding.
+Google OAuth credentials and a dedicated D1 database have not been provisioned, so sign-in and persistence have not been exercised against a live Cloudflare environment. Invitation acceptance and owner invite creation are implemented. Invitation management/revocation UI, calendar, notifications, Gemini and production deployment remain outstanding.
 
 ## Start here
 
