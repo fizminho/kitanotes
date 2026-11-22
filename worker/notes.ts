@@ -15,7 +15,7 @@ type CategoryRow = {
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_NOTE_CONTENT_CHARS = 50_000;
 
-function pushDescription(value:string):string { return value.replace(/<[^>]*>/g," ").replace(/\\s+/g," ").trim().slice(0,150) || "No description was added."; }
+function pushDescription(value:string):string { return value.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,150) || "No description was added."; }
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: {
@@ -137,7 +137,8 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("New note: "+title).slice(0,80),body:pushDescription(content),url:"/",tag:"shared-note-"+id},"shared_note")));
+    const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("New note: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/",tag:"shared-note-"+id},"shared_note")));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     return json({ note: row ? noteDto(row) : null }, 201);
   }
@@ -168,7 +169,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.updated','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-     const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Updated: "+title).slice(0,80),body:pushDescription(content),url:"/",tag:"shared-note-update-"+noteId},"shared_note_update")));
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Updated: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/",tag:"shared-note-update-"+noteId},"shared_note_update")));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     const updated = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(noteId).first<NoteRow>();
