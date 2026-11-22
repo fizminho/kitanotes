@@ -1,6 +1,6 @@
 import { sendPushToUser } from "./push.ts";
 import { cleanupExpiredRateLimits } from "./rate-limit.ts";
-type DueReminder={id:string;workspace_id:string;event_id:string|null;note_id:string|null;title:string;due_at_utc:string;timezone:string};
+type DueReminder={id:string;workspace_id:string;event_id:string|null;note_id:string|null;title:string;due_at_utc:string;timezone:string;active_event_id:string|null;active_note_id:string|null};
 
 export function formatReminderDueAt(dueAtUtc:string,timeZone="Asia/Kuala_Lumpur"):string {
   const date=new Date(dueAtUtc);
@@ -19,20 +19,15 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
   await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE status='pending' AND due_at_utc<=? AND ((event_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM calendar_events e WHERE e.id=reminders.event_id AND e.deleted_at IS NULL)) OR (note_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.id=reminders.note_id AND n.deleted_at IS NULL)))")
     .bind(now,now,now).run();
 
-  const due=await db.prepare("SELECT id,workspace_id,event_id,note_id,title,due_at_utc,timezone FROM reminders WHERE status='pending' AND due_at_utc<=? ORDER BY due_at_utc LIMIT 25")
+  // Resolve linked-resource validity in the same indexed query instead of issuing
+  // up to two additional D1 reads for every due reminder.
+  const due=await db.prepare("SELECT r.id,r.workspace_id,r.event_id,r.note_id,r.title,r.due_at_utc,r.timezone,e.id AS active_event_id,n.id AS active_note_id FROM reminders r LEFT JOIN calendar_events e ON e.id=r.event_id AND e.deleted_at IS NULL LEFT JOIN notes n ON n.id=r.note_id AND n.deleted_at IS NULL WHERE r.status='pending' AND r.due_at_utc<=? ORDER BY r.due_at_utc LIMIT 25")
     .bind(now).all<DueReminder>();
 
   let deliveredCount=0;
+  const workspaceMembers=new Map<string,string[]>();
   for(const reminder of due.results){
-    let stale=false;
-    if(reminder.event_id){
-      const event=await db.prepare("SELECT id FROM calendar_events WHERE id=? AND deleted_at IS NULL").bind(reminder.event_id).first<{id:string}>();
-      if(!event) stale=true;
-    }
-    if(reminder.note_id){
-      const note=await db.prepare("SELECT id FROM notes WHERE id=? AND deleted_at IS NULL").bind(reminder.note_id).first<{id:string}>();
-      if(!note) stale=true;
-    }
+    const stale=(reminder.event_id!==null&&reminder.active_event_id===null)||(reminder.note_id!==null&&reminder.active_note_id===null);
     if(stale){
       await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE id=? AND status='pending'").bind(now,now,reminder.id).run();
       continue;
@@ -49,8 +44,13 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
     if(changed>0){
       deliveredCount++;
       if(env){
-        const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=?").bind(reminder.workspace_id).all<{user_id:string}>();
-        await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Reminder: "+reminder.title).slice(0,80),body:"Due: "+dueLabel,url:"/",tag:"reminder-"+reminder.id},"reminder")));
+        let members=workspaceMembers.get(reminder.workspace_id);
+        if(!members){
+          const result=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=?").bind(reminder.workspace_id).all<{user_id:string}>();
+          members=result.results.map(member=>member.user_id);
+          workspaceMembers.set(reminder.workspace_id,members);
+        }
+        await Promise.all(members.map(userId=>sendPushToUser(db,env,userId,{title:("Reminder: "+reminder.title).slice(0,80),body:"Due: "+dueLabel,url:"/",tag:"reminder-"+reminder.id},"reminder")));
       }
     }
   }
