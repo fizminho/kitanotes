@@ -24,8 +24,17 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/me", { credentials: "same-origin" })
-      .then(async response => {
+    fetch("/api/auth/status", { credentials: "same-origin" })
+      .then(async statusResponse => {
+        if (!statusResponse.ok) throw new Error("Auth status unavailable");
+        const status = await statusResponse.json() as { ready: boolean };
+        if (!active) return;
+        if (!status.ready) {
+          setUser(null);
+          setAuthStatus("unavailable");
+          return;
+        }
+        const response = await fetch("/api/auth/me", { credentials: "same-origin" });
         if (!active) return;
         if (response.ok) {
           const result = await response.json() as { user: SessionUser };
