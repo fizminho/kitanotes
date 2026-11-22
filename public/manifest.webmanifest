@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "KitaNotes",
+  "short_name": "KitaNotes",
+  "description": "Your notes, plans and people together.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#f7f8fc",
+  "theme_color": "#f7f8fc",
+  "icons": [
+    { "src": "/icons/kitanotes.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/kitanotes-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
