@@ -239,7 +239,7 @@ test("annual holiday sync caches HolidayWise public holidays and KPM school brea
  globalThis.fetch=async input=>{
   calls++;
   assert.match(String(input),/^https:\/\/holidaywise\.wee\.my\/my\/[a-z]+\/nat-state\.ics$/);
-  return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\\r\\n"),{status:200,headers:{"content-type":"text/calendar"}});
+  return new Response(["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:selangor-day-2026","DTSTART;VALUE=DATE:20261211","DTEND;VALUE=DATE:20261212","SUMMARY:Birthday of the Sultan of Selangor","END:VEVENT","END:VCALENDAR"].join("\r\n"),{status:200,headers:{"content-type":"text/calendar"}});
  };
  try{
   const synced=await syncCalendarHolidayData(db,new Date("2026-11-23T00:00:00.000Z"));
