@@ -1244,7 +1244,7 @@ export default function App() {
               {ocrText!==""&&<label className="field-label">Review extracted text<textarea className="ai-input" rows={5} value={ocrText} onChange={event=>setOcrText(event.target.value)}/></label>}
             </div>
             {aiError&&<p className="invite-error">{aiError}</p>}
-            <footer><button className="primary-button" onClick={()=>organizeWithAi(ocrText||aiInput)} disabled={!(ocrText||aiInput).trim()||aiWorking||aiStatus.dailyRemaining===0}>{aiWorking?"Organizing…":"Organize"}</button></footer>
+            <footer><button className="primary-button" onClick={()=>organizeWithAi(ocrText||aiInput)} disabled={!(ocrText||aiInput).trim()||aiWorking}>{aiWorking?"Organizing…":"Organize"}</button></footer>
           </div>:<div className="ai-draft">
             <div className="ai-draft-banner"><Sparkles size={15}/> Review your suggestions before saving.</div>
             <p className="ai-privacy-copy">{aiDraft.summary}</p>
