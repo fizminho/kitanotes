@@ -78,3 +78,5 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .brand-text{display:grid;gap:1px;line-height:1.05}.brand-by{font:600 9.5px "DM Sans",sans-serif;letter-spacing:.2px;color:#9a9db3}.brand-logo{width:34px;height:34px}[data-theme=dark] .brand-by{color:#8286a0}[data-theme=dark] .brand-soft{color:#a89fff}
 
 .ocr-image-preview{display:block;width:100%;max-height:280px;object-fit:contain;background:#f5f5f8;border:1px solid #e7e7ee;border-radius:12px;padding:8px;margin:10px 0}[data-theme=dark] .ocr-image-preview{background:#141622;border-color:#34364a}
+
+.record-audit{display:block;margin-top:10px;line-height:1.55;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
