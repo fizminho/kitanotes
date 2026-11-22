@@ -1,5 +1,6 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { readJsonBody } from "./notes.ts";
+import { sendPushToUser } from "./push.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
 type Role = "owner" | "editor" | "viewer";
@@ -87,6 +88,8 @@ async function createEvent(request:Request,env:AuthEnv,userId:string):Promise<Re
       .bind(id,workspaceId,title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,userId,now,now).run();
   } catch { return json({error:"EVENT_CREATE_FAILED"},400); }
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
+  const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
+  await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"KitaNotes calendar",body:"A calendar event was added to your shared workspace.",url:"/",tag:"event-created-"+id},"event")));
   const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
@@ -107,6 +110,8 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
     if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
     await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE event_id=? AND status='pending'").bind(now,now,id).run();
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.deleted','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
+    const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
+    await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"KitaNotes calendar",body:"A calendar event was removed from your shared workspace.",url:"/",tag:"event-deleted-"+id},"event")));
     return json({ok:true});
   }
   if(request.method!=="PATCH") return json({error:"METHOD_NOT_ALLOWED"},405);
@@ -126,10 +131,12 @@ async function eventById(request:Request,env:AuthEnv,userId:string,id:string):Pr
     .bind(title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,now,id,version).run();
   if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.updated','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
+  const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
+  await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"KitaNotes calendar",body:"A calendar event was updated in your shared workspace.",url:"/",tag:"event-updated-"+id},"event")));
   const updated=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
-export async function handleEventsRequest(request:Request,env:AuthEnv):Promise<Response|null> {
+export async function handleEventsRequest(request:Request,env:AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}):Promise<Response|null> {
   const url=new URL(request.url);
   if(!url.pathname.startsWith("/api/events")) return null;
   if(!env.DB) return json({error:"DATABASE_NOT_CONFIGURED"},503);
