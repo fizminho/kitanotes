@@ -8,7 +8,21 @@ export async function deliverDueReminders(db:D1Database):Promise<number>{
   const due=await db.prepare("SELECT id,workspace_id,event_id,note_id,title,due_at_utc FROM reminders WHERE status='pending' AND due_at_utc<=? ORDER BY due_at_utc LIMIT 25")
     .bind(now).all<DueReminder>();
 
+  let deliveredCount=0;
   for(const reminder of due.results){
+    let stale=false;
+    if(reminder.event_id){
+      const event=await db.prepare("SELECT id FROM calendar_events WHERE id=? AND deleted_at IS NULL").bind(reminder.event_id).first<{id:string}>();
+      if(!event) stale=true;
+    }
+    if(reminder.note_id){
+      const note=await db.prepare("SELECT id FROM notes WHERE id=? AND deleted_at IS NULL").bind(reminder.note_id).first<{id:string}>();
+      if(!note) stale=true;
+    }
+    if(stale){
+      await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE id=? AND status='pending'").bind(now,now,reminder.id).run();
+      continue;
+    }
     const resourceType=reminder.event_id?"event":reminder.note_id?"note":"reminder";
     const resourceId=reminder.event_id??reminder.note_id??reminder.id;
     const insertNotification=db.prepare("INSERT OR IGNORE INTO notifications (id,user_id,workspace_id,notification_type,title,body,resource_type,resource_id,idempotency_key,created_at) SELECT lower(hex(randomblob(16))),wm.user_id,?,'reminder',?,?,?,?,'reminder:'||?||':'||wm.user_id,? FROM workspace_members wm WHERE wm.workspace_id=?")
@@ -16,6 +30,7 @@ export async function deliverDueReminders(db:D1Database):Promise<number>{
     const markDelivered=db.prepare("UPDATE reminders SET status='delivered',delivered_at=?,updated_at=? WHERE id=? AND status='pending' AND due_at_utc<=?")
       .bind(now,now,reminder.id,now);
     await db.batch([insertNotification,markDelivered]);
+    deliveredCount++;
   }
-  return due.results.length;
+  return deliveredCount;
 }
