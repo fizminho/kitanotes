@@ -43,6 +43,8 @@ export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
+  const [showSharedWorkspaces,setShowSharedWorkspaces]=useState(()=>localStorage.getItem("kitanotes-show-shared-workspaces")!=="false");
+  const [workspaceCreating,setWorkspaceCreating]=useState(false);
   const [authStatus, setAuthStatus] = useState<"loading" | "signed_out" | "ready" | "unavailable">("loading");
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -159,6 +161,31 @@ export default function App() {
       .finally(() => { if (active) setAuthStatus(current => current === "loading" ? "signed_out" : current); });
     return () => { active = false; };
   }, []);
+
+  useEffect(()=>{localStorage.setItem("kitanotes-show-shared-workspaces",String(showSharedWorkspaces));},[showSharedWorkspaces]);
+
+  useEffect(()=>{
+    if(!showSharedWorkspaces && workspaces.some(item=>item.id===activeWorkspaceId && item.type==="shared")){
+      setActiveWorkspaceId(workspaces.find(item=>item.type==="personal")?.id??"");
+    }
+  },[showSharedWorkspaces,workspaces,activeWorkspaceId]);
+
+  async function createPersonalWorkspace() {
+    if(workspaceCreating)return;
+    const name=window.prompt("Name your new personal workspace");
+    if(!name?.trim())return;
+    setWorkspaceCreating(true);
+    try {
+      const response=await fetch("/api/workspaces",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({name:name.trim()})});
+      const result=await response.json() as {workspace?:Workspace;error?:string};
+      if(!response.ok||!result.workspace)throw new Error(result.error==="WORKSPACE_LIMIT_REACHED"?"You have reached the 30 personal workspace limit.":"Unable to create workspace.");
+      setWorkspaces(current=>[...current,result.workspace!]);
+      setActiveWorkspaceId(result.workspace.id);
+      setSelectedCategoryId("");
+      setView("notes");
+    } catch(error){window.alert(error instanceof Error?error.message:"Unable to create workspace.");}
+    finally{setWorkspaceCreating(false);}
+  }
 
   useEffect(()=>{
     if(!user){setWorkspaces([]);setActiveWorkspaceId("");return;}
@@ -769,7 +796,7 @@ export default function App() {
           <span className="workspace-avatar">K</span>
           <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.type==="shared"?"Shared workspace":"Personal space"}</small></span>
           <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
-            {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
+            {workspaces.filter(workspace=>showSharedWorkspaces||workspace.type==="personal").map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.type==="shared"?" · Shared":""}</option>)}
           </select>
           <ChevronDown size={16} />
         </label>
@@ -834,7 +861,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">YOUR SECOND BRAIN, TOGETHER</div><h1>{view === "notes" ? "Your notes" : view === "calendar" ? "Your calendar" : "Shared with me"}</h1><p>{view === "notes" ? "A calm place for everything worth remembering." : view === "calendar" ? "Keep the important dates close." : "Notes and spaces people have shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
+            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions"><label className="show-shared-toggle"><input type="checkbox" checked={showSharedWorkspaces} onChange={event=>setShowSharedWorkspaces(event.target.checked)}/> Show shared</label><button className="secondary-button" onClick={createPersonalWorkspace} disabled={workspaceCreating}><Plus size={16}/> New workspace</button>{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={() => { setInviteOpen(true); setInviteCreateError(""); setCopiedInvite(false); }}><Users size={16} /> Invite</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> Organize with AI</button><button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button></div>}
           </div>
 
           {view === "notes" && <>
