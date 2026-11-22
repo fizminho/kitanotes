@@ -6,7 +6,7 @@ type Role = "owner" | "editor" | "viewer";
 type EventRow = {
   id:string; workspace_id:string; title:string; description:string; starts_at_utc:string; ends_at_utc:string;
   timezone:string; all_day:number; linked_note_id:string|null; created_by_user_id:string; created_by_name?:string|null; created_by_email?:string|null; updated_by_user_id?:string|null; updated_by_name?:string|null; updated_by_email?:string|null; version:number;
-  created_at:string; updated_at:string; deleted_at:string|null; google_imported?:number;
+  created_at:string; updated_at:string; deleted_at:string|null; source_created_by?:string|null; source_created_at?:string|null; source_updated_by?:string|null; source_updated_at?:string|null; google_imported?:number;
 };
 
 function json(data:unknown,status=200):Response {
@@ -46,7 +46,7 @@ async function noteInWorkspace(db:Db,noteId:string|null,workspaceId:string):Prom
   return Boolean(row);
 }
 function dto(row:EventRow) {
-  return {id:row.id,workspaceId:row.workspace_id,title:row.title,description:row.description,startsAt:row.starts_at_utc,endsAt:row.ends_at_utc,timezone:row.timezone,allDay:Boolean(row.all_day),linkedNoteId:row.linked_note_id,createdBy:row.created_by_user_id,createdByName:row.created_by_name??null,createdByEmail:row.created_by_email??null,updatedBy:row.updated_by_user_id??null,updatedByName:row.updated_by_name??null,updatedByEmail:row.updated_by_email??null,version:row.version,createdAt:row.created_at,updatedAt:row.updated_at,deletedAt:row.deleted_at,source:row.google_imported?"google_calendar":"kitanotes"};
+  return {id:row.id,workspaceId:row.workspace_id,title:row.title,description:row.description,startsAt:row.starts_at_utc,endsAt:row.ends_at_utc,timezone:row.timezone,allDay:Boolean(row.all_day),linkedNoteId:row.linked_note_id,createdBy:row.created_by_user_id,createdByName:row.source_created_by??row.created_by_name??null,createdByEmail:row.created_by_email??null,updatedBy:row.updated_by_user_id??null,updatedByName:row.source_updated_by??row.updated_by_name??null,updatedByEmail:row.updated_by_email??null,version:row.version,createdAt:row.source_created_at??row.created_at,updatedAt:row.source_updated_at??row.updated_at,deletedAt:row.deleted_at,source:row.google_imported?"google_calendar":"kitanotes"};
 }
 async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Response> {
   const db=env.DB!;
