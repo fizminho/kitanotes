@@ -431,7 +431,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [x] Implement durable reminder scheduling, idempotent five-minute Cron delivery and automatic cancellation when linked notes/events are deleted.
 - [x] Implement in-app notification inbox API/UI, unread count, mark-read and mark-all-read.
 - [x] Notify other workspace members when a new shared note is created.
-- [ ] Add event editing UI and month/week calendar views.
+- [x] Add event editing UI and month/week calendar views. Event updates use optimistic version checks; event-local date/time values are converted using the event IANA timezone.
 - [ ] Implement PWA service worker and Web Push subscription/delivery.
 - [ ] Implement notification preferences and delivery settings.
 
@@ -536,3 +536,4 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
 - **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
 - **2026-11-22:** Added calendar-to-note linking and confirmed the updated Worker build, migration validation and integration suite in CI.
+- **2026-11-22:** Added calendar month/week navigation, six-week month loading, event edit UI with version-conflict handling, and timezone-aware date/time editing. GitHub Actions passed TypeScript build, all tests, SQLite migration validation and Wrangler dry-run (runs [45005225542](https://github.com/fizminho/kitanotes/actions/runs/45005225542) and [45005229375](https://github.com/fizminho/kitanotes/actions/runs/45005229375)).
