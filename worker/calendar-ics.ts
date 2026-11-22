@@ -64,7 +64,7 @@ async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
 async function exportIcs(request:Request,db:Db,userId:string):Promise<Response>{
  const workspaceId=new URL(request.url).searchParams.get("workspaceId")??"";if(!workspaceId||!(await roleFor(db,workspaceId,userId)))return json({error:"NOT_FOUND"},404);
  const rows=await db.prepare("SELECT e.id,e.title,e.description,e.starts_at_utc,e.ends_at_utc,e.all_day,e.timezone,ci.source_uid FROM calendar_events e LEFT JOIN calendar_event_imports ci ON ci.local_event_id=e.id WHERE e.workspace_id=? AND e.deleted_at IS NULL ORDER BY e.starts_at_utc LIMIT 1000").bind(workspaceId).all<{id:string;title:string;description:string;starts_at_utc:string;ends_at_utc:string;all_day:number;timezone:string;source_uid:string|null}>();
- const content=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//KitaNotes//Calendar 2.0//EN","CALSCALE:GREGORIAN","X-WR-CALNAME:KitaNotes",...rows.results.map(eventIcs),"END:VCALENDAR"].map(foldLine).join("\r\n")+"\r\n";
+ const content=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//KitaNotes//Calendar 2.0//EN","CALSCALE:GREGORIAN","X-WR-CALNAME:KitaNotes",...rows.results.map(eventIcs),"END:VCALENDAR"].join("\r\n")+"\r\n";
  return new Response(content,{headers:{"content-type":"text/calendar; charset=utf-8",'content-disposition':'attachment; filename="kitanotes-calendar.ics"',"cache-control":"no-store","x-content-type-options":"nosniff"}});
 }
 async function holidays(request:Request):Promise<Response>{
