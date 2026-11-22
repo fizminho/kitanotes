@@ -20,7 +20,7 @@ Source: [Google Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricin
 
 ## Zero-billing guardrails
 
-- The adapter has a hard allowlist of text models currently listed with free-tier input/output pricing: `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`, `gemini-3.6-flash`, and `gemini-3.5-flash`.
+- The adapter has a hard allowlist of text models currently listed with free-tier input/output pricing: `gemini-3.1-flash-lite`, `gemini-3-flash-preview`, `gemini-2.5-flash-lite`, and `gemini-2.5-flash`.
 - `GEMINI_MODEL` and `GEMINI_MODEL_FALLBACKS` are filtered against that allowlist. Unknown and paid model IDs are ignored.
 - A 404 model-not-found, quota/rate-limit response, or transient provider error may move to the next allowlisted free model.
 - Invalid API key/permission and malformed-request errors stop immediately.
