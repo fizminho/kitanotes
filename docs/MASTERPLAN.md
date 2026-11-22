@@ -12,7 +12,7 @@
 
 ## 1. Product vision
 
-KitaNotes is a mobile-first shared notes and lightweight planning application. People sign in with their Google account, create personal notes, invite other Google-account users to collaborate, organise notes into categories, and turn unstructured text into structured notes and calendar items with Gemini.
+KitaNotes is a mobile-first shared notes and lightweight planning application. People sign in with their Google account, create personal notes, invite other Google-account users to collaborate, organise notes into categories, and turn unstructured text into structured notes and calendar items with AI.
 
 The product should feel simple for ordinary users while enforcing strong privacy boundaries between users and shared workspaces.
 
@@ -46,10 +46,12 @@ The product should feel simple for ordinary users while enforcing strong privacy
 - [x] Optional per-device Web Push subscriptions, permission flow and best-effort due-reminder delivery; VAPID provisioning and real-device delivery verification remain open.
 - [x] In-app notifications for new shared notes and due reminders. No automated outbound email dependency in the zero-cost MVP.
 - [x] Add invitation-accepted and other collaboration activity notifications.
-- [x] Gemini text-to-structured-note flow with preview and explicit confirmation; real API key verification remains open.
-- [x] Gemini-assisted workspace planning: propose a workspace name and up to eight categories from a user-provided purpose; explicit consent, free-tier quota, preview and user confirmation are required before workspace/category creation. Live Gemini provider verification remains open.
+- [x] AI text-to-structured-note flow with category recommendation, image OCR, preview and combined note/calendar confirmation; live provider verification remains open.
+- [x] AI-assisted workspace planning: propose a workspace name and up to eight categories from a user-provided purpose; user action, preview and confirmation are required before workspace/category creation. Live provider verification remains open.
 - [x] AI-suggested categories, with user-defined categories taking precedence when appropriate.
 - [x] Audit/activity history for sharing and content: notes/events expose creator and last-editor identity/timestamps, with create/update/delete activity records.
+- [x] Recommend the best existing category for each AI-generated note; if no existing category matches, create the recommended category only when the user saves the note.
+- [x] Save the AI-generated note, calendar events and reminders through one confirmation action; close the organiser automatically after all requested writes succeed.
 - [x] Responsive mobile and desktop web experience.
 - [x] PWA install prompt, install metadata and offline application-shell/static-asset cache; private data and edits still require connectivity.
 - [x] Automated tests, CI checks and operational documentation.
@@ -58,8 +60,8 @@ The product should feel simple for ordinary users while enforcing strong privacy
 ### Workspace and UI consistency follow-up (2026-11-22)
 
 - [x] Replace browser prompt-based workspace creation with a responsive, in-app creation flow.
-- [x] Add a dedicated Gemini workspace-planning endpoint. It returns a draft only; the user confirms the workspace name and category suggestions before anything is written.
-- [x] Reuse the existing explicit Gemini consent and shared daily free-tier request cap. Manual workspace creation remains available if AI is not configured or unavailable.
+- [x] Add a dedicated AI workspace-planning endpoint. It returns a draft only; the user confirms the workspace name and category suggestions before anything is written.
+- [x] Use the existing shared daily request cap. Each AI request is initiated by a user action with a concise external-processing disclosure; manual workspace creation remains available if AI is unavailable.
 - [x] Add shared control sizing, interaction states, focus styles, spacing and dark-mode treatment for the workspace creation flow.
 - [ ] Verify live Gemini configuration and complete a production workspace-creation smoke test.
 - [ ] Confirm Cloudflare Workers Builds deployment and production revision after CI passes.
@@ -68,7 +70,7 @@ The product should feel simple for ordinary users while enforcing strong privacy
 
 - [x] Google Calendar one-way import foundation: separately consented read-only access, encrypted refresh token, per-workspace connection and incremental sync into KitaNotes. Production migration, Google OAuth redirect URI configuration and live account smoke test remain open.
 - [ ] Real-time collaborative editing / presence.
-- [x] Consent-gated Gemini OCR with image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. Live Gemini provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [x] Image OCR with gallery selection and camera capture, image preview, client-side resize/EXIF stripping, editable output and direct handoff to the AI note/calendar organiser. No separate terms checkbox; each request is user initiated. Live provider verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 - [ ] Attachments and PDF text extraction (separate from the image OCR MVP).
 - [ ] Recurring events and advanced reminder rules.
 - [ ] Shared templates and reusable note formats.
@@ -108,7 +110,7 @@ Reuse the actual Investlah pattern: Cloudflare-hosted application/API on a Worke
 - D1 Free: 5 million rows read/day, 100,000 rows written/day, 500 MB maximum per database and 5 GB total account storage. D1 free-tier queries fail after daily read/write limits are exceeded; data remains stored.
 - Workers Free supports up to 5 Cron Triggers per account.
 - Pages static asset requests are free and unlimited; any Pages Functions requests count against Workers Free request quota.
-- Gemini free-tier content may be used by Google to improve products. The AI organiser requires explicit consent and the [AI privacy policy](AI_PRIVACY.md) must be shown before sending any text.
+- Content sent through the provider's free tier may be used to improve its products. The UI provides a concise per-action disclosure that submitted text or images are sent to an external AI service. See [AI_PRIVACY.md](AI_PRIVACY.md).
 - Do not rely on Cloudflare Email Sending for arbitrary-recipient transactional email: current documentation says arbitrary-recipient sending requires Workers Paid. For the zero-cost MVP, create the invitation in KitaNotes and provide a secure copyable invitation link plus a Gmail compose handoff for the inviter to send manually. Do not claim the email was sent automatically.
 - A custom domain may have a separate registration/renewal cost. RM0 infrastructure does not mean a paid domain is free; use a free `*.workers.dev` hostname unless the user already owns a domain and accepts its existing renewal cost.
 - Free plans have quotas and provider policies, not unlimited capacity or an uptime guarantee. Enforce application-level quotas and degrade gracefully instead of upgrading automatically.
@@ -452,14 +454,14 @@ The layout is a target, not a mandate to create empty directories immediately. K
 
 - [x] Implement server-side Gemini provider adapter using Worker Secrets only.
 - [x] Add hard free-tier model allowlist, bounded model fallback and no paid escalation.
-- [x] Add explicit privacy consent, revocation, 16 KiB input cap and 10 requests/user/UTC-day cap.
+- [x] Add per-action external-processing disclosure, 16 KiB input cap and 10 requests/user/UTC-day cap. Legacy consent endpoints/columns are retained but do not gate AI requests.
 - [x] Add strict structured-output validation for notes, categories, events, reminders, tasks and clarifying questions.
 - [x] Resolve relative dates against a server reference timestamp and supplied IANA timezone; ambiguous dates are surfaced as questions.
 - [x] Add preview/confirmation UI. Notes, categories, events and reminders are created only after explicit user actions.
-- [x] Do not persist raw prompts or AI drafts; D1 stores only consent metadata and daily usage counts.
+- [x] Do not persist raw prompts or AI drafts; D1 stores daily usage counts. Legacy consent metadata remains for compatibility.
 - [x] Add mocked tests for 404, 429 quota, 503 transient errors, auth failure, malformed JSON, invalid output, provider outage, daily cap and manual-note resilience.
 - [ ] Configure a real Gemini free-tier key from a project with no Cloud Billing and verify a live request/fallback sequence.
-- [x] Implement consent-gated Gemini image OCR using the existing provider allowlist and review-before-save boundary. Backend and frontend capture/edit/handoff are implemented; preview, EXIF stripping and live model verification remain open. See [OCR_GEMINI.md](OCR_GEMINI.md).
+- [x] Implement image OCR using the existing provider allowlist and review-before-save boundary. Backend and frontend gallery/camera selection, preview, edit and handoff are implemented; live model verification remains open. See [OCR_GEMINI.md](OCR_GEMINI.md).
 
 ### P4 — Production hardening
 
