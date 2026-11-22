@@ -402,7 +402,7 @@ The layout is a target, not a mandate to create empty directories immediately. K
 - [ ] Confirm domain/subdomain and staging/production environments.
 - [x] Create architecture, data-model and security baseline documents (ADR-0001 through ADR-0004, DATA_MODEL.md and SECURITY.md). Security review remains open.
 - [x] Bootstrap React/Vite frontend, Worker API and shared route handlers with pinned direct dependencies. A separate shared-contract package is deferred until the API stabilises.
-- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [45000688019](https://github.com/fizminho/kitanotes/actions/runs/45000688019).
+- [x] Verify strict TypeScript build (including Worker code), Node regression tests, all D1 migrations with SQLite and Wrangler dry-run in CI. Successful run: [45000816020](https://github.com/fizminho/kitanotes/actions/runs/45000816020).
 - [x] Add Worker health endpoint and local development instructions.
 
 ### P1 — Identity and secure collaboration
@@ -525,3 +525,4 @@ MVP is not complete until all of these are demonstrated:
 - **2026-11-22:** Bootstrapped React/Vite UI, Worker health/API shell, D1 migrations, SQLite migration validator and CI. No D1 resource, OAuth credentials, Gemini secret or production deployment has been created.
 - **2026-11-22:** Implemented Google OIDC login/session routes and workspace-scoped notes/categories/invitation APIs, connected the notes and sharing UI, and added CSP/security headers. Added API, authentication and security documentation. Offline D1-backed auth, notes, invitation, calendar, reminder and notification integration tests pass in CI. Live Google login and cloud D1 persistence remain blocked on dedicated external resources/credentials.
 - **2026-11-22:** Implemented timezone-aware internal events, reminder APIs, five-minute Cron delivery and in-app notification inbox; added notifications for newly shared notes.
+- **2026-11-22:** Implemented consent-gated Gemini free-tier organisation, strict free-model fallback, structured draft validation, category suggestions and review-before-save UI. AI is code-complete but requires a user-provisioned free-tier API key for live verification.
