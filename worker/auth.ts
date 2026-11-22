@@ -1,12 +1,15 @@
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
-export type D1Like = {
-  prepare(sql: string): {
-    bind(...values: unknown[]): {
-      run(): Promise<unknown>;
-      first<T = Record<string, unknown>>(): Promise<T | null>;
-      all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
-    };
+export type D1StatementLike = {
+  bind(...values: unknown[]): {
+    run(): Promise<unknown>;
+    first<T = Record<string, unknown>>(): Promise<T | null>;
+    all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
   };
+};
+
+export type D1Like = {
+  prepare(sql: string): D1StatementLike;
+  batch?(statements: D1StatementLike[]): Promise<unknown[]>;
 };
 
 export interface AuthEnv {
