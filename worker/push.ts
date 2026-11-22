@@ -3,8 +3,8 @@ import { getCurrentUser, type AuthEnv } from "./auth.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
-type PushKind = "reminder" | "shared_note" | "test";
-type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
+type PushKind = "reminder" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
+type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
 
 export function isWithinQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
  if(!row.quiet_hours_start||!row.quiet_hours_end)return false;
@@ -45,11 +45,14 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
-  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,quiet_hours_start,quiet_hours_end,timezone FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"};
+  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,shared_note_update_push_enabled,event_push_enabled,workspace_push_enabled,quiet_hours_start,quiet_hours_end,timezone FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"};
  } catch { return; }
  if(preferences.push_enabled!==1)return;
  if(kind==="reminder"&&preferences.reminder_push_enabled!==1)return;
  if(kind==="shared_note"&&preferences.shared_note_push_enabled!==1)return;
+ if(kind==="shared_note_update"&&preferences.shared_note_update_push_enabled!==1)return;
+ if(kind==="event"&&preferences.event_push_enabled!==1)return;
+ if(kind==="workspace"&&preferences.workspace_push_enabled!==1)return;
  if(kind!=="test"&&isWithinQuietHours(preferences))return;
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  for(const row of rows.results){
