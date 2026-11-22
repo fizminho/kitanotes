@@ -99,9 +99,9 @@ async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:Execu
 async function eventById(request:Request,env:EventEnv,userId:string,id:string,ctx?:ExecutionContext):Promise<Response> {
   const db=env.DB!;
   const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
-  if(!row||!(await roleFor(db,row.workspace_id,userId))) return json({error:"NOT_FOUND"},404);
+  const role=row?await roleFor(db,row.workspace_id,userId):null;
+  if(!row||!role) return json({error:"NOT_FOUND"},404);
   if(request.method==="GET") return json({event:dto(row)});
-  const role=await roleFor(db,row.workspace_id,userId);
   if(role!=="owner"&&role!=="editor") return json({error:"FORBIDDEN"},403);
   if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   if(request.method==="DELETE") {
