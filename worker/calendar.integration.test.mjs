@@ -150,16 +150,16 @@ test("notification preferences default to Malaysia timezone and save per-user qu
   try{
     const defaults=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1),env);
     assert.equal(defaults.status,200);
-    assert.deepEqual((await defaults.json()).preferences,{pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+    assert.deepEqual((await defaults.json()).preferences,{pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
     const saved=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",{
-      pushEnabled:true,reminderPushEnabled:false,sharedNotePushEnabled:true,quietHoursStart:"22:00",quietHoursEnd:"07:00",timezone:"Asia/Kuala_Lumpur"
+      pushEnabled:true,reminderPushEnabled:false,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:"22:00",quietHoursEnd:"07:00",timezone:"Asia/Kuala_Lumpur"
     }),env);
     assert.equal(saved.status,200);
     assert.equal((await saved.json()).preferences.reminderPushEnabled,false);
     const other=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u2),env);
     assert.equal((await other.json()).preferences.reminderPushEnabled,true);
     const invalid=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",{
-      pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,quietHoursStart:"22:00",quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"
+      pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:"22:00",quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"
     }),env);
     assert.equal(invalid.status,400);
   }finally{db.close();}
@@ -170,7 +170,7 @@ test("notification preference updates reject cross-origin requests",async()=>{
   try{
     const response=await handleNotificationsRequest(new Request("https://kitanotes.test/api/notifications/preferences",{
       method:"PUT",headers:{cookie:"__Host-kitanotes_session="+tokens.u1,origin:"https://attacker.test","content-type":"application/json"},
-      body:JSON.stringify({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"})
+      body:JSON.stringify({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"})
     }),env);
     assert.equal(response.status,403);
   }finally{db.close();}
