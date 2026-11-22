@@ -38,7 +38,7 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
       deliveredCount++;
       if(env){
         const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=?").bind(reminder.workspace_id).all<{user_id:string}>();
-        await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"KitaNotes reminder",body:"You have a reminder due. Open KitaNotes to view it.",url:"/",tag:"reminder-"+reminder.id},"reminder"))));
+        await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"KitaNotes reminder",body:"You have a reminder due. Open KitaNotes to view it.",url:"/",tag:"reminder-"+reminder.id},"reminder")));
       }
     }
   }
