@@ -26,7 +26,9 @@ export function defaultReminderDateTime(eventStartLocal:string,timezone="Asia/Ku
   const previousDay=new Date(Date.UTC(+match[1],+match[2]-1,+match[3]-1,+match[4],+match[5]));
   const pad=(value:number)=>String(value).padStart(2,"0");
   const dueLocal=previousDay.getUTCFullYear()+"-"+pad(previousDay.getUTCMonth()+1)+"-"+pad(previousDay.getUTCDate())+"T"+pad(previousDay.getUTCHours())+":"+pad(previousDay.getUTCMinutes());
-  const dueUtc=zonedLocalToUtc(dueLocal,timezone);
-  if(!dueUtc||new Date(dueUtc).getTime()<=now.getTime())return dateTimeInputForZone(new Date(now.getTime()+5*60_000),timezone);
+  let zone=timezone;
+  try{new Intl.DateTimeFormat("en-US",{timeZone:zone}).format(now);}catch{zone="Asia/Kuala_Lumpur";}
+  const dueUtc=zonedLocalToUtc(dueLocal,zone);
+  if(!dueUtc||new Date(dueUtc).getTime()<=now.getTime())return dateTimeInputForZone(new Date(now.getTime()+5*60_000),zone);
   return dueLocal;
 }
