@@ -92,12 +92,12 @@ async function createEvent(request:Request,env:EventEnv,userId:string):Promise<R
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
   await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-created-"+id},"event")));
-  const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
 async function eventById(request:Request,env:EventEnv,userId:string,id:string):Promise<Response> {
   const db=env.DB!;
-  const row=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
   if(!row||!(await roleFor(db,row.workspace_id,userId))) return json({error:"NOT_FOUND"},404);
   if(request.method==="GET") return json({event:dto(row)});
   const role=await roleFor(db,row.workspace_id,userId);
@@ -134,7 +134,7 @@ async function eventById(request:Request,env:EventEnv,userId:string,id:string):P
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.updated','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
   await Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Updated event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-updated-"+id},"event")));
-  const updated=await db.prepare("SELECT e.*,EXISTS(SELECT 1 FROM google_calendar_event_map gm WHERE gm.local_event_id=e.id) AS google_imported,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
+  const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
 export async function handleEventsRequest(request:Request,env:EventEnv):Promise<Response|null> {
