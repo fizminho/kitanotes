@@ -1,3 +1,4 @@
+import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { readJsonBody } from "./notes.ts";
 
@@ -55,6 +56,8 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   }
   const db = env.DB!;
   if (!(await ownerFor(db,workspaceId,userId))) return json({ error: "OWNER_PERMISSION_REQUIRED" }, 403);
+  const rate = await consumeRateLimit(db, "invitation:create:user:" + userId, 10, 60 * 60 * 1000);
+  if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
   const existingMember = await db.prepare("SELECT wm.user_id FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? AND u.email_normalized=?")
     .bind(workspaceId,email).first<{user_id:string}>();
   if (existingMember) return json({ error: "ALREADY_A_MEMBER" }, 409);
