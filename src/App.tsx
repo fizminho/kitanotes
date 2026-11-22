@@ -275,6 +275,44 @@ export default function App() {
     }
   }
 
+  async function createCategory() {
+    if(!user?.personalWorkspaceId||!categoryName.trim()||categorySaving)return;
+    setCategorySaving(true);setCategoryError("");
+    try{
+      const response=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+        workspaceId:user.personalWorkspaceId,name:categoryName,color:"#766bd0",sortOrder:categories.length
+      })});
+      const result=await response.json() as {category?:Category;error?:string};
+      if(!response.ok||!result.category)throw new Error(result.error==="CATEGORY_ALREADY_EXISTS"?"A category with that name already exists.":"Unable to create category.");
+      setCategories(current=>[...current,result.category!].sort((a,b)=>a.sortOrder-b.sortOrder||a.name.localeCompare(b.name)));
+      setCategoryName("");
+    }catch(error){setCategoryError(error instanceof Error?error.message:"Unable to create category.");}
+    finally{setCategorySaving(false);}
+  }
+
+  async function createAiCategories() {
+    if(!aiDraft||!user?.personalWorkspaceId||aiCategoriesCreated)return;
+    setCategorySaving(true);setAiError("");
+    try{
+      for(const suggestion of aiDraft.suggestedCategories){
+        if(categories.some(category=>category.name.toLowerCase()===suggestion.name.toLowerCase()))continue;
+        const response=await fetch("/api/categories",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
+          workspaceId:user.personalWorkspaceId,name:suggestion.name,color:"#766bd0",sortOrder:categories.length
+        })});
+        if(!response.ok&&response.status!==409)throw new Error("Unable to create category: "+suggestion.name);
+      }
+      const response=await fetch("/api/categories?workspaceId="+encodeURIComponent(user.personalWorkspaceId),{credentials:"same-origin"});
+      if(response.ok){
+        const result=await response.json() as {categories:Category[]};
+        setCategories(result.categories);
+        const first=aiDraft.suggestedCategories.map(item=>result.categories.find(category=>category.name.toLowerCase()===item.name.toLowerCase())).find(Boolean);
+        if(first)setSelectedCategoryId(first.id);
+      }
+      setAiCategoriesCreated(true);
+    }catch(error){setAiError(error instanceof Error?error.message:"Unable to create suggested categories.");}
+    finally{setCategorySaving(false);}
+  }
+
   async function enableAi() {
     if(!aiConsentChecked||aiConsentSaving)return;
     setAiConsentSaving(true);setAiError("");
@@ -318,7 +356,7 @@ export default function App() {
     setAiSavingNote(true);setAiError("");
     try{
       const response=await fetch("/api/notes",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-        workspaceId:user.personalWorkspaceId,title:aiDraftTitle,content:aiDraftContent
+        workspaceId:user.personalWorkspaceId,title:aiDraftTitle,content:aiDraftContent,categoryId:selectedCategoryId||null
       })});
       const result=await response.json() as {note?:Note};
       if(!response.ok||!result.note)throw new Error("Unable to save the note draft.");
