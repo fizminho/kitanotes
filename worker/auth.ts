@@ -205,9 +205,9 @@ async function createUserAndSession(
   if (!user?.id) throw new Error("Unable to create user account");
 
   await db.prepare(
-    "INSERT OR IGNORE INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES (?,?,?,?,?,?)"
-  ).bind(crypto.randomUUID(), "Personal", user.id, "personal", now, now).run();
-  const workspace = await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND workspace_type='personal'").bind(user.id).first<{ id: string }>();
+    "INSERT OR IGNORE INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,?,?,?,?)"
+  ).bind(crypto.randomUUID(), "Personal", user.id, "shared", "private", now, now).run();
+  const workspace = await db.prepare("SELECT id FROM workspaces WHERE owner_user_id=? AND visibility='private'").bind(user.id).first<{ id: string }>();
   if (!workspace?.id) throw new Error("Unable to create personal workspace");
   await db.prepare(
     "INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)"
@@ -278,7 +278,7 @@ export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ 
   if (!token) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    "SELECT u.id,u.email,u.display_name,u.avatar_url,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.workspace_type='personal') AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
+    "SELECT u.id,u.email,u.display_name,u.avatar_url,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.visibility='private') AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
   ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; expires_at: string; personal_workspace_id: string | null }>();
   if (!row) return null;
   if (row.expires_at <= new Date().toISOString()) {
