@@ -27,7 +27,7 @@ function seed(){
   db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('u1','sub1','one@example.com','one@example.com',1,?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,created_at,updated_at) VALUES ('w1','Personal','u1','personal',?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
-  db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('s1','u1,',?,'2099-01-01T00:00:00.000Z',?)").run(createHash("sha256").update("ai-session").digest("base64url"),now);
+  db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('s1','u1',?,'2099-01-01T00:00:00.000Z',?)").run(createHash("sha256").update("ai-session").digest("base64url"),now);
   return{db,env:{DB:db,GEMINI_API_KEY:"test-key",GEMINI_MODEL:"gemini-3.1-flash-lite",GEMINI_MODEL_FALLBACKS:"gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.5-flash"}};
 }
 function request(path,method="GET",body){
@@ -41,7 +41,7 @@ const validDraft={
   summary:"Meeting and follow-up",
   note:{title:"Project meeting",content:"Discuss the launch and follow up with the team."},
   suggestedCategories:[{name:"Work",reason:"Project planning"}],
-  events:[{title:"Project review",description:"Review milestones",startLocal:"2026-11-24T10:00",endLocal:"2026-11-24T11:00",reminderLocal:"2026-11-24T09:30"}],
+  events:[{title:"Project review",description:"Review milestones",startLocal:"2026-11-23T10:00",endLocal:"2026-11-23T11:00",reminderLocal:"2026-11-23T09:30"}],
   reminders:[{title:"Send the agenda",dueLocal:"2026-11-23T16:00"}],
   tasks:[{title:"Prepare slides",dueLocal:"2026-11-23T12:00"}],
   clarifyingQuestions:[]
@@ -56,7 +56,7 @@ test("free model allowlist excludes paid or unknown models",()=>{
 test("draft validator rejects invalid local dates and preserves timezone",()=>{
   const valid=validateAiDraft(validDraft,"Asia/Kuala_Lumpur");
   assert.equal(valid.timezone,"Asia/Kuala_Lumpur");
-  assert.equal(valid.events[0].startLocal,"2026-11-24T10:00");
+  assert.equal(valid.events[0].startLocal,"2026-11-23T10:00");
   const invalid=structuredClone(validDraft);
   invalid.events[0].startLocal="2026-02-31T10:00";
   assert.equal(validateAiDraft(invalid,"Asia/Kuala_Lumpur"),null);
@@ -92,7 +92,7 @@ test("consented organiser falls back from a missing model to the next free model
     const payload=await response.json();
     assert.equal(payload.model,"gemini-3.5-flash-lite");
     assert.equal(payload.requiresUserConfirmation,true);
-    assert.equal(payload.draft.events[0].startLocal,"2026-11-24T10:00");
+    assert.equal(payload.draft.events[0].startLocal,"2026-11-23T10:00");
     assert.equal(models.length,2);
     assert.ok(models.every(url=>/gemini-(3\.1-flash-lite|3\.5-flash-lite|3\.6-flash|3\.5-flash):generateContent/.test(url)));
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM ai_request_usage").get().count,1);
