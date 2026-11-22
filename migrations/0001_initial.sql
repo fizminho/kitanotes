@@ -75,10 +75,10 @@ CREATE TABLE IF NOT EXISTS notes (
   deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (workspace_id, category_id) REFERENCES categories(workspace_id, id) ON DELETE SET NULL
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS ix_notes_workspace_updated ON notes(workspace_id, deleted_at, archived_at, updated_at DESC);
-CREATE INDEX IF NOT EXISTS ix_notes_category ON notes(workspace_id, category_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS ix_notes_category ON notes(workspace_id, category_id, updated_at DESC);\n\nCREATE TRIGGER IF NOT EXISTS trg_notes_category_workspace_insert\nBEFORE INSERT ON notes\nWHEN NEW.category_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = NEW.category_id AND c.workspace_id = NEW.workspace_id)\nBEGIN\n  SELECT RAISE(ABORT, 'note category must belong to the same workspace');\nEND;\n\nCREATE TRIGGER IF NOT EXISTS trg_notes_category_workspace_update\nBEFORE UPDATE OF workspace_id, category_id ON notes\nWHEN NEW.category_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = NEW.category_id AND c.workspace_id = NEW.workspace_id)\nBEGIN\n  SELECT RAISE(ABORT, 'note category must belong to the same workspace');\nEND;
 
 CREATE TABLE IF NOT EXISTS activity_events (
   id TEXT PRIMARY KEY,
