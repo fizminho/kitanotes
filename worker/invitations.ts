@@ -71,7 +71,7 @@ async function createInvitation(request: Request, env: AuthEnv, userId: string):
   const body = await readJsonBody(request);
   if (!body) return json({ error: "INVALID_JSON_BODY" }, 400);
   const workspaceId = typeof body.workspaceId === "string" && body.workspaceId.length <= 64 ? body.workspaceId : "";
-  const suppliedEmail = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const suppliedEmail = body.openLink===true ? "" : (typeof body.email === "string" ? body.email.trim().toLowerCase() : "");
   const email = suppliedEmail || "*";
   const role = body.role === "viewer" || body.role === "editor" ? body.role : null;
   if (!workspaceId || (email !== "*" && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) || !role) {
@@ -128,7 +128,7 @@ async function listInvitations(request: Request, env: AuthEnv, userId: string): 
   const result = await db.prepare("SELECT id,workspace_id,invited_email_normalized,role,status,expires_at,created_at FROM invitations WHERE workspace_id=? ORDER BY created_at DESC LIMIT 100")
     .bind(workspaceId).all<InvitationRow>();
   return json({ invitations: result.results.map(row => ({
-    id:row.id,workspaceId:row.workspace_id,email:row.invited_email_normalized,role:row.role,
+    id:row.id,workspaceId:row.workspace_id,email:row.invited_email_normalized==="*"?"Anyone with link":row.invited_email_normalized,role:row.role,
     status:row.status==="pending"&&row.expires_at<=new Date().toISOString()?"expired":row.status,expiresAt:row.expires_at,createdAt:row.created_at
   })) });
 }
