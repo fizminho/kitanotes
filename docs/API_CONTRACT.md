@@ -47,6 +47,6 @@ Timestamps must include an explicit UTC offset or `Z`; the API stores UTC instan
 - `GET /api/calendar/ics/export?workspaceId=`: downloads the workspace's active events as an RFC 5545 `.ics` file. Any workspace member may export; event details follow workspace access.
 - `GET /api/calendar/preferences`: returns the user's selected Malaysia holiday state (defaults to Selangor).
 - `PUT /api/calendar/preferences`: body `{ holidayState }`; saves the user's selected state.
-- `GET /api/calendar/holidays?state=selangor&from=YYYY-MM-DD&to=YYYY-MM-DD`: reads the selected state's public/state holiday feed from HolidayWise. This is a public read-only feed; no Google Calendar OAuth permission is requested.
+- `GET /api/calendar/holidays?state=selangor&from=YYYY-MM-DD&to=YYYY-MM-DD`: combines the selected state's public/state holiday feed from HolidayWise with KPM school-break periods for 2026/2027 using the state's Group A/B assignment. Public holidays and school breaks are read-only; no Google Calendar OAuth permission is requested.
 
 Existing Google Calendar-imported events remain in the workspace as editable KitaNotes events. The retired OAuth connection and event-map tables are dropped by migration `0016_calendar_2_0.sql`.
