@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0018_workspace_starred_default.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -271,5 +271,33 @@ test("members can leave, owners can transfer ownership, role changes notify the 
     assert.equal(db.sqlite.prepare("SELECT user_id FROM workspace_members WHERE workspace_id='w1' AND user_id='u1'").get(),undefined);
     const ownerLeave=await handleInvitationsRequest(request("/api/workspaces/w1/members/u3",tokens.u3,"DELETE",{}),env);
     assert.equal(ownerLeave.status,409);
+  } finally { db.close(); }
+});
+
+
+test("workspace star is a per-user default and only members can set it", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const initial=await handleInvitationsRequest(request("/api/workspaces",tokens.u1),env);
+    assert.equal((await initial.json()).starredWorkspaceId,null);
+
+    const starred=await handleInvitationsRequest(request("/api/workspaces/star",tokens.u1,"PUT",{workspaceId:"w1"}),env);
+    assert.equal(starred.status,200);
+    assert.deepEqual(await starred.json(),{starredWorkspaceId:"w1"});
+
+    const ownerList=await handleInvitationsRequest(request("/api/workspaces",tokens.u1),env);
+    const ownerResult=await ownerList.json();
+    assert.equal(ownerResult.starredWorkspaceId,"w1");
+    assert.equal(ownerResult.workspaces[0].id,"w1");
+
+    const otherMemberList=await handleInvitationsRequest(request("/api/workspaces",tokens.u3),env);
+    assert.equal((await otherMemberList.json()).starredWorkspaceId,null);
+
+    const outsiderAttempt=await handleInvitationsRequest(request("/api/workspaces/star",tokens.u2,"PUT",{workspaceId:"w1"}),env);
+    assert.equal(outsiderAttempt.status,404);
+
+    const cleared=await handleInvitationsRequest(request("/api/workspaces/star",tokens.u1,"PUT",{workspaceId:null}),env);
+    assert.deepEqual(await cleared.json(),{starredWorkspaceId:null});
+    assert.equal((await (await handleInvitationsRequest(request("/api/workspaces",tokens.u1),env)).json()).starredWorkspaceId,null);
   } finally { db.close(); }
 });

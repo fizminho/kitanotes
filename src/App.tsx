@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star } from "lucide-react";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
 
@@ -72,6 +72,8 @@ export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
+  const [starredWorkspaceId,setStarredWorkspaceId]=useState<string|null>(null);
+  const [starredWorkspaceSaving,setStarredWorkspaceSaving]=useState(false);
   const [workspaceModalOpen,setWorkspaceModalOpen]=useState(false);
   const [workspaceName,setWorkspaceName]=useState("");
   const [workspacePurpose,setWorkspacePurpose]=useState("");
@@ -263,14 +265,15 @@ export default function App() {
   }
 
   useEffect(()=>{
-    if(!user){setWorkspaces([]);setActiveWorkspaceId("");return;}
+    if(!user){setWorkspaces([]);setActiveWorkspaceId("");setStarredWorkspaceId(null);return;}
     let active=true;
     fetch("/api/workspaces",{credentials:"same-origin"}).then(async response=>{
       if(!response.ok)throw new Error("Unable to load workspaces.");
-      const result=await response.json() as {workspaces:Workspace[]};
+      const result=await response.json() as {workspaces:Workspace[];starredWorkspaceId:string|null};
       if(!active)return;
       setWorkspaces(result.workspaces);
-      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
+      setStarredWorkspaceId(result.starredWorkspaceId);
+      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
     }).catch(()=>{if(active)setWorkspaces([]);});
     return()=>{active=false;};
   },[user]);
@@ -1049,9 +1052,24 @@ export default function App() {
   async function refreshWorkspaces(preferId?: string) {
     const response = await fetch("/api/workspaces", { credentials: "same-origin" });
     if (!response.ok) return;
-    const result = await response.json() as { workspaces: Workspace[] };
+    const result = await response.json() as { workspaces: Workspace[]; starredWorkspaceId: string|null };
     setWorkspaces(result.workspaces);
-    setActiveWorkspaceId(current => preferId && result.workspaces.some(item => item.id === preferId) ? preferId : (result.workspaces.some(item => item.id === current) ? current : (result.workspaces.find(item => item.id === user?.personalWorkspaceId)?.id ?? result.workspaces[0]?.id ?? "")));
+    setStarredWorkspaceId(result.starredWorkspaceId);
+    setActiveWorkspaceId(current => preferId && result.workspaces.some(item => item.id === preferId) ? preferId : (result.workspaces.some(item => item.id === current) ? current : (result.workspaces.find(item => item.id === result.starredWorkspaceId)?.id ?? result.workspaces.find(item => item.id === user?.personalWorkspaceId)?.id ?? result.workspaces[0]?.id ?? "")));
+  }
+
+  async function toggleWorkspaceStar() {
+    if(!user||!activeWorkspaceId||starredWorkspaceSaving)return;
+    const nextWorkspaceId=starredWorkspaceId===activeWorkspaceId?null:activeWorkspaceId;
+    setStarredWorkspaceSaving(true);
+    try{
+      const response=await fetch("/api/workspaces/star",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({workspaceId:nextWorkspaceId})});
+      const result=await response.json() as {starredWorkspaceId?:string|null;error?:string};
+      if(!response.ok||!("starredWorkspaceId" in result))throw new Error("Unable to update the default workspace.");
+      setStarredWorkspaceId(result.starredWorkspaceId??null);
+      pushToast(nextWorkspaceId?"This workspace will open first next time.":"Default workspace cleared.");
+    }catch(error){pushToast(error instanceof Error?error.message:"Unable to update the default workspace.","error");}
+    finally{setStarredWorkspaceSaving(false);}
   }
 
   function openManage(tab: ManageTab = "people") {
@@ -1170,14 +1188,19 @@ export default function App() {
           <img className="brand-logo" src="/icons/mark-96.png" alt="" width="34" height="34" />
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
-        <label className="workspace-switch" aria-label="Choose workspace">
-          <span className="workspace-avatar">K</span>
-          <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
-          <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
-            {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}
-          </select>
-          <ChevronDown size={16} />
-        </label>
+        <div className="workspace-switch-row">
+          <label className="workspace-switch" aria-label="Choose workspace">
+            <span className="workspace-avatar">K</span>
+            <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
+            <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
+              {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}
+            </select>
+            <ChevronDown size={16} />
+          </label>
+          <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
+            <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
+          </button>
+        </div>
         <div className="nav-label">WORKSPACE</div>
         <nav className="nav-list" aria-label="Main navigation">
           <button className={view === "notes" ? "nav-item active" : "nav-item"} onClick={() => setView("notes")}><Command size={17} /> Notes <span className="nav-count">{notes.length}</span></button>
@@ -1196,7 +1219,10 @@ export default function App() {
 
       <section className="main-panel">
         <header className="topbar">
-          <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}</select></label>
+          <div className="mobile-workspace-control">
+            <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}</select></label>
+            <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button mobile active":"workspace-star-button mobile"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}><Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/></button>
+          </div>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
           <div className="top-actions">
             {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceModalOpen}><Plus size={14}/> New space</button>}
