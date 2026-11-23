@@ -81,7 +81,10 @@ test("event list and detail are isolated to current workspace memberships", asyn
   try {
     const list=await handleEventsRequest(request("/api/events?from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z",tokens.u1),env);
     assert.equal(list.status,200);
-    assert.deepEqual((await list.json()).events.map(event=>event.id),["e1"]);
+    const listBody=await list.json();
+    assert.deepEqual(listBody.events.map(event=>event.id),["e1"]);
+    assert.equal("createdByEmail" in listBody.events[0],false);
+    assert.equal("updatedByEmail" in listBody.events[0],false);
 
     const outsiderDetail=await handleEventsRequest(request("/api/events/e1",tokens.u3),env);
     assert.equal(outsiderDetail.status,404);
