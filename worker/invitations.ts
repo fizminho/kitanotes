@@ -265,12 +265,35 @@ async function listActivity(env: InvitationEnv, userId: string, workspaceId: str
 }
 
 async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
-  const result = await env.DB!.prepare(
-    "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=? ORDER BY CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
-  ).bind(userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
-  return json({ workspaces: result.results.map(row => ({
-    id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role
-  })) });
+  const [result, preference] = await Promise.all([
+    env.DB!.prepare(
+      "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id LEFT JOIN user_workspace_preferences p ON p.user_id=wm.user_id WHERE wm.user_id=? ORDER BY CASE WHEN w.id=p.starred_workspace_id THEN 0 ELSE 1 END,CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
+    ).bind(userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>(),
+    env.DB!.prepare("SELECT p.starred_workspace_id FROM user_workspace_preferences p JOIN workspace_members wm ON wm.workspace_id=p.starred_workspace_id AND wm.user_id=p.user_id WHERE p.user_id=?").bind(userId).first<{starred_workspace_id:string|null}>()
+  ]);
+  return json({
+    workspaces: result.results.map(row => ({
+      id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role
+    })),
+    starredWorkspaceId: preference?.starred_workspace_id ?? null
+  });
+}
+
+async function updateStarredWorkspace(request: Request, env: InvitationEnv, userId: string): Promise<Response> {
+  if (!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const body=await readJsonBody(request);
+  if (!body || (body.workspaceId!==null && (typeof body.workspaceId!=="string" || body.workspaceId.length>64))) {
+    return json({error:"INVALID_WORKSPACE"},400);
+  }
+  const workspaceId=body.workspaceId as string|null;
+  if(workspaceId){
+    const membership=await env.DB!.prepare("SELECT workspace_id FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,userId).first<{workspace_id:string}>();
+    if(!membership)return json({error:"WORKSPACE_NOT_FOUND"},404);
+  }
+  await env.DB!.prepare(
+    "INSERT INTO user_workspace_preferences (user_id,starred_workspace_id,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET starred_workspace_id=excluded.starred_workspace_id,updated_at=excluded.updated_at"
+  ).bind(userId,workspaceId,new Date().toISOString()).run();
+  return json({starredWorkspaceId:workspaceId});
 }
 
 export async function handleInvitationsRequest(request: Request, env: InvitationEnv): Promise<Response | null> {
@@ -280,6 +303,7 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
   if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(env,user.id);
+  if (url.pathname === "/api/workspaces/star" && request.method === "PUT") return updateStarredWorkspace(request,env,user.id);
   if (url.pathname === "/api/workspaces" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
     const body = await readJsonBody(request);
