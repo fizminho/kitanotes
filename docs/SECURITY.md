@@ -1,46 +1,48 @@
 # KitaNotes security baseline
 
-## Current implementation
+This file is the concise, project-specific view of the controls currently implemented. For the reusable checklist, threat model, test matrix, PR history and follow-up plan, see [Security hardening playbook](SECURITY_HARDENING_PLAYBOOK.md).
 
-- Google OIDC login uses state, nonce and PKCE (S256).
-- ID tokens are signature-verified against Google's published JWKS and checked for issuer, audience, expiry, nonce and verified email.
-- Google `sub` is the stable user key. Email is normalised and used for invitation matching.
-- Application sessions use random opaque tokens. Only SHA-256 token hashes are stored in D1.
-- Session cookies are HttpOnly, Secure, SameSite=Lax and use the `__Host-` prefix.
-- OAuth state is stored in a short-lived signed HttpOnly cookie.
-- Logout requires a same-origin Origin header.
-- OAuth client secret and session signing secret are Worker secrets, never frontend build variables.
-- Notes, categories, invitations, calendar events and reminders are workspace-scoped. Membership and role checks are enforced by API handlers.
-- Invitation tokens are cryptographically random, stored only as hashes, expire after seven days, are single-use and require the invited verified Google email.
-- Mutating notes, categories, invitations, calendar, reminders, notifications and AI consent routes enforce same-origin checks.
-- Reminder notifications use an idempotent D1 batch and a five-minute Cron Trigger. No email or browser push provider is called.
-- Google OAuth initiation is limited to 10 attempts per IP fingerprint per 10-minute window; callbacks are limited to 20 per IP fingerprint per 10-minute window. IP fingerprints are HMACed with the session secret before storage.
-- Invitation creation is limited to 10 per authenticated user per hour. OCR has a separate limit of 3 requests per user per minute plus a 5-request daily quota. Fixed-window counters use atomic D1 upserts and expired buckets are removed by the scheduled reminder task.
-- Security headers are applied to API, health and static asset responses, including CSP, HSTS on HTTPS, frame denial, no-sniff, referrer and permissions policies.
-- Gemini is server-side only. Explicit consent is stored by policy version; raw prompts/drafts are not persisted; the adapter enforces a 16 KiB input limit, 10 requests/user/UTC day and a hard free-model allowlist. No paid-model fallback exists. See [AI privacy policy](AI_PRIVACY.md).
+## Implemented controls
 
-## Required controls before production
+- Google OIDC uses state, nonce and PKCE (S256); ID tokens are signature-verified and claims are checked.
+- Stable Google subject identifies users. Sessions use random opaque tokens; only SHA-256 hashes are stored in D1.
+- Session cookies use HttpOnly, Secure, SameSite=Lax and the __Host- prefix. Logout revokes the current server-side session and clears the cookie.
+- OAuth and session secrets, Gemini API key and VAPID private key are Worker secrets. Public client/key material is kept separate.
+- Workspace membership and role checks are enforced server-side for notes, events, reminders, invitations, notifications and other protected resources.
+- Invitation tokens are random, stored hashed, expire, and named-email invitations require matching verified email. Open-link invitation behavior is intentionally reusable.
+- State-changing browser endpoints use same-origin checks. Request readers enforce byte limits.
+- D1-backed rate limits protect OAuth, invitations, OCR, push subscription operations, push test and public holiday refresh paths.
+- AI requests are bounded by input size and per-user daily quota; model IDs are filtered through a free-model allowlist. Provider secrets remain server-side.
+- OCR accepts bounded JPEG/PNG/WebP bytes, validates file signatures, does not fetch user-supplied URLs, and has separate burst and daily quotas.
+- Push subscriptions are user-scoped, endpoint-host validated and device-capped. Push payloads contain generic messages only, not note/event/reminder/workspace content.
+- API JSON responses use Cache-Control: no-store. Security headers include CSP and related browser protections. Vite production source maps are disabled.
+- CI runs dependency audit, build, tests, migration validation and a Worker dry-run. CodeQL runs on PRs, main pushes, weekly schedule and manual dispatch.
 
-- [x] Configure production Google OAuth client with the exact redirect URI; production login has been exercised.
-- [x] Configure `GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` as Worker secrets. Never expose their values in docs or chat.
-- [x] Configure production `APP_BASE_URL` to the exact HTTPS origin.
-- [ ] Complete a recorded production verification of login, logout, session expiry and account switching with two real Google accounts. Core login and two-account collaboration have been exercised; this full checklist is not yet evidenced.
-- [x] Add CSRF origin validation to every state-changing authenticated API endpoint.
-- [x] Add a per-user daily request cap and input-size limit for AI endpoints.
-- [x] Add D1-backed rate limits for login initiation (10/IP/10m), callbacks (20/IP/10m) and invitation creation (10/user/hour); add atomic counter and expiry tests.
-- [x] Add invitation-token hashing, expiry, one-time acceptance and verified-email matching tests.
-- [x] Add workspace isolation and owner/editor/viewer authorization tests.
-- [x] Note content is rendered as React text, not injected HTML; no `dangerouslySetInnerHTML` or third-party Markdown-to-HTML renderer is used. Keep this invariant if rich Markdown rendering is introduced.
-- [ ] Define session revocation on account deletion and security events.
-- [ ] Add log redaction and ensure tokens, cookies, private note text and provider secrets are never logged.
-- [ ] Review dependency updates and pin GitHub Actions to reviewed immutable SHAs before production.
+## Security PR history
 
-## Known limitations / follow-up
+- #25 dependency updates and dependency audit in CI
+- #26 public holiday API rate limits and feed bounds
+- #27 push API body bounds and rate limits
+- #28 CodeQL workflow
+- #29 workspace authorization regression tests
+- #30 reminder, notification and invitation authorization hardening
+- #31 API response data minimization
+- #32 role/workspace ID tampering regression tests
+- #33 cross-resource and ownership-transfer regression tests
+- #34 concurrent workspace ownership-transfer protection
+- #35 generic push payloads to prevent private-content leakage
 
-- Google JWKS is fetched during callback validation; production hardening may add a bounded in-memory cache with key rotation handling.
-- D1 rate limits depend on a provisioned database and share its free daily read/write quotas. A database outage fails the protected action closed; consider Cloudflare edge-level protection if abuse warrants it.
-- The current session store has a fixed seven-day expiry. Refresh/rotation and "log out all devices" are not implemented.
-- Authentication has unit coverage for ID-token signature and key OIDC claims, but no real Google OAuth end-to-end test yet.
-- Notes, categories, invitations, calendar, reminders, notifications and AI routes have D1-backed integration tests. Tests use a local SQLite adapter, not a provisioned Cloudflare D1 database.
-- The application has an existing production deployment, but the open controls below remain release-hardening work. Do not label a new release production-verified until its current commit, migrations and smoke tests are confirmed.
-\n\n## Google Calendar import\n\nCalendar access is separately opt-in and requests only Google's read-only `calendar.events.readonly` scope. The OAuth callback is protected by a short-lived, single-use state record and PKCE. Refresh tokens are encrypted at rest with AES-GCM using a key derived from the server-side `SESSION_SECRET`. Tokens are never returned to the browser. Imported events flow from Google Calendar into KitaNotes only; the application does not create, edit or delete Google Calendar events.\n
+## Open follow-up items
+
+- Session inventory, revoke-all-devices, refresh/rotation and broader security-event revocation.
+- Complete real Google OAuth end-to-end and production smoke testing for logout, expiry and account switching.
+- Dedicated log-redaction review for tokens, cookies, private content and provider payloads.
+- Pin GitHub Actions to reviewed immutable commit SHAs.
+- Verify Cloudflare account-level roles, secret access, deployment restrictions, routes, D1 configuration and other dashboard-only settings.
+- Confirm protected-branch rules and required reviews/checks in GitHub settings.
+
+## Important verification boundary
+
+Repository review, passing tests, CodeQL and Worker dry-run are evidence of code-level controls, not proof of production deployment or account-level configuration. Do not mark a production release as security-verified until the deployed commit, migrations, dashboard settings and production smoke tests have been checked.
+
+See [AI privacy policy](AI_PRIVACY.md), [authentication](AUTHENTICATION.md) and [PWA push](PWA_PUSH.md) for feature-specific details.
