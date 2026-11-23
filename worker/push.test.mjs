@@ -68,3 +68,49 @@ test("activity-specific preferences suppress their own push category", async () 
     assert.match(queries[0],/notification_preferences/);
   }
 });
+
+
+function authenticatedPushDb(){
+  const buckets=new Map();
+  return {
+    prepare(sql){
+      return {bind(...values){
+        return {
+          first:async()=>{
+            if(sql.includes("FROM sessions s JOIN users u"))return{id:"user-1",email:"one@example.com",display_name:"One",avatar_url:null,expires_at:"2099-01-01T00:00:00.000Z",personal_workspace_id:"workspace-1"};
+            if(sql.includes("INSERT INTO request_rate_limits")){
+              const key=values[0];const count=(buckets.get(key)??0)+1;buckets.set(key,count);
+              return count<=values[3]?{request_count:count}:null;
+            }
+            if(sql.includes("FROM notification_preferences"))return{push_enabled:0};
+            return null;
+          },
+          run:async()=>({meta:{changes:1}}),
+          all:async()=>({results:[]})
+        };
+      }};
+    }
+  };
+}
+
+test("push subscription requests reject oversized JSON bodies",async()=>{
+  const db=authenticatedPushDb();
+  const response=await handlePushRequest(new Request("https://kitanotes.example/api/push/subscriptions",{
+    method:"POST",
+    headers:{cookie:"__Host-kitanotes_session=test-session",origin:"https://kitanotes.example","content-type":"application/json","content-length":"70000"},
+    body:"{}"
+  }),{DB:db,VAPID_PUBLIC_KEY:"public",VAPID_PRIVATE_KEY:"private",VAPID_SUBJECT:"mailto:test@example.com"});
+  assert.equal(response?.status,400);
+  assert.equal((await response?.json()).error,"INVALID_PUSH_SUBSCRIPTION");
+});
+
+test("push test endpoint limits repeated sends per user",async()=>{
+  const db=authenticatedPushDb();
+  const env={DB:db,VAPID_PUBLIC_KEY:"public",VAPID_PRIVATE_KEY:"private",VAPID_SUBJECT:"mailto:test@example.com"};
+  const makeRequest=()=>new Request("https://kitanotes.example/api/push/test",{
+    method:"POST",headers:{cookie:"__Host-kitanotes_session=test-session",origin:"https://kitanotes.example"}
+  });
+  const responses=[];
+  for(let i=0;i<4;i++)responses.push(await handlePushRequest(makeRequest(),env));
+  assert.deepEqual(responses.map(response=>response?.status),[200,200,200,429]);
+});
