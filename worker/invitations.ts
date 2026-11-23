@@ -364,16 +364,28 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
         if(!ws) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
         if(!targetId||targetId===user.id||!(await memberRole(env.DB!,id,targetId))) return json({error:"MEMBER_NOT_FOUND"},404);
         const now=new Date().toISOString();
+        // Claim the transfer with an owner-checked update first. D1 batch is
+        // transactional, so competing transfers cannot both promote a target.
         const ownershipChanges = [
-          env.DB!.prepare("UPDATE workspace_members SET role='editor' WHERE workspace_id=? AND user_id=?").bind(id,user.id),
-          env.DB!.prepare("UPDATE workspace_members SET role='owner' WHERE workspace_id=? AND user_id=?").bind(id,targetId),
-          env.DB!.prepare("UPDATE workspaces SET owner_user_id=?,updated_at=? WHERE id=?").bind(targetId,now,id)
+          env.DB!.prepare("UPDATE workspaces SET owner_user_id=?,updated_at=? WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared' AND EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner')")
+            .bind(targetId,now,id,user.id,id,targetId),
+          env.DB!.prepare("UPDATE workspace_members SET role='editor' WHERE workspace_id=? AND user_id=? AND EXISTS (SELECT 1 FROM workspaces WHERE id=? AND owner_user_id=?)")
+            .bind(id,user.id,id,targetId),
+          env.DB!.prepare("UPDATE workspace_members SET role='owner' WHERE workspace_id=? AND user_id=? AND EXISTS (SELECT 1 FROM workspaces WHERE id=? AND owner_user_id=?)")
+            .bind(id,targetId,id,targetId)
         ];
+        let transferResults;
         if (env.DB!.batch) {
-          await env.DB!.batch(ownershipChanges);
+          transferResults = await env.DB!.batch(ownershipChanges);
         } else {
-          for (const statement of ownershipChanges) await statement.run();
+          const claimed = await ownershipChanges[0].run();
+          transferResults = [claimed];
+          if (Number((claimed as {meta?:{changes?:number}})?.meta?.changes ?? 0) > 0) {
+            transferResults.push(await ownershipChanges[1].run(), await ownershipChanges[2].run());
+          }
         }
+        const claimed = Number((transferResults[0] as {meta?:{changes?:number}})?.meta?.changes ?? 0);
+        if (claimed !== 1) return json({error:"OWNERSHIP_TRANSFER_CONFLICT"},409);
         await logActivity(env.DB!,id,user.id,"workspace.ownership_transferred","user",targetId);
         await notifyUser(env.DB!,targetId,id,"ownership_transferred","You now own a space",(await displayName(env.DB!,user.id))+" made you the owner of "+(await workspaceName(env.DB!,id))+".","workspace",id,"ownership:"+id+":"+targetId+":"+Date.now());
         await sendPushToUser(env.DB!,env,targetId,{title:"Workspace ownership transferred",body:"You are now the owner of "+(await workspaceName(env.DB!,id))+".",url:"/",tag:"workspace-owner-"+id},"workspace");
