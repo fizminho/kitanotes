@@ -154,6 +154,30 @@ test("non-owners and non-members cannot transfer workspace ownership", async () 
   } finally { db.close(); }
 });
 
+test("stale concurrent ownership transfer cannot create a second owner", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const now=new Date().toISOString();
+    db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u2','viewer',?)").run(now);
+    const originalBatch=db.batch.bind(db);
+    db.batch=async statements=>{
+      // Simulate another transfer winning after this request's owner/member
+      // checks but immediately before its D1 batch starts.
+      db.sqlite.prepare("UPDATE workspace_members SET role='editor' WHERE workspace_id='w1' AND user_id='u1'").run();
+      db.sqlite.prepare("UPDATE workspace_members SET role='owner' WHERE workspace_id='w1' AND user_id='u3'").run();
+      db.sqlite.prepare("UPDATE workspaces SET owner_user_id='u3' WHERE id='w1'").run();
+      return originalBatch(statements);
+    };
+    const response=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"transfer_ownership",userId:"u2"}),env);
+    assert.equal(response.status,409);
+    assert.equal((await response.json()).error,"OWNERSHIP_TRANSFER_CONFLICT");
+    assert.equal(db.sqlite.prepare("SELECT owner_user_id FROM workspaces WHERE id='w1'").get().owner_user_id,"u3");
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u3'").get().role,"owner");
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").get().role,"viewer");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1' AND role='owner'").get().total,1);
+  } finally { db.close(); }
+});
+
 test("only workspace owner can invite and revoke pending invitations", async () => {
   const {db,env,tokens}=seed();
   try {
