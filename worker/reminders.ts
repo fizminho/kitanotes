@@ -72,6 +72,27 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     return json({reminder:row?dto(row):null},201);
   }
   const match=url.pathname.match(/^\/api\/reminders\/([^/]+)$/);
+  if(match&&request.method==="PATCH"){
+    if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+    const id=decodeURIComponent(match[1]);
+    const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
+    if(!row)return json({error:"NOT_FOUND"},404);
+    const role=await roleFor(db,row.workspace_id,user.id);
+    if(!role)return json({error:"NOT_FOUND"},404);
+    if(role!=="owner"&&role!=="editor")return json({error:"FORBIDDEN"},403);
+    if(row.status!=="pending")return json({error:"REMINDER_NOT_PENDING"},409);
+    const body=await readJsonBody(request);
+    if(!body)return json({error:"INVALID_JSON_BODY"},400);
+    const title=body.title===undefined?row.title:(typeof body.title==="string"?body.title.trim():"");
+    const dueAt=body.dueAt===undefined?row.due_at_utc:toUtc(body.dueAt);
+    const tz=body.timezone===undefined?row.timezone:timezone(body.timezone);
+    if(!title||title.length>200||!dueAt||!tz)return json({error:"INVALID_REMINDER"},400);
+    const now=new Date().toISOString();
+    const result=await db.prepare("UPDATE reminders SET title=?,due_at_utc=?,timezone=?,updated_at=? WHERE id=? AND status='pending'").bind(title,dueAt,tz,now,id).run();
+    if(Number((result as {meta?:{changes?:number}}).meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
+    const updated=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
+    return json({reminder:updated?dto(updated):null});
+  }
   if(match&&request.method==="DELETE"){
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
     const id=decodeURIComponent(match[1]);

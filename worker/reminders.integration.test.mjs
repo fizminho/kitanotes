@@ -95,3 +95,29 @@ test("reminder creation rejects cross-workspace links and non-editor roles",asyn
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM reminders WHERE title IN ('Viewer reminder','Cross-link')").get().total,0);
   }finally{db.close();}
 });
+
+test("pending reminders can be edited by workspace editors and reject viewers or outsiders",async()=>{
+  const {db,env,tokens}=seed();
+  try{
+    const viewer=await handleRemindersRequest(request("/api/reminders/r1",tokens.u2,"PATCH",{title:"Tampered",dueAt:"2099-01-02T10:00:00Z"}),env);
+    assert.equal(viewer.status,403);
+    const outsider=await handleRemindersRequest(request("/api/reminders/r1",tokens.u3,"PATCH",{title:"Tampered"}),env);
+    assert.equal(outsider.status,404);
+    const updated=await handleRemindersRequest(request("/api/reminders/r1",tokens.u1,"PATCH",{title:"Updated event",dueAt:"2099-01-02T10:00:00Z",timezone:"Asia/Kuala_Lumpur"}),env);
+    assert.equal(updated.status,200);
+    const body=await updated.json();
+    assert.equal(body.reminder.title,"Updated event");
+    assert.equal(body.reminder.dueAt,"2099-01-02T10:00:00.000Z");
+    assert.equal(db.sqlite.prepare("SELECT status FROM reminders WHERE id='r1'").get().status,"pending");
+  }finally{db.close();}
+});
+
+test("delivered reminders cannot be edited",async()=>{
+  const {db,env,tokens}=seed();
+  try{
+    db.sqlite.prepare("UPDATE reminders SET status='delivered' WHERE id='r1'").run();
+    const response=await handleRemindersRequest(request("/api/reminders/r1",tokens.u1,"PATCH",{title:"Late edit"}),env);
+    assert.equal(response.status,409);
+    assert.equal(db.sqlite.prepare("SELECT title FROM reminders WHERE id='r1'").get().title,"Workspace one");
+  }finally{db.close();}
+});
