@@ -28,6 +28,7 @@ type Invitation = { id: string; email: string; role: "editor" | "viewer"; status
 type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
 type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
+type Reminder = {id:string;workspaceId:string;eventId:string|null;noteId:string|null;title:string;dueAt:string;timezone:string;status:"pending"|"delivered"|"cancelled"};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
@@ -128,6 +129,8 @@ export default function App() {
   const [invitationsLoading, setInvitationsLoading] = useState(false);
   const [inviteRefresh, setInviteRefresh] = useState(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventReminders,setEventReminders]=useState<Reminder[]>([]);
+  const [editingEventReminder,setEditingEventReminder]=useState<Reminder|null>(null);
   const [holidays,setHolidays]=useState<CalendarItem[]>([]);
   const [holidayFeedStatus,setHolidayFeedStatus]=useState<{holidayWise:boolean;kpm:boolean;publicHolidayCount:number;schoolHolidayCount:number;holidayWiseError:string|null}|null>(null);
   const [holidayState,setHolidayState]=useState("selangor");
@@ -376,16 +379,17 @@ export default function App() {
     else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
     const from = new Date(rangeStart.getTime()-86400000).toISOString();
     const to = new Date(rangeEnd.getTime()+86400000).toISOString();
-    fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"})
-      .then(async response => {
+    Promise.all([fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"}),activeWorkspaceId?fetch("/api/reminders?workspaceId="+encodeURIComponent(activeWorkspaceId)+"&limit=100",{credentials:"same-origin"}):Promise.resolve(null)])
+      .then(async ([response,reminderResponse]) => {
         if(!response.ok) throw new Error("Unable to load calendar events.");
         const result = await response.json() as {events:CalendarEvent[]};
         if(active) setEvents(result.events);
+        if(reminderResponse?.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
       })
       .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
       .finally(()=>{if(active)setEventsLoading(false);});
     return ()=>{active=false;};
-  },[view,user,calendarMode,calendarCursor,calendarRefresh]);
+  },[view,user,activeWorkspaceId,calendarMode,calendarCursor,calendarRefresh]);
 
   useEffect(() => {
     if (!notificationsOpen || !user) return;
@@ -832,7 +836,7 @@ export default function App() {
 
 
   function startNewEvent() {
-    setEditingEvent(null);
+    setEditingEvent(null);setEditingEventReminder(null);
     setEventTitle("");
     setEventDescription("");
     const start=dateTimeInputFor(new Date(Date.now()+25*3600000).toISOString(),eventTimezone);
@@ -848,7 +852,8 @@ export default function App() {
   function startEditEvent(item:CalendarEvent) {
     setEditingEvent(item);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
     setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
-    setEventReminderAt("");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
+    const reminder=eventReminders.filter(value=>value.eventId===item.id).sort((a,b)=>b.dueAt.localeCompare(a.dueAt))[0]??null;
+    setEditingEventReminder(reminder);setEventReminderAt(reminder&&reminder.status==="pending"?dateTimeInputFor(reminder.dueAt,reminder.timezone):"");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
   }
 
   async function saveEvent() {
@@ -860,13 +865,21 @@ export default function App() {
       const result=await response.json() as {event?:CalendarEvent};
       if(!response.ok||!result.event)throw new Error(response.status===409?"This event changed elsewhere. Close and reopen it before saving.":"Unable to save this event.");
       setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
-      if(eventReminderAt&&!editingEvent){
+      if(editingEventReminder?.status==="pending"){
+        if(eventReminderAt){
+          const reminderResponse=await fetch("/api/reminders/"+encodeURIComponent(editingEventReminder.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone})});
+          if(!reminderResponse.ok)throw new Error("Event saved, but its reminder could not be updated. Reopen the event and try again.");
+        }else{
+          const reminderResponse=await fetch("/api/reminders/"+encodeURIComponent(editingEventReminder.id),{method:"DELETE",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
+          if(!reminderResponse.ok)throw new Error("Event saved, but its reminder could not be removed. Reopen the event and try again.");
+        }
+      }else if(eventReminderAt){
         const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
           workspaceId:activeWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone
         })});
-        if(!reminderResponse.ok)setEventsError("Event saved, but its reminder could not be created.");
+        if(!reminderResponse.ok)throw new Error("Event saved, but its reminder could not be created.");
       }
-      setEventComposerOpen(false);setEditingEvent(null);
+      setEventComposerOpen(false);setEditingEvent(null);setEditingEventReminder(null);setCalendarRefresh(value=>value+1);
     }catch(error){setEventsError(error instanceof Error?error.message:"Unable to save this event.");}
     finally{setEventSaving(false);}
   }
@@ -1447,7 +1460,7 @@ export default function App() {
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>{setEventStart(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(e.target.value,eventTimezone));}}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>{setEventTimezone(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(eventStart,e.target.value));}} placeholder="Asia/Kuala_Lumpur"/></label>
           <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
-          <label className="field-label">{editingEvent?"Reminder (existing reminders are retained)":"Reminder (default: 1 day before)"}<input className="invite-input" type="datetime-local" value={eventReminderAt} disabled={Boolean(editingEvent)} onChange={e=>{setEventReminderAt(e.target.value);setEventReminderAuto(false);}}/>{!editingEvent&&<><small className="calendar-reminder-help">Set automatically for 24 hours before the event. You can change the time or clear it.</small><button type="button" className="text-action" onClick={()=>{setEventReminderAt(defaultReminderDateTime(eventStart,eventTimezone));setEventReminderAuto(true);}}>Reset to 1 day before</button></>}</label>
+          <label className="field-label">Event reminder{editingEventReminder&&<small className="calendar-reminder-help">{editingEventReminder.status==="pending"?"Current reminder":"Previous reminder"}: {new Date(editingEventReminder.dueAt).toLocaleString(undefined,{timeZone:editingEventReminder.timezone,dateStyle:"medium",timeStyle:"short"})} · {editingEventReminder.timezone} · {editingEventReminder.status}</small>}<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>{setEventReminderAt(e.target.value);setEventReminderAuto(false);}}/>{!editingEventReminder&&<small className="calendar-reminder-help">Automatically set to 1 day before. You can change the time or leave it empty.</small>}<button type="button" className="text-action" onClick={()=>{setEventReminderAt(defaultReminderDateTime(eventStart,eventTimezone));setEventReminderAuto(true);}}>{editingEventReminder?"Set a new reminder 1 day before":"Reset to 1 day before"}</button>{editingEventReminder?.status==="pending"&&<button type="button" className="text-action" onClick={()=>setEventReminderAt("")}>Remove reminder</button>}</label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
           <footer><span>{editingEvent?"Changes use version checking. Existing reminders are retained.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
