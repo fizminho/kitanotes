@@ -7,6 +7,17 @@ type StoredSubscription = { id:string; endpoint:string; subscription_json:string
 type PushKind = "reminder" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
 type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
 
+export function safePushMessage(kind:PushKind):{title:string;body:string} {
+ switch(kind){
+  case "reminder": return {title:"KitaNotes reminder",body:"You have a reminder due. Open KitaNotes to view it."};
+  case "shared_note": return {title:"New shared note",body:"A member added a note to a workspace you belong to."};
+  case "shared_note_update": return {title:"Shared note updated",body:"A shared note was changed or deleted. Open KitaNotes for details."};
+  case "event": return {title:"Calendar updated",body:"A calendar event changed. Open KitaNotes for details."};
+  case "workspace": return {title:"Workspace update",body:"There is an update in one of your workspaces."};
+  default: return {title:"KitaNotes",body:"Push notifications are connected on this device."};
+ }
+}
+
 export function isWithinQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
  if(!row.quiet_hours_start||!row.quiet_hours_end)return false;
  try {
@@ -71,7 +82,7 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
-   const payload=await buildPushPayload({data:{title:data.title.slice(0,80),body:data.body.slice(0,160),url:data.url??"/",tag:data.tag??"kitanotes"},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
+   const message=safePushMessage(kind);\n   const payload=await buildPushPayload({data:{...message,url:"/",tag:"kitanotes-"+kind+"-"+crypto.randomUUID()},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
    const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
    if(response.status===404||response.status===410){await db.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(row.id).run();return;}
    if(response.ok){const now=new Date().toISOString();await db.prepare("UPDATE push_subscriptions SET last_success_at=?,updated_at=? WHERE id=?").bind(now,now,row.id).run();}
