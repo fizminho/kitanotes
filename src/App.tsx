@@ -51,6 +51,22 @@ type Note = {
 };
 
 export default function App() {
+  // Track the iPhone's visual viewport so bottom-sheet modals resize when the keyboard opens.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const updateHeight = () => { document.documentElement.style.setProperty("--app-visual-height", Math.round(viewport.height) + "px"); document.documentElement.style.setProperty("--app-visual-offset-top", Math.round(viewport.offsetTop) + "px"); };
+    updateHeight();
+    viewport.addEventListener("resize", updateHeight);
+    viewport.addEventListener("scroll", updateHeight);
+    return () => {
+      viewport.removeEventListener("resize", updateHeight);
+      viewport.removeEventListener("scroll", updateHeight);
+      document.documentElement.style.removeProperty("--app-visual-height");
+      document.documentElement.style.removeProperty("--app-visual-offset-top");
+    };
+  }, []);
+
   const [view, setView] = useState<View>("notes");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -1424,7 +1440,7 @@ export default function App() {
       </div>}
 
       {eventComposerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEventComposerOpen(false);}}>
-        <section className="composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
+        <section className="composer event-composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
           <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">{editingEvent?"Edit event":"New event"}</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
           <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
@@ -1438,7 +1454,7 @@ export default function App() {
       </div>}
 
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
-        <section className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
+        <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
