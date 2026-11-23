@@ -255,12 +255,13 @@ async function deleteWorkspace(request: Request, env: InvitationEnv, userId: str
 async function listActivity(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
-  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,u.email AS actor_email,t.display_name AS target_name,t.email AS target_email FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id WHERE a.workspace_id=? ORDER BY a.created_at DESC LIMIT 50")
-    .bind(workspaceId).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;actor_email:string|null;target_name:string|null;target_email:string|null}>();
+  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,t.display_name AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id WHERE a.workspace_id=? ORDER BY a.created_at DESC LIMIT 50")
+    .bind(workspaceId).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
   return json({ activity: result.results.map(row => {
     let metadata: Record<string, unknown> = {};
     try { metadata = JSON.parse(row.metadata_json); } catch { /* ignore malformed metadata */ }
-    return { id:row.id,type:row.event_type,actor:row.actor_name||row.actor_email||"Someone",target:row.target_name||row.target_email||(typeof metadata.email==="string"?metadata.email:null),metadata,createdAt:row.created_at };
+    delete metadata.email;
+    return { id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",target:row.target_name||null,metadata,createdAt:row.created_at };
   }) });
 }
 
