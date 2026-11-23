@@ -125,6 +125,20 @@ test("invitation acceptance rejects a different verified Google email", async ()
   } finally { db.close(); }
 });
 
+test("client-supplied owner roles cannot escalate invitations or member permissions", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const invite=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"new@example.com",role:"owner"}),env);
+    assert.equal(invite.status,400);
+    assert.equal((await invite.json()).error,"INVALID_INVITATION");
+    const promotion=await handleInvitationsRequest(request("/api/workspaces/w1/members/u3",tokens.u1,"PATCH",{role:"owner"}),env);
+    assert.equal(promotion.status,400);
+    assert.equal((await promotion.json()).error,"INVALID_MEMBER_ROLE");
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u3'").get().role,"viewer");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM invitations WHERE workspace_id='w1'").get().total,0);
+  } finally { db.close(); }
+});
+
 test("only workspace owner can invite and revoke pending invitations", async () => {
   const {db,env,tokens}=seed();
   try {
