@@ -28,7 +28,7 @@ type Invitation = { id: string; email: string; role: "editor" | "viewer"; status
 type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
 type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
-type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; createdAt:string; updatedAt:string; version:number };
+type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
 type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
@@ -47,7 +47,7 @@ type ExistingNoteProposal = {noteId:string;categoryName:string;reason:string;sel
 type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
-  categoryName: string | null; createdBy: string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
+  categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
 };
 
 export default function App() {

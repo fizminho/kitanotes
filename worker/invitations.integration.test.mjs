@@ -248,8 +248,12 @@ test("accepting an invitation logs activity and notifies the owner; members can 
     assert.equal((await members.json()).members.length,3);
     const activity=await handleInvitationsRequest(request("/api/workspaces/w1/activity",tokens.u3),env);
     assert.equal(activity.status,200);
-    const types=(await activity.json()).activity.map(item=>item.type);
+    const activityItems=(await activity.json()).activity;
+    const types=activityItems.map(item=>item.type);
     assert.ok(types.includes("member.joined")&&types.includes("invitation.created"));
+    const invitationActivity=activityItems.find(item=>item.type==="invitation.created");
+    assert.equal("email" in invitationActivity.metadata,false);
+    assert.equal(invitationActivity.target,null);
     const outsider=await handleInvitationsRequest(request("/api/workspaces/w1/activity","unknown-session"),env);
     assert.notEqual(outsider.status,200);
     const nonMember=await handleInvitationsRequest(request("/api/workspaces/w1/activity",tokens.u4),env);

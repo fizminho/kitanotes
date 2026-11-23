@@ -5,7 +5,7 @@ type Db = NonNullable<AuthEnv["DB"]>;
 type Role = "owner" | "editor" | "viewer";
 type NoteRow = {
   id: string; workspace_id: string; title: string; content: string; category_id: string | null;
-  category_name?: string | null; created_by_user_id: string; created_by_name?:string|null; created_by_email?:string|null; updated_by_user_id?:string|null; updated_by_name?:string|null; updated_by_email?:string|null; version: number;
+  category_name?: string | null; created_by_user_id: string; created_by_name?:string|null;  updated_by_user_id?:string|null; updated_by_name?:string|null;  version: number;
   created_at: string; updated_at: string; archived_at: string | null;
 };
 type CategoryRow = {
@@ -96,8 +96,8 @@ function noteDto(row: NoteRow) {
   return {
     id: row.id, workspaceId: row.workspace_id, title: row.title, content: row.content,
     categoryId: row.category_id, categoryName: row.category_name ?? null,
-    createdBy: row.created_by_user_id, createdByName:row.created_by_name??null, createdByEmail:row.created_by_email??null,
-    updatedBy:row.updated_by_user_id??null, updatedByName:row.updated_by_name??null, updatedByEmail:row.updated_by_email??null, version: row.version,
+    createdBy: row.created_by_user_id, createdByName:row.created_by_name??null,
+    updatedBy:row.updated_by_user_id??null, updatedByName:row.updated_by_name??null, version: row.version,
     createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at
   };
 }
@@ -112,9 +112,9 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     if (workspaceId && !(await roleFor(db, workspaceId, userId))) return json({ error: "NOT_FOUND" }, 404);
     const pattern = "%" + query.replace(/[\\%_]/g, "\\$&") + "%";
     const result = workspaceId
-      ? await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
+      ? await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(workspaceId, query, pattern, pattern, limit).all<NoteRow>()
-      : await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE wm.user_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
+      : await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE wm.user_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(userId, query, pattern, pattern, limit).all<NoteRow>();
     return json({ notes: result.results.map(noteDto) });
   }
@@ -134,7 +134,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     await db.prepare("INSERT INTO notes (id,workspace_id,title,content,category_id,created_by_user_id,updated_by_user_id,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?)")
       .bind(id, workspace.id, title, content, categoryId, userId, userId, now, now).run();
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.created','note',?,'{}',?)").bind(crypto.randomUUID(),workspace.id,userId,id,now).run();
-    const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
+    const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
@@ -145,7 +145,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
   const match = path.match(/^\/api\/notes\/([^/]+)$/);
   if (!match) return null;
   const noteId = decodeURIComponent(match[1]);
-  const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=? AND n.deleted_at IS NULL")
+  const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=? AND n.deleted_at IS NULL")
     .bind(noteId).first<NoteRow>();
   const role = row ? await roleFor(db, row.workspace_id, userId) : null;
   if (!row || !role) return json({ error: "NOT_FOUND" }, 404);
@@ -171,7 +171,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
     const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Updated: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/",tag:"shared-note-update-"+noteId},"shared_note_update")));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
-    const updated = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
+    const updated = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(noteId).first<NoteRow>();
     return json({ note: updated ? noteDto(updated) : null });
   }
