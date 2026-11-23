@@ -345,16 +345,28 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
         const workspace=await env.DB!.prepare("SELECT id,workspace_type,visibility FROM workspaces WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'").bind(id,user.id).first<{id:string;workspace_type:string;visibility:string}>();
         if(!workspace) return json({error:"SHARED_WORKSPACE_NOT_FOUND"},404);
         const now=new Date().toISOString();
+        // Change visibility first as an atomic ownership-checked claim. The
+        // remaining cleanup only runs while this user still owns the private space.
         const privacyChanges = [
-          env.DB!.prepare("UPDATE invitations SET status='revoked' WHERE workspace_id=? AND status='pending'").bind(id),
-          env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(id,user.id),
-          env.DB!.prepare("UPDATE workspaces SET visibility='private',updated_at=? WHERE id=? AND owner_user_id=?").bind(now,id,user.id)
+          env.DB!.prepare("UPDATE workspaces SET visibility='private',updated_at=? WHERE id=? AND owner_user_id=? AND workspace_type='shared' AND visibility='shared'")
+            .bind(now,id,user.id),
+          env.DB!.prepare("UPDATE invitations SET status='revoked' WHERE workspace_id=? AND status='pending' AND EXISTS (SELECT 1 FROM workspaces WHERE id=? AND owner_user_id=? AND visibility='private')")
+            .bind(id,id,user.id),
+          env.DB!.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id<>? AND EXISTS (SELECT 1 FROM workspaces WHERE id=? AND owner_user_id=? AND visibility='private')")
+            .bind(id,user.id,id,user.id)
         ];
+        let privacyResults;
         if (env.DB!.batch) {
-          await env.DB!.batch(privacyChanges);
+          privacyResults = await env.DB!.batch(privacyChanges);
         } else {
-          for (const statement of privacyChanges) await statement.run();
+          const claimed = await privacyChanges[0].run();
+          privacyResults = [claimed];
+          if (Number((claimed as {meta?:{changes?:number}})?.meta?.changes ?? 0) > 0) {
+            privacyResults.push(await privacyChanges[1].run(), await privacyChanges[2].run());
+          }
         }
+        const claimed = Number((privacyResults[0] as {meta?:{changes?:number}})?.meta?.changes ?? 0);
+        if (claimed !== 1) return json({error:"WORKSPACE_UPDATE_CONFLICT"},409);
         await logActivity(env.DB!,id,user.id,"workspace.members_cleared","workspace",id);
         return json({updated:true,id,type:"shared",visibility:"private",membersRemoved:true,invitationsRevoked:true});
       }
