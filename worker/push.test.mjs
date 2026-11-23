@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handlePushRequest, sendPushToUser } from "./push.ts";
+import { handlePushRequest, sendPushToUser, safePushMessage } from "./push.ts";
 
 test("push public key endpoint exposes only the public VAPID key", async () => {
   const response = await handlePushRequest(new Request("https://kitanotes.example/api/push/public-key"), {
@@ -113,4 +113,21 @@ test("push test endpoint limits repeated sends per user",async()=>{
   const responses=[];
   for(let i=0;i<4;i++)responses.push(await handlePushRequest(makeRequest(),env));
   assert.deepEqual(responses.map(response=>response?.status),[200,200,200,429]);
+});
+
+
+test("push payload messages never include private note, event, reminder or workspace content",()=>{
+  const cases=[
+    ["reminder","KitaNotes reminder","You have a reminder due. Open KitaNotes to view it."],
+    ["shared_note","New shared note","A member added a note to a workspace you belong to."],
+    ["shared_note_update","Shared note updated","A shared note was changed or deleted. Open KitaNotes for details."],
+    ["event","Calendar updated","A calendar event changed. Open KitaNotes for details."],
+    ["workspace","Workspace update","There is an update in one of your workspaces."],
+    ["test","KitaNotes","Push notifications are connected on this device."]
+  ];
+  for(const [kind,title,body] of cases){
+    const message=safePushMessage(kind);
+    assert.deepEqual(message,{title,body});
+    assert.doesNotMatch(JSON.stringify(message),/secret note|private event|family reminder|workspace name/i);
+  }
 });
