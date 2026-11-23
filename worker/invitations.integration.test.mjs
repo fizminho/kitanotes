@@ -251,6 +251,8 @@ test("accepting an invitation logs activity and notifies the owner; members can 
     assert.ok(types.includes("member.joined")&&types.includes("invitation.created"));
     const outsider=await handleInvitationsRequest(request("/api/workspaces/w1/activity","unknown-session"),env);
     assert.notEqual(outsider.status,200);
+    const nonMember=await handleInvitationsRequest(request("/api/workspaces/w1/activity",tokens.u2),env);
+    assert.equal(nonMember.status,404);
   } finally { db.close(); }
 });
 
