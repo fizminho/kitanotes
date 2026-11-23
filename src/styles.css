@@ -425,3 +425,109 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(prefers-reduced-motion:reduce){
   .sidebar .nav-item,.note-card,.workspace-star-button{transition:none}
 }
+
+
+/* Follow the iOS visual viewport when the software keyboard is shown. */
+@media(max-width:760px){
+  .modal-backdrop{
+    inset:var(--app-visual-offset-top,0px) 0 auto;
+    height:var(--app-visual-height,100dvh);
+    max-height:100dvh;
+    padding:8px 10px max(8px,env(safe-area-inset-bottom,0px));
+    align-items:flex-end;
+    overflow:hidden;
+  }
+  .modal-backdrop .composer{
+    width:100%;
+    max-width:620px;
+    max-height:calc(var(--app-visual-height,100dvh) - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+    min-height:0;
+    margin:0 auto;
+    padding:16px 16px 12px;
+    overflow-x:hidden;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    border-radius:20px;
+    scroll-padding-block:18px;
+  }
+  .modal-backdrop .composer::before{margin:-7px auto 11px}
+  .modal-backdrop .composer>header{
+    position:sticky;top:-16px;z-index:3;
+    margin:0 -1px 12px;padding:7px 1px 9px;
+    background:#fff;
+  }
+  [data-theme=dark] .modal-backdrop .composer>header{background:#171827}
+  .modal-backdrop .composer h2{font-size:19px}
+  .modal-backdrop .composer footer{
+    position:sticky;bottom:-12px;z-index:3;
+    display:grid;grid-template-columns:minmax(0,1fr);
+    gap:8px;margin-top:12px;padding:10px 0 2px;
+    background:#fff;
+  }
+  [data-theme=dark] .modal-backdrop .composer footer{background:#171827}
+  .modal-backdrop .composer footer>span{font-size:9px;line-height:1.35}
+  .modal-backdrop .composer footer .primary-button{
+    width:100%;min-height:44px;justify-content:center;align-self:stretch;
+  }
+  .modal-backdrop .composer input,
+  .modal-backdrop .composer textarea,
+  .modal-backdrop .composer select{font-size:16px}
+  .modal-backdrop .composer .field-label{gap:6px;margin:10px 0 12px}
+  .modal-backdrop .composer .invite-input{height:42px}
+  .modal-backdrop .note-composer>.composer-title{
+    min-height:44px;padding:9px 2px;font-size:17px;
+  }
+  .modal-backdrop .note-composer>textarea{
+    min-height:100px;height:clamp(100px,22dvh,180px);
+    max-height:30dvh;padding:10px 2px;
+    line-height:1.55;resize:vertical;
+  }
+  .modal-backdrop .note-composer .composer-counter{margin:5px 0 7px;font-size:9px}
+  .modal-backdrop .event-composer .event-description{min-height:58px;max-height:100px}
+  .modal-backdrop .ai-composer{max-height:calc(var(--app-visual-height,100dvh) - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
+  .modal-backdrop .organizer-note-list,.modal-backdrop .organizer-proposal-list{max-height:24dvh;overflow-y:auto}
+  .modal-backdrop input:focus,.modal-backdrop textarea:focus,.modal-backdrop select:focus{scroll-margin-block:18px}
+}
+
+/* Calendar month cells show a short event title again. Tapping a date opens its full agenda below. */
+.calendar-selected-agenda{display:none}
+.calendar-day.selected{background:#f7f6ff;box-shadow:inset 0 0 0 1px #8176df}
+.calendar-day-select{
+  display:inline-flex;align-items:center;justify-content:center;min-width:27px;min-height:27px;
+  padding:2px 5px;border:0;border-radius:8px;background:transparent;color:inherit;
+  font:inherit;cursor:pointer;
+}
+.calendar-day-select[aria-pressed=true]{background:#e9e6ff;color:#5e53c4}
+.calendar-day.today .calendar-day-select[aria-pressed=true]{background:#685fc5;color:#fff}
+@media(max-width:760px){
+  .month-grid .calendar-day{min-height:66px;padding:3px 2px;overflow:hidden}
+  .month-grid .calendar-day-events{
+    display:grid;grid-template-columns:minmax(0,1fr);align-content:start;
+    justify-content:stretch;gap:2px;min-height:0;width:100%;
+  }
+  .month-grid .calendar-event-chip{
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    width:100%;min-width:0;max-height:21px;min-height:0;
+    padding:2px 2px;border:0;border-left:2px solid #7469d0;
+    border-radius:3px;font-size:7px;line-height:1.15;
+    text-align:left;white-space:normal;overflow:hidden;text-overflow:ellipsis;
+    overflow-wrap:anywhere;
+  }
+  .month-grid .calendar-event-chip span{display:none}
+  .month-grid .calendar-event-chip.holiday-event-chip{border-left-color:#4c9b70}
+  .month-grid .calendar-event-chip.school-holiday-chip{border-left-color:#658ac8}
+  .calendar-day-heading{justify-content:flex-start;margin-bottom:2px}
+  .calendar-day-select{min-width:24px;min-height:24px;padding:2px 4px;font-size:10px}
+  .calendar-selected-agenda{display:grid;gap:8px;margin-top:16px}
+  .calendar-selected-agenda>h3{font:700 13px var(--font-ui);color:#4a4e61;margin:0 0 2px}
+  .calendar-selected-agenda .event-card{display:flex;align-items:flex-start;gap:9px;padding:11px 9px}
+  .calendar-selected-agenda .event-date-block{width:46px;height:44px;font-size:9px}
+  .calendar-selected-agenda .event-date-block strong{font-size:10px;line-height:1.2}
+  .calendar-selected-agenda .event-date-block span{font-size:8px}
+  .calendar-selected-agenda .event-copy{min-width:0;flex:1}
+  .calendar-selected-agenda .event-copy h3{font-size:12px;line-height:1.35;margin:1px 0 4px}
+  .calendar-selected-agenda .event-copy p,.calendar-selected-agenda .event-copy small{font-size:10px;line-height:1.45}
+  .calendar-selected-empty{margin:0;padding:12px;border:1px dashed #e4e2f2;border-radius:9px;color:#9295a4;font-size:11px}
+  .calendar-agenda{display:none}
+}
