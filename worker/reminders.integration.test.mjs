@@ -41,6 +41,7 @@ function seed(){
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u2','viewer',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w2','u3','owner',?)").run(now);
+  db.sqlite.prepare("INSERT INTO notes (id,workspace_id,title,content,created_by_user_id,created_at,updated_at) VALUES ('n2','w2','Other workspace note','Private','u3',?,?)").run(now,now);
   const tokens={u1:"owner-session",u2:"viewer-session",u3:"outsider-session"};
   for(const [userId,token] of Object.entries(tokens)){
     db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").run("s-"+userId,userId,createHash("sha256").update(token).digest("base64url"),"2099-01-01T00:00:00.000Z",now);
@@ -89,7 +90,7 @@ test("reminder creation rejects cross-workspace links and non-editor roles",asyn
   try{
     const viewer=await handleRemindersRequest(request("/api/reminders",tokens.u2,"POST",{workspaceId:"w1",title:"Viewer reminder",dueAt:"2099-01-01T10:00:00Z"}),env);
     assert.equal(viewer.status,403);
-    const cross=await handleRemindersRequest(request("/api/reminders",tokens.u1,"POST",{workspaceId:"w1",title:"Cross-link",dueAt:"2099-01-01T10:00:00Z",noteId:"note-in-w2"}),env);
+    const cross=await handleRemindersRequest(request("/api/reminders",tokens.u1,"POST",{workspaceId:"w1",title:"Cross-link",dueAt:"2099-01-01T10:00:00Z",noteId:"n2"}),env);
     assert.equal(cross.status,400);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM reminders WHERE title IN ('Viewer reminder','Cross-link')").get().total,0);
   }finally{db.close();}
