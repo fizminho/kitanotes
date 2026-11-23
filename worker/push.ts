@@ -82,7 +82,8 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
-   const message=safePushMessage(kind);\n   const payload=await buildPushPayload({data:{...message,url:"/",tag:"kitanotes-"+kind+"-"+crypto.randomUUID()},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
+   const message=safePushMessage(kind);
+   const payload=await buildPushPayload({data:{...message,url:"/",tag:"kitanotes-"+kind+"-"+crypto.randomUUID()},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
    const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
    if(response.status===404||response.status===410){await db.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(row.id).run();return;}
    if(response.ok){const now=new Date().toISOString();await db.prepare("UPDATE push_subscriptions SET last_success_at=?,updated_at=? WHERE id=?").bind(now,now,row.id).run();}
