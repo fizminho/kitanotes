@@ -36,13 +36,14 @@ function seed() {
   const users = [
     ["u1","sub1","owner@example.com"],
     ["u2","sub2","invitee@example.com"],
-    ["u3","sub3","other@example.com"]
+    ["u3","sub3","other@example.com"],
+    ["u4","sub4","outsider@example.com"]
   ];
   for (const [id,sub,email] of users) db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)").run(id,sub,email,email,now,now);
   db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('w1','Shared','u1','shared','shared',?,?)").run(now,now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
   db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u3','viewer',?)").run(now);
-  const tokens = { u1:"owner-session",u2:"invitee-session",u3:"other-session" };
+  const tokens = { u1:"owner-session",u2:"invitee-session",u3:"other-session",u4:"outsider-session" };
   for (const [userId,token] of Object.entries(tokens)) {
     db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)").run("s-"+userId,userId,createHash("sha256").update(token).digest("base64url"),"2099-01-01T00:00:00.000Z",now);
   }
@@ -251,7 +252,7 @@ test("accepting an invitation logs activity and notifies the owner; members can 
     assert.ok(types.includes("member.joined")&&types.includes("invitation.created"));
     const outsider=await handleInvitationsRequest(request("/api/workspaces/w1/activity","unknown-session"),env);
     assert.notEqual(outsider.status,200);
-    const nonMember=await handleInvitationsRequest(request("/api/workspaces/w1/activity",tokens.u2),env);
+    const nonMember=await handleInvitationsRequest(request("/api/workspaces/w1/activity",tokens.u4),env);
     assert.equal(nonMember.status,404);
   } finally { db.close(); }
 });
