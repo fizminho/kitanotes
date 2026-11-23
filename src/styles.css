@@ -273,3 +273,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   to{opacity:1;transform:translateY(0)}
 }
 @media(prefers-reduced-motion:reduce){.modal-backdrop .composer{animation:none}}
+
+/* Default workspace star: a personal preference, visible beside the workspace picker. */
+.workspace-switch-row{display:flex;align-items:center;gap:8px;margin-top:37px}
+.workspace-switch-row .workspace-switch{flex:1;min-width:0;margin-top:0}
+.workspace-star-button{display:grid;place-items:center;flex:none;width:40px;height:40px;padding:0;border:1px solid #eceef4;border-radius:10px;background:#fff;color:#a0a2ae;transition:background .16s,border-color .16s,color .16s}
+.workspace-star-button:hover:not(:disabled){background:#f7f5ff;border-color:#d8d3fb;color:#6658d9}
+.workspace-star-button.active{background:#f2f0ff;border-color:#d8d3fb;color:#6658d9}
+.workspace-star-button:disabled{opacity:.45;cursor:not-allowed}
+.mobile-workspace-control{display:none}
+[data-theme=dark] .workspace-star-button{background:#1b1d2b;border-color:#34364a;color:#9296ad}
+[data-theme=dark] .workspace-star-button.active{background:#2a2750;border-color:#4a4384;color:#c3bcff}
+[data-theme=dark] .workspace-star-button:hover:not(:disabled){background:#2a2750;border-color:#4a4384;color:#c3bcff}
+@media(max-width:760px){
+  .workspace-switch-row{display:none}
+  .mobile-workspace-control{display:flex;align-items:center;gap:5px;flex:1;min-width:0}
+  .mobile-workspace-control .mobile-workspace-switch{flex:1;min-width:0}
+  .mobile-workspace-control .mobile-workspace-switch select{max-width:none}
+  .workspace-star-button.mobile{width:36px;height:36px;border-radius:9px}
+}
