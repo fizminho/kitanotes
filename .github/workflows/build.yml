@@ -17,6 +17,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Audit installed dependencies for high and critical vulnerabilities
+        run: npm audit --audit-level=high
       - run: npm run build
       - run: npm test
       - name: Validate D1 migration with SQLite
