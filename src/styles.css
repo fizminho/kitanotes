@@ -623,3 +623,54 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 [data-theme=dark] .calendar-agenda-count{background:#2b2e42;color:#c0c3d2}
 [data-theme=dark] .calendar-selected-empty{border-color:#34374b;color:#a4a7b6}
 [data-theme=dark] .calendar-day.selected .calendar-day-markers{background:#2a2750}
+
+
+/* Keep modal actions floating above the iOS keyboard and the scrollable form. */
+@media(max-width:760px){
+  .modal-backdrop .composer{
+    padding-bottom:112px;
+  }
+  .modal-backdrop .composer footer{
+    position:fixed;
+    left:50%;
+    bottom:max(8px,env(safe-area-inset-bottom,0px));
+    z-index:20;
+    width:min(588px,calc(100vw - 52px));
+    box-sizing:border-box;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    margin:0;
+    padding:11px;
+    border:1px solid #e8e5f5;
+    border-radius:16px;
+    background:rgba(255,255,255,.96);
+    box-shadow:0 10px 35px #17172b2b;
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    transform:translateX(-50%);
+  }
+  [data-theme=dark] .modal-backdrop .composer footer{
+    border-color:#34354a;
+    background:rgba(23,24,39,.96);
+    box-shadow:0 10px 35px #0008;
+  }
+  .modal-backdrop .composer footer>span{
+    flex:1 1 100%;
+    font-size:9px;
+    line-height:1.35;
+  }
+  .modal-backdrop .composer footer>button{
+    flex:1 1 auto;
+    min-height:44px;
+    justify-content:center;
+  }
+  .modal-backdrop .composer footer>.primary-button{
+    flex:1 1 100%;
+    width:100%;
+    min-height:46px;
+    justify-content:center;
+  }
+}
