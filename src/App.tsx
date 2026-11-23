@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Pencil, Trash2, RotateCcw, Moon, Sun, Tag } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag } from "lucide-react";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
+import NoteCard from "./components/NoteCard";
 
 type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
@@ -511,13 +512,13 @@ export default function App() {
     setComposerOpen(true);
   }
 
-  function startEditNote(note: Note) {
+  const startEditNote = useCallback((note: Note) => {
     setEditingNote(note);
     setDraftTitle(note.title);
     setDraftContent(note.content);
     setSelectedCategoryId(note.categoryId ?? "");
     setComposerOpen(true);
-  }
+  }, []);
 
   async function saveNote() {
     if (!draftTitle.trim() || saving) return;
@@ -547,7 +548,7 @@ export default function App() {
     }
   }
 
-  async function archiveNote(note: Note, archived = true) {
+  const archiveNote = useCallback(async (note: Note, archived = true) => {
     try {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
         method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" },
@@ -559,9 +560,11 @@ export default function App() {
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Unable to update this note.", "error");
     }
-  }
+  }, [pushToast]);
 
-  async function deleteNote(note: Note) {
+  const restoreNote = useCallback((note: Note) => archiveNote(note, false), [archiveNote]);
+
+  const deleteNote = useCallback(async (note: Note) => {
     if (!window.confirm("Delete \u201c" + note.title + "\u201d? This cannot be undone from the app.")) return;
     try {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
@@ -573,7 +576,7 @@ export default function App() {
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Unable to delete this note.", "error");
     }
-  }
+  }, [pushToast]);
 
   async function createCategory() {
     if(!activeWorkspaceId||!categoryName.trim()||categorySaving)return;
@@ -1253,11 +1256,7 @@ export default function App() {
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}
             {notesLoading ? <div className="loading-state">Memuatkan nota…</div> : visibleNotes.length > 0 ? <div className="notes-grid">
-              {visibleNotes.map(note => <article className="note-card" key={note.id}>
-                <div className="note-card-top">{note.categoryName && <span className="note-category">{note.categoryName}</span>}<span className="note-date">{new Date(note.updatedAt).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}</span></div>
-                <h3>{note.title}</h3><p>{note.content || "No additional details."}</p><small className="record-audit">Created by {note.createdByName||note.createdByEmail||"Unknown"} · {new Date(note.createdAt).toLocaleString()}<br/>Last updated by {note.updatedByName||note.updatedByEmail||note.createdByName||note.createdByEmail||"Unknown"} · {new Date(note.updatedAt).toLocaleString()}</small>
-                <div className="note-card-actions">{canWrite&&!showArchived&&<button onClick={() => startEditNote(note)}><Pencil size={14} /> Edit</button>}{canWrite&&!showArchived&&<button onClick={() => archiveNote(note)}><Archive size={14} /> Archive</button>}{canWrite&&showArchived&&<button onClick={() => archiveNote(note,false)}><RotateCcw size={14} /> Restore</button>}{canWrite&&showArchived&&<button className="danger-action" onClick={() => deleteNote(note)}><Trash2 size={14} /> Delete</button>}{!canWrite&&<span className="note-date">View only</span>}</div>
-              </article>)}
+              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
               <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
