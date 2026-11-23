@@ -226,3 +226,50 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .calendar-reminder-help{font-size:10px;font-weight:400;line-height:1.45;color:#9295a4}.holiday-kind-label{display:inline-flex;align-self:flex-start;margin-top:5px;padding:4px 7px;border-radius:6px;background:#edf8f1;color:#3c8a5d;font-size:9px;font-weight:700}.holiday-event-card .event-date-block{background:#edf8f1;color:#3c8a5d}.holiday-event-chip{border-left-color:#4c9b70;background:#edf8f1;color:#34784f}.holiday-event-chip span{color:#4c9b70}[data-theme=dark] .holiday-kind-label,[data-theme=dark] .holiday-event-card .event-date-block,[data-theme=dark] .holiday-event-chip{background:#1e382c;color:#9ed5b2}[data-theme=dark] .holiday-event-chip span{color:#9ed5b2}
 
 .school-holiday-label{background:#edf3ff;color:#496da9}.school-holiday-chip{border-left-color:#658ac8;background:#edf3ff;color:#3f5f94}.school-holiday-chip span{color:#658ac8}.school-holiday-card .event-date-block{background:#edf3ff;color:#496da9}[data-theme=dark] .school-holiday-label,[data-theme=dark] .school-holiday-chip,[data-theme=dark] .school-holiday-card .event-date-block{background:#202d43;color:#a9c6f3}[data-theme=dark] .school-holiday-chip span{color:#a9c6f3}
+
+/* Mobile modal layout: compact bottom sheets instead of edge-to-edge screens. */
+@media(max-width:760px){
+  .modal-backdrop{
+    align-items:flex-end;
+    padding:12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .modal-backdrop .composer{
+    position:relative;
+    width:100%;
+    max-width:620px;
+    max-height: min(84vh, 760px);
+    max-height: min(84dvh, 760px);
+    margin:0 auto;
+    padding:22px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    border-radius:22px;
+    box-shadow:0 18px 60px #17172b35;
+    animation:modal-sheet-in .22s ease-out;
+  }
+  .modal-backdrop .composer::before{
+    content:"";
+    display:block;
+    width:36px;
+    height:4px;
+    margin:-10px auto 16px;
+    border-radius:999px;
+    background:#d9d9e4;
+  }
+  [data-theme=dark] .modal-backdrop .composer::before{background:#484b61}
+  .modal-backdrop .composer header{margin-bottom:18px}
+  .modal-backdrop .composer h2{font-size:21px}
+  .modal-backdrop .composer footer{
+    position:sticky;
+    bottom:-20px;
+    padding:12px 0 2px;
+    background:inherit;
+  }
+  .modal-backdrop .composer footer .primary-button{min-height:42px}
+  .modal-backdrop .ai-composer{max-height:min(84vh,760px);max-height:min(84dvh,760px)}
+}
+@keyframes modal-sheet-in{
+  from{opacity:0;transform:translateY(18px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@media(prefers-reduced-motion:reduce){.modal-backdrop .composer{animation:none}}
