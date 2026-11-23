@@ -76,8 +76,9 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
     const id=decodeURIComponent(match[1]);
     const row=await db.prepare("SELECT workspace_id,status FROM reminders WHERE id=?").bind(id).first<{workspace_id:string;status:string}>();
-    if(!row||!(await roleFor(db,row.workspace_id,user.id)))return json({error:"NOT_FOUND"},404);
+    if(!row)return json({error:"NOT_FOUND"},404);
     const role=await roleFor(db,row.workspace_id,user.id);
+    if(!role)return json({error:"NOT_FOUND"},404);
     if(role!=="owner"&&role!=="editor")return json({error:"FORBIDDEN"},403);
     if(row.status!=="pending")return json({error:"REMINDER_NOT_PENDING"},409);
     const now=new Date().toISOString();
