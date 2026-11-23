@@ -674,3 +674,54 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     justify-content:center;
   }
 }
+
+/* Keep every modal's primary actions visible directly below its title on mobile. */
+@media(max-width:760px){
+  .modal-backdrop .composer:has(footer)>header{
+    margin-bottom:84px;
+  }
+  .modal-backdrop .composer footer{
+    position:fixed;
+    top:calc(var(--app-visual-offset-top,0px) + 68px);
+    bottom:auto;
+    left:50%;
+    z-index:30;
+    width:min(588px,calc(100vw - 40px));
+    box-sizing:border-box;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    margin:0;
+    padding:9px;
+    border:1px solid #e8e5f5;
+    border-radius:14px;
+    background:rgba(255,255,255,.97);
+    box-shadow:0 8px 26px #17172b20;
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    transform:translateX(-50%);
+  }
+  [data-theme=dark] .modal-backdrop .composer footer{
+    border-color:#34354a;
+    background:rgba(23,24,39,.97);
+    box-shadow:0 8px 26px #0006;
+  }
+  .modal-backdrop .composer footer>span{
+    flex:1 1 100%;
+    font-size:9px;
+    line-height:1.3;
+  }
+  .modal-backdrop .composer footer>button{
+    flex:1 1 auto;
+    min-height:42px;
+    justify-content:center;
+  }
+  .modal-backdrop .composer footer>.primary-button{
+    flex:1 1 100%;
+    width:100%;
+    min-height:44px;
+    justify-content:center;
+  }
+}
