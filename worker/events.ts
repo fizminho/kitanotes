@@ -7,7 +7,7 @@ type EventEnv = AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VA
 type Role = "owner" | "editor" | "viewer";
 type EventRow = {
   id:string; workspace_id:string; title:string; description:string; starts_at_utc:string; ends_at_utc:string;
-  timezone:string; all_day:number; linked_note_id:string|null; created_by_user_id:string; created_by_name?:string|null; created_by_email?:string|null; updated_by_user_id?:string|null; updated_by_name?:string|null; updated_by_email?:string|null; version:number;
+  timezone:string; all_day:number; linked_note_id:string|null; created_by_user_id:string; created_by_name?:string|null;  updated_by_user_id?:string|null; updated_by_name?:string|null;  version:number;
   created_at:string; updated_at:string; deleted_at:string|null; source_created_by?:string|null; source_created_at?:string|null; source_updated_by?:string|null; source_updated_at?:string|null;
 };
 
@@ -65,7 +65,7 @@ async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Res
   const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit"))||100));
   const result=workspaceId
     ? await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.workspace_id=? AND deleted_at IS NULL AND starts_at_utc<? AND ends_at_utc>=? ORDER BY starts_at_utc LIMIT ?").bind(workspaceId,to,from,limit).all<EventRow>()
-    : await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
+    : await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
   return json({events:result.results.map(dto),from,to});
 }
 async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:ExecutionContext):Promise<Response> {
@@ -93,12 +93,12 @@ async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:Execu
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
   const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-created-"+id},"event")));
   if(ctx)ctx.waitUntil(pushTask);else await pushTask;
-  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
 async function eventById(request:Request,env:EventEnv,userId:string,id:string,ctx?:ExecutionContext):Promise<Response> {
   const db=env.DB!;
-  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
+  const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=? AND e.deleted_at IS NULL").bind(id).first<EventRow>();
   const role=row?await roleFor(db,row.workspace_id,userId):null;
   if(!row||!role) return json({error:"NOT_FOUND"},404);
   if(request.method==="GET") return json({event:dto(row)});
@@ -137,7 +137,7 @@ async function eventById(request:Request,env:EventEnv,userId:string,id:string,ct
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
   const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Updated event: "+title).slice(0,80),body:pushDescription(description),url:"/",tag:"event-updated-"+id},"event")));
   if(ctx)ctx.waitUntil(pushTask);else await pushTask;
-  const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
+  const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
 export async function handleEventsRequest(request:Request,env:EventEnv,ctx?:ExecutionContext):Promise<Response|null> {
