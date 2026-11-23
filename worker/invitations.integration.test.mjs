@@ -178,6 +178,30 @@ test("stale concurrent ownership transfer cannot create a second owner", async (
   } finally { db.close(); }
 });
 
+test("stale make-private request cannot remove members after ownership changes", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const now=new Date().toISOString();
+    db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u2','viewer',?)").run(now);
+    const originalBatch=db.batch.bind(db);
+    db.batch=async statements=>{
+      // Simulate a successful ownership transfer after the old owner's
+      // permission check but before the privacy-change batch begins.
+      db.sqlite.prepare("UPDATE workspace_members SET role='editor' WHERE workspace_id='w1' AND user_id='u1'").run();
+      db.sqlite.prepare("UPDATE workspace_members SET role='owner' WHERE workspace_id='w1' AND user_id='u3'").run();
+      db.sqlite.prepare("UPDATE workspaces SET owner_user_id='u3' WHERE id='w1'").run();
+      return originalBatch(statements);
+    };
+    const response=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"make_private"}),env);
+    assert.equal(response.status,409);
+    assert.equal((await response.json()).error,"WORKSPACE_UPDATE_CONFLICT");
+    assert.equal(db.sqlite.prepare("SELECT owner_user_id FROM workspaces WHERE id='w1'").get().owner_user_id,"u3");
+    assert.equal(db.sqlite.prepare("SELECT visibility FROM workspaces WHERE id='w1'").get().visibility,"shared");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1'").get().total,2);
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").get().role,"viewer");
+  } finally { db.close(); }
+});
+
 test("only workspace owner can invite and revoke pending invitations", async () => {
   const {db,env,tokens}=seed();
   try {
