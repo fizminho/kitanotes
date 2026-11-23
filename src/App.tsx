@@ -494,12 +494,17 @@ export default function App() {
     finally{setNotificationPrefsSaving(false);}
   }
 
+  const sortedNotes = useMemo(() => [...notes].sort((a, b) =>
+    sortMode === "title" ? a.title.localeCompare(b.title)
+      : sortMode === "oldest" ? a.updatedAt.localeCompare(b.updatedAt)
+        : b.updatedAt.localeCompare(a.updatedAt)
+  ), [notes, sortMode]);
+
   const visibleNotes = useMemo(() => {
     const value = query.trim().toLowerCase();
-    const filtered = notes.filter(note => (!categoryFilter || (categoryFilter === "__none" ? !note.categoryId : note.categoryId === categoryFilter))
+    return sortedNotes.filter(note => (!categoryFilter || (categoryFilter === "__none" ? !note.categoryId : note.categoryId === categoryFilter))
       && (!value || (note.title + " " + note.content + " " + (note.categoryName ?? "")).toLowerCase().includes(value)));
-    return [...filtered].sort((a, b) => sortMode === "title" ? a.title.localeCompare(b.title) : sortMode === "oldest" ? a.updatedAt.localeCompare(b.updatedAt) : b.updatedAt.localeCompare(a.updatedAt));
-  }, [notes, query, categoryFilter, sortMode]);
+  }, [sortedNotes, query, categoryFilter]);
   const sharedWorkspaces = useMemo(() => workspaces.filter(item => item.visibility === "shared"), [workspaces]);
   const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId);
   const canWrite = activeWorkspace ? activeWorkspace.role !== "viewer" : true;
