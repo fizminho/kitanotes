@@ -139,3 +139,22 @@ test("event creation rejects a workspace the caller does not belong to", async (
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM calendar_events WHERE title='Cross-workspace injection'").get().total,0);
   } finally { db.close(); }
 });
+
+
+test("event create and update reject linked notes from another workspace", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const create=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{
+      workspaceId:"w1",title:"Cross-workspace linked note",startsAt:"2026-11-24T10:00:00Z",endsAt:"2026-11-24T11:00:00Z",linkedNoteId:"n2"
+    }),env);
+    assert.equal(create.status,400);
+    assert.equal((await create.json()).error,"INVALID_LINKED_NOTE");
+    const update=await handleEventsRequest(request("/api/events/e1",tokens.u1,"PATCH",{
+      version:1,linkedNoteId:"n2"
+    }),env);
+    assert.equal(update.status,409);
+    assert.equal((await update.json()).error,"INVALID_OR_STALE_EVENT");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM calendar_events WHERE title='Cross-workspace linked note'").get().total,0);
+    assert.equal(db.sqlite.prepare("SELECT linked_note_id,version FROM calendar_events WHERE id='e1'").get().linked_note_id,null);
+  } finally { db.close(); }
+});
