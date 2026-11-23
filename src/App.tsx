@@ -47,7 +47,7 @@ type ExistingNoteProposal = {noteId:string;categoryName:string;reason:string;sel
 type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
-  categoryName: string | null; createdBy: string; createdByName:string|null; createdByEmail:string|null; updatedBy:string|null; updatedByName:string|null; updatedByEmail:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
+  categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
 };
 
 export default function App() {
