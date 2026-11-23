@@ -1,5 +1,6 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { readJsonBody } from "./notes.ts";
+import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
 type Role = "owner" | "editor" | "viewer";
@@ -125,8 +126,25 @@ async function savePublicHolidayCache(db:Db|undefined,state:string,events:Holida
  }
  return new Set(grouped.keys());
 }
+async function readLimitedFeed(response:Response,maxBytes=1_048_576):Promise<string>{
+ const declared=Number(response.headers.get("content-length"));
+ if(Number.isFinite(declared)&&declared>maxBytes)throw new Error("HolidayWise feed exceeds the size limit");
+ if(!response.body)throw new Error("HolidayWise feed is empty");
+ const reader=response.body.getReader();const chunks:Uint8Array[]=[];let total=0;
+ try{while(true){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>maxBytes){await reader.cancel();throw new Error("HolidayWise feed exceeds the size limit");}chunks.push(part.value);}}
+ catch(error){try{await reader.cancel();}catch{}throw error;}
+ const bytes=new Uint8Array(total);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+ return new TextDecoder().decode(bytes);
+}
 async function holidays(request:Request,db?:Db):Promise<Response>{
  const url=new URL(request.url);const state=validState(url.searchParams.get("state"));if(!state)return json({error:"INVALID_STATE"},400);
+ if(db){
+  const clientIp=request.headers.get("cf-connecting-ip")??"unknown";
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(clientIp));
+  const ipKey=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,"0")).join("");
+  const ipRate=await consumeRateLimit(db,"calendar:holidays:ip:"+ipKey,60,5*60*1000);
+  if(!ipRate.allowed)return rateLimitResponse(ipRate.retryAfterSeconds);
+ }
  const from=url.searchParams.get("from")??new Date().getFullYear()+"-01-01";const to=url.searchParams.get("to")??(new Date().getFullYear()+1)+"-12-31";
  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(to)||from>to||Number(to.slice(0,4))-Number(from.slice(0,4))>3)return json({error:"INVALID_DATE_RANGE"},400);
  const publicCache=await cachedHolidayEvents(db,state,from,to,"public");
@@ -137,9 +155,10 @@ async function holidays(request:Request,db?:Db):Promise<Response>{
  let holidayWiseError:string|null=null;
  if(!holidayWiseAvailable){
   try{
+   if(db){const refreshRate=await consumeRateLimit(db,"calendar:holidays:refresh:"+state,1,60*1000);if(!refreshRate.allowed)throw new Error("HolidayWise refresh temporarily rate limited");}
    const response=await fetch("https://holidaywise.wee.my/my/"+STATE_SLUGS[state]+"/nat-state.ics",{headers:{accept:"text/calendar"},signal:AbortSignal.timeout(10000)});
    if(!response.ok)throw new Error("HolidayWise returned HTTP "+response.status);
-   const parsed=parseIcs(await response.text());
+   const parsed=parseIcs(await readLimitedFeed(response));
    if(!parsed.length)throw new Error("HolidayWise feed returned no readable calendar events");
    const allEvents=parsed.map(e=>({id:"holiday-"+e.uid,title:e.title,description:e.description,startsAt:e.start,endsAt:e.end,timezone:e.timezone,allDay:e.allDay,holiday:true,holidayType:"public" as const}));
    const availableYears=await savePublicHolidayCache(db,state,allEvents);
