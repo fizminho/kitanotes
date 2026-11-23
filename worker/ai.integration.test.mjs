@@ -78,13 +78,22 @@ test("AI Organizer returns category assignments for selected existing notes with
   }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
-test("AI Organizer rejects note IDs outside the selected workspace and invalid selection sizes",async()=>{
-  const{db,env}=seed();
+test("AI Organizer rejects note IDs outside the selected workspace before calling Gemini",async()=>{
+  const{db,env}=seed();const now=new Date().toISOString();let calls=0;
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('u2','sub2','two@example.com','two@example.com',1,?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('w2','Other','u2','shared','private',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w2','u2','owner',?)").run(now);
+  db.sqlite.prepare("INSERT INTO notes (id,workspace_id,title,content,created_by_user_id,created_at,updated_at) VALUES ('secret-note','w2','Private','Do not expose','u2',?,?)").run(now,now);
+  const originalFetch=globalThis.fetch;globalThis.fetch=async()=>{calls++;return okResponse();};
   try{
-    const response=await handleAiRequest(request("/api/ai/organize-existing","POST",{workspaceId:"w1",noteIds:Array.from({length:31},(_,i)=>"n"+i)}),env);
-    assert.equal(response.status,400);
-    assert.equal((await response.json()).error,"INVALID_NOTE_SELECTION");
-  }finally{db.close();}
+    const response=await handleAiRequest(request("/api/ai/organize-existing","POST",{workspaceId:"w1",noteIds:["secret-note"]}),env);
+    assert.equal(response.status,404);
+    assert.equal((await response.json()).error,"NOTES_NOT_FOUND_OR_UNAVAILABLE");
+    assert.equal(calls,0);
+    const invalid=await handleAiRequest(request("/api/ai/organize-existing","POST",{workspaceId:"w1",noteIds:Array.from({length:31},(_,i)=>"n"+i)}),env);
+    assert.equal(invalid.status,400);
+    assert.equal((await invalid.json()).error,"INVALID_NOTE_SELECTION");
+  }finally{globalThis.fetch=originalFetch;db.close();}
 });
 
 test("free model allowlist excludes paid or unknown models",()=>{
