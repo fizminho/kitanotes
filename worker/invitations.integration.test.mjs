@@ -139,6 +139,21 @@ test("client-supplied owner roles cannot escalate invitations or member permissi
   } finally { db.close(); }
 });
 
+test("non-owners and non-members cannot transfer workspace ownership", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const memberAttempt=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u3,"PATCH",{action:"transfer_ownership",userId:"u2"}),env);
+    assert.equal(memberAttempt.status,404);
+    assert.equal((await memberAttempt.json()).error,"SHARED_WORKSPACE_NOT_FOUND");
+    const nonMemberTarget=await handleInvitationsRequest(request("/api/workspaces/w1",tokens.u1,"PATCH",{action:"transfer_ownership",userId:"u4"}),env);
+    assert.equal(nonMemberTarget.status,404);
+    assert.equal((await nonMemberTarget.json()).error,"MEMBER_NOT_FOUND");
+    assert.equal(db.sqlite.prepare("SELECT owner_user_id FROM workspaces WHERE id='w1'").get().owner_user_id,"u1");
+    assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u1'").get().role,"owner");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1' AND user_id='u4'").get().total,0);
+  } finally { db.close(); }
+});
+
 test("only workspace owner can invite and revoke pending invitations", async () => {
   const {db,env,tokens}=seed();
   try {
