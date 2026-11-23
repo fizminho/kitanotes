@@ -71,7 +71,10 @@ test("notes list and detail enforce workspace membership isolation", async () =>
   try {
     const list = await handleNotesRequest(request("/api/notes", tokens.u1), env);
     assert.equal(list.status, 200);
-    const ids = (await list.json()).notes.map(note => note.id);
+    const listBody = await list.json();
+    const ids = listBody.notes.map(note => note.id);
+    assert.equal("createdByEmail" in listBody.notes[0], false);
+    assert.equal("updatedByEmail" in listBody.notes[0], false);
     assert.deepEqual(ids, ["n1"]);
     const privateNote = await handleNotesRequest(request("/api/notes/n2", tokens.u1), env);
     assert.equal(privateNote.status, 404);
