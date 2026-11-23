@@ -55,7 +55,7 @@ export default function App() {
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
-    const updateHeight = () => document.documentElement.style.setProperty("--app-visual-height", Math.round(viewport.height) + "px");
+    const updateHeight = () => { document.documentElement.style.setProperty("--app-visual-height", Math.round(viewport.height) + "px"); document.documentElement.style.setProperty("--app-visual-offset-top", Math.round(viewport.offsetTop) + "px"); };
     updateHeight();
     viewport.addEventListener("resize", updateHeight);
     viewport.addEventListener("scroll", updateHeight);
@@ -63,6 +63,7 @@ export default function App() {
       viewport.removeEventListener("resize", updateHeight);
       viewport.removeEventListener("scroll", updateHeight);
       document.documentElement.style.removeProperty("--app-visual-height");
+      document.documentElement.style.removeProperty("--app-visual-offset-top");
     };
   }, []);
 
