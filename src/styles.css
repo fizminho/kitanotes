@@ -562,3 +562,64 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 [data-theme=dark] .calendar-selected-empty{border-color:#34374b;color:#a4a7b6}
 [data-theme=dark] .calendar-more-events{color:#a4a7b6}
 [data-theme=dark] .month-grid .calendar-event-chip{background:#292542;color:#d2cdfb}
+
+
+/* Calendar clarity redesign: three unmistakable markers, details on date selection. */
+.calendar-legend-dot.event,.calendar-marker.event,.calendar-detail-marker.event{background:#df535b}
+.calendar-legend-dot.public,.calendar-marker.public,.calendar-detail-marker.public{background:#d6a33d}
+.calendar-legend-dot.school,.calendar-marker.school,.calendar-detail-marker.school{background:#6d91c9}
+.calendar-legend-dot{width:8px;height:8px;border-radius:50%}
+.calendar-legend-event{display:none}
+.calendar-day-markers{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  width:100%;min-height:25px;margin-top:4px;padding:3px;
+  border:0;border-radius:6px;background:transparent;color:#85899a;
+}
+.calendar-marker-list{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px;min-height:9px}
+.calendar-marker{display:inline-block;width:7px;height:7px;border-radius:50%;flex:none}
+.calendar-day-markers small{font-size:9px}
+.calendar-day.selected .calendar-day-markers{background:#eeecff}
+.calendar-selected-agenda{
+  display:grid;gap:10px;margin-top:20px;padding:16px;
+  border:1px solid #e9eaf2;border-radius:13px;background:#fff;
+}
+.calendar-agenda-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px}
+.calendar-agenda-heading h3{margin:3px 0 0;font:700 16px var(--font-ui);color:#34384b}
+.calendar-agenda-eyebrow{font-size:9px;font-weight:800;letter-spacing:1px;color:#9295a4}
+.calendar-agenda-count{flex:none;padding:5px 8px;border-radius:20px;background:#f3f3f8;color:#777b8e;font-size:10px;font-weight:700}
+.calendar-detail-card{
+  display:flex;align-items:flex-start;gap:11px;min-width:0;padding:12px;
+  border:1px solid #eceef4;border-radius:10px;background:#fff;
+}
+.calendar-detail-marker{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none}
+.calendar-detail-copy{min-width:0;flex:1}
+.calendar-detail-meta{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:5px}
+.calendar-detail-meta span{font-size:9px;font-weight:800;letter-spacing:.45px;color:#85899a}
+.calendar-detail-copy h4{margin:0;color:#34384b;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.calendar-detail-date{margin:4px 0 0;color:#777b8e;font-size:10px;line-height:1.45}
+.calendar-detail-description{margin:7px 0 0;color:#62677a;font-size:11px;line-height:1.5;white-space:pre-line}
+.calendar-detail-source{margin:7px 0 0;color:#9295a4;font-size:9px;line-height:1.45}
+.calendar-detail-actions{display:flex;flex:none;gap:2px}
+.calendar-selected-empty{padding:13px;margin:0;border:1px dashed #e4e2f2;border-radius:9px;color:#9295a4;font-size:11px}
+.calendar-agenda{display:none}
+@media(max-width:760px){
+  .calendar-legend{gap:12px;margin:0 0 12px;font-size:10px}
+  .calendar-day-markers{min-height:24px;margin-top:1px;padding:2px}
+  .calendar-marker-list{gap:3px}
+  .calendar-marker{width:6px;height:6px}
+  .calendar-selected-agenda{gap:8px;margin-top:14px;padding:12px;border-radius:12px}
+  .calendar-agenda-heading h3{font-size:14px}
+  .calendar-detail-card{gap:9px;padding:10px}
+  .calendar-detail-copy h4{font-size:12px}
+  .calendar-detail-description{font-size:10px}
+  .calendar-detail-source{font-size:9px}
+  .calendar-day.selected{background:#f7f6ff}
+}
+[data-theme=dark] .calendar-selected-agenda{background:#1b1d2b;border-color:#34364a}
+[data-theme=dark] .calendar-agenda-heading h3,[data-theme=dark] .calendar-detail-copy h4{color:#f1f2fa}
+[data-theme=dark] .calendar-detail-card{background:#202233;border-color:#34364a}
+[data-theme=dark] .calendar-detail-date,[data-theme=dark] .calendar-detail-description{color:#b2b5c4}
+[data-theme=dark] .calendar-detail-meta span,[data-theme=dark] .calendar-detail-source{color:#999daf}
+[data-theme=dark] .calendar-agenda-count{background:#2b2e42;color:#c0c3d2}
+[data-theme=dark] .calendar-selected-empty{border-color:#34374b;color:#a4a7b6}
+[data-theme=dark] .calendar-day.selected .calendar-day-markers{background:#2a2750}
