@@ -89,7 +89,7 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     if(!title||title.length>200||!dueAt||!tz)return json({error:"INVALID_REMINDER"},400);
     const now=new Date().toISOString();
     const result=await db.prepare("UPDATE reminders SET title=?,due_at_utc=?,timezone=?,updated_at=? WHERE id=? AND status='pending'").bind(title,dueAt,tz,now,id).run();
-    if(Number(result.meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
+    if(Number((result as {meta?:{changes?:number}}).meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
     const updated=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
     return json({reminder:updated?dto(updated):null});
   }
