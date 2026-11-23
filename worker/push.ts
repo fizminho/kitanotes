@@ -1,5 +1,7 @@
 import { buildPushPayload, type PushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
+import { readJsonBody } from "./notes.ts";
+import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
@@ -76,8 +78,10 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
  if(url.pathname==="/api/push/subscriptions"&&request.method==="POST"){
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
   if(!pushConfigured(env))return json({error:"PUSH_NOT_CONFIGURED"},503);
-  let subscription:unknown;try{subscription=await request.json();}catch{return json({error:"INVALID_JSON_BODY"},400);}
-  if(!validSubscription(subscription))return json({error:"INVALID_PUSH_SUBSCRIPTION"},400);
+  const rate=await consumeRateLimit(env.DB,"push:subscriptions:user:"+user.id,20,60*1000);
+  if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
+  const subscription=await readJsonBody(request);
+  if(!subscription||!validSubscription(subscription))return json({error:"INVALID_PUSH_SUBSCRIPTION"},400);
   const id=await subscriptionId(subscription.endpoint);const now=new Date().toISOString();
   const count=await env.DB.prepare("SELECT COUNT(*) AS count FROM push_subscriptions WHERE user_id=?").bind(user.id).first<{count:number}>();
   const existing=await env.DB.prepare("SELECT id,user_id FROM push_subscriptions WHERE endpoint=?").bind(subscription.endpoint).first<{id:string;user_id:string}>();
@@ -89,8 +93,10 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
  }
  if(url.pathname==="/api/push/subscriptions"&&request.method==="DELETE"){
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
-  let body:unknown;try{body=await request.json();}catch{return json({error:"INVALID_JSON_BODY"},400);}
-  const endpoint=body&&typeof body==="object"?(body as Record<string,unknown>).endpoint:null;
+  const rate=await consumeRateLimit(env.DB,"push:subscriptions:user:"+user.id,20,60*1000);
+  if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
+  const body=await readJsonBody(request);
+  const endpoint=body?.endpoint??null;
   if(!validEndpoint(endpoint))return json({error:"INVALID_PUSH_SUBSCRIPTION"},400);
   const id=await subscriptionId(endpoint);
   await env.DB.prepare("DELETE FROM push_subscriptions WHERE id=? AND user_id=?").bind(id,user.id).run();
@@ -99,6 +105,8 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
  if(url.pathname==="/api/push/test"&&request.method==="POST"){
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
   if(!pushConfigured(env))return json({error:"PUSH_NOT_CONFIGURED"},503);
+  const rate=await consumeRateLimit(env.DB,"push:test:user:"+user.id,3,60*1000);
+  if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
   await sendPushToUser(env.DB,env,user.id,{title:"KitaNotes",body:"Push notifications are connected on this device.",url:"/",tag:"kitanotes-test"});
   return json({ok:true});
  }
