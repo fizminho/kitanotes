@@ -562,6 +562,8 @@ export default function App() {
     }
   }, [pushToast]);
 
+  const restoreNote = useCallback((note: Note) => archiveNote(note, false), [archiveNote]);
+
   const deleteNote = useCallback(async (note: Note) => {
     if (!window.confirm("Delete \u201c" + note.title + "\u201d? This cannot be undone from the app.")) return;
     try {
@@ -1254,7 +1256,7 @@ export default function App() {
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}
             {notesLoading ? <div className="loading-state">Memuatkan nota…</div> : visibleNotes.length > 0 ? <div className="notes-grid">
-              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onEdit={startEditNote} onArchive={archiveNote} onRestore={note=>archiveNote(note,false)} onDelete={deleteNote}/>)}
+              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
               <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
