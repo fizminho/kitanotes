@@ -96,8 +96,8 @@ function noteDto(row: NoteRow) {
   return {
     id: row.id, workspaceId: row.workspace_id, title: row.title, content: row.content,
     categoryId: row.category_id, categoryName: row.category_name ?? null,
-    createdBy: row.created_by_user_id, createdByName:row.created_by_name??null, createdByEmail:row.created_by_email??null,
-    updatedBy:row.updated_by_user_id??null, updatedByName:row.updated_by_name??null, updatedByEmail:row.updated_by_email??null, version: row.version,
+    createdBy: row.created_by_user_id, createdByName:row.created_by_name??null,
+    updatedBy:row.updated_by_user_id??null, updatedByName:row.updated_by_name??null, version: row.version,
     createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at
   };
 }
@@ -112,7 +112,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     if (workspaceId && !(await roleFor(db, workspaceId, userId))) return json({ error: "NOT_FOUND" }, 404);
     const pattern = "%" + query.replace(/[\\%_]/g, "\\$&") + "%";
     const result = workspaceId
-      ? await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
+      ? await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.workspace_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(workspaceId, query, pattern, pattern, limit).all<NoteRow>()
       : await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,cu.email AS created_by_email,uu.display_name AS updated_by_name,uu.email AS updated_by_email FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE wm.user_id=? AND n.deleted_at IS NULL AND " + archiveFilter + " AND (?='' OR n.title LIKE ? ESCAPE '\\' OR n.content LIKE ? ESCAPE '\\') ORDER BY n.updated_at DESC LIMIT ?")
           .bind(userId, query, pattern, pattern, limit).all<NoteRow>();
