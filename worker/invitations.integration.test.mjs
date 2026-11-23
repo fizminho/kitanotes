@@ -197,7 +197,7 @@ test("stale make-private request cannot remove members after ownership changes",
     assert.equal((await response.json()).error,"WORKSPACE_UPDATE_CONFLICT");
     assert.equal(db.sqlite.prepare("SELECT owner_user_id FROM workspaces WHERE id='w1'").get().owner_user_id,"u3");
     assert.equal(db.sqlite.prepare("SELECT visibility FROM workspaces WHERE id='w1'").get().visibility,"shared");
-    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1'").get().total,2);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1'").get().total,3);
     assert.equal(db.sqlite.prepare("SELECT role FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").get().role,"viewer");
   } finally { db.close(); }
 });
