@@ -282,3 +282,37 @@ test("Selangor public holiday feed uses the SGR feed slug and caches a successfu
   assert.equal(cachedResult.sources.publicHolidayCount,1);
  }finally{globalThis.fetch=originalFetch;db.close();}
 });
+
+
+test("public holiday API rate limits callers and prevents repeated upstream refreshes",async()=>{
+ const {db}=seed();const originalFetch=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response("upstream unavailable",{status:503});};
+ try{
+  const makeRequest=ip=>new Request("https://kitanotes.test/api/calendar/holidays?state=perlis&from=2026-12-01&to=2026-12-31",{headers:{"cf-connecting-ip":ip}});
+  const first=await handleCalendarIcsRequest(makeRequest("203.0.113.10"),{DB:db});
+  assert.equal(first.status,200);
+  const second=await handleCalendarIcsRequest(makeRequest("203.0.113.11"),{DB:db});
+  assert.equal(second.status,200);
+  assert.equal(calls,1,"one state refresh attempt per minute is allowed globally");
+  const limited=await (async()=>{
+   let response;
+   for(let i=0;i<61;i++)response=await handleCalendarIcsRequest(makeRequest("203.0.113.12"),{DB:db});
+   return response;
+  })();
+  assert.equal(limited.status,429,"an IP is limited after 60 requests per five minutes");
+ }finally{globalThis.fetch=originalFetch;db.close();}
+});
+
+test("oversized public holiday feeds are rejected without losing KPM school holidays",async()=>{
+ const {db}=seed();const originalFetch=globalThis.fetch;
+ globalThis.fetch=async()=>new Response("x".repeat(1_048_577),{status:200});
+ try{
+  const response=await handleCalendarIcsRequest(new Request("https://kitanotes.test/api/calendar/holidays?state=selangor&from=2026-12-01&to=2026-12-31",{headers:{"cf-connecting-ip":"203.0.113.20"}}),{DB:db});
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.sources.holidayWise,false);
+  assert.equal(result.sources.kpm,true);
+  assert.equal(result.events.length,1);
+  assert.match(result.sources.holidayWiseError,/size limit/i);
+ }finally{globalThis.fetch=originalFetch;db.close();}
+});
