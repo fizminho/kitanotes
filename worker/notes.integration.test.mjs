@@ -177,3 +177,21 @@ test("new shared notes create in-app notifications for other workspace members",
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id='u1' AND resource_id=?").get(note.id).count, 0);
   } finally { db.close(); }
 });
+
+
+test("viewer cannot delete a shared note and removed members immediately lose access", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    const viewerDelete = await handleNotesRequest(request("/api/notes/n1", tokens.u2, "DELETE", {}), env);
+    assert.equal(viewerDelete.status, 403);
+    assert.equal(db.sqlite.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get().deleted_at, null);
+
+    db.sqlite.prepare("DELETE FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").run();
+    const removedMemberRead = await handleNotesRequest(request("/api/notes/n1", tokens.u2), env);
+    assert.equal(removedMemberRead.status, 404);
+    const removedMemberUpdate = await handleNotesRequest(request("/api/notes/n1", tokens.u2, "PATCH", { title: "Still here?", version: 1 }), env);
+    assert.equal(removedMemberUpdate.status, 404);
+    const removedMemberDelete = await handleNotesRequest(request("/api/notes/n1", tokens.u2, "DELETE", {}), env);
+    assert.equal(removedMemberDelete.status, 404);
+  } finally { db.close(); }
+});
