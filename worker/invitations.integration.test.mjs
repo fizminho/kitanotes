@@ -301,3 +301,26 @@ test("workspace star is a per-user default and only members can set it", async (
     assert.equal((await (await handleInvitationsRequest(request("/api/workspaces",tokens.u1),env)).json()).starredWorkspaceId,null);
   } finally { db.close(); }
 });
+
+
+test("revoked invitation token cannot be accepted", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    const created = await handleInvitationsRequest(request("/api/invitations", tokens.u1, "POST", {
+      workspaceId: "w1", email: "invitee@example.com", role: "viewer"
+    }), env);
+    assert.equal(created.status, 201);
+    const result = await created.json();
+    const token = new URL(result.invitationUrl).searchParams.get("token");
+
+    const revoked = await handleInvitationsRequest(request("/api/invitations/" + result.invitation.id, tokens.u1, "DELETE", {}), env);
+    assert.equal(revoked.status, 200);
+
+    const accepted = await handleInvitationsRequest(request("/api/invitations/accept", tokens.u2, "POST", { token }), env);
+    assert.equal(accepted.status, 400);
+    assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id=?").get(result.invitation.id).status, "revoked");
+    assert.equal(db.sqlite.prepare("SELECT user_id FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").get(), undefined);
+  } finally {
+    db.close();
+  }
+});
