@@ -53,10 +53,10 @@ export default function CalendarView(props:Props) {
 
     <div className="calendar-selected-agenda">
       <h3>{selectedDateLabel}</h3>
-      {selectedDayItems.length===0?<p className="calendar-selected-empty">No KitaNotes events on this date.</p>:selectedDayItems.map(item=><article className={"event-card"+(item.holiday?(item.holidayType==="school"?" school-holiday-card":" holiday-event-card"):"")} key={item.id}>
+      {selectedDayItems.length===0?<p className="calendar-selected-empty">No KitaNotes events on this date.</p>:selectedDayItems.map(item=><article className="event-card" key={item.id}>
         <div className="event-date-block"><strong>{item.allDay?"ALL":new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",timeZone:item.timezone})}</strong><span>{item.allDay?"DAY":item.timezone}</span></div>
-        <div className="event-copy"><h3>{item.title}</h3>{item.description&&<p>{item.description}</p>}{item.holiday&&<small>{item.holidayType==="school"?"School holiday · KPM":"Malaysia public holiday"}</small>}</div>
-        {!item.holiday&&<button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label={"Edit "+item.title}><Pencil size={15}/></button>}
+        <div className="event-copy"><h3>{item.title}</h3>{item.description&&<p>{item.description}</p>}</div>
+        <button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label={"Edit "+item.title}><Pencil size={15}/></button>
       </article>)}
     </div>
 
