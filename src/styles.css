@@ -728,3 +728,98 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 /* Full-note reading view */
 .note-card-open{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit}.note-card-open:focus-visible{outline:2px solid #766bd0;outline-offset:5px;border-radius:6px}.note-card .note-card-open>p{font-size:12px;line-height:1.55;color:#838697;white-space:pre-wrap;overflow-wrap:anywhere;max-height:90px;overflow:hidden;margin:0}.note-card-open .record-audit{display:block;margin-top:12px}.note-open-hint{display:inline-block;margin-top:8px;color:#766bd0;font-size:10px;font-weight:700}.note-viewer{display:flex;flex-direction:column;max-height:calc(var(--app-visual-height,100dvh) - 32px);overflow:hidden}.note-viewer header{flex-shrink:0}.note-viewer header h2{overflow-wrap:anywhere}.note-full-content{min-height:0;overflow:auto;overscroll-behavior:contain;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.8;color:#45495d;padding:4px 2px 20px}.note-viewer .record-audit{display:block;flex-shrink:0;padding:12px 0;border-top:1px solid #f0f0f4}.note-viewer footer{flex-shrink:0}@media(max-width:760px){.note-viewer{width:100%;max-height:calc(var(--app-visual-height,100dvh) - 16px);padding:16px;border-radius:16px}.note-full-content{font-size:14px;line-height:1.75}}
+
+
+/* Modal action layout: keep actions inside the dialog, never fixed over its header/content. */
+@media(max-width:760px){
+  .modal-backdrop .composer{
+    padding-bottom:12px !important;
+  }
+  .modal-backdrop .composer:has(footer)>header{
+    margin-bottom:12px !important;
+  }
+  .modal-backdrop .composer footer{
+    position:sticky !important;
+    inset:auto !important;
+    top:auto !important;
+    bottom:0 !important;
+    left:auto !important;
+    z-index:3 !important;
+    width:100% !important;
+    max-width:none !important;
+    box-sizing:border-box;
+    display:flex !important;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    margin:12px 0 0 !important;
+    padding:12px 0 max(4px,env(safe-area-inset-bottom,0px)) !important;
+    border:0 !important;
+    border-top:1px solid #ececf3 !important;
+    border-radius:0 !important;
+    background:#fff !important;
+    box-shadow:none !important;
+    transform:none !important;
+    backdrop-filter:none !important;
+    -webkit-backdrop-filter:none !important;
+  }
+  [data-theme=dark] .modal-backdrop .composer footer{
+    border-top-color:#34364a !important;
+    background:#171827 !important;
+    box-shadow:none !important;
+  }
+  .modal-backdrop .composer footer>span{
+    flex:1 1 100%;
+    font-size:9px;
+    line-height:1.35;
+  }
+  .modal-backdrop .composer footer>button{
+    flex:1 1 auto;
+    min-height:44px;
+    justify-content:center;
+  }
+  .modal-backdrop .composer footer>.primary-button{
+    flex:1 1 100%;
+    width:100%;
+    min-height:46px;
+    justify-content:center;
+  }
+  .modal-backdrop .composer>header{
+    position:sticky;
+    top:-16px;
+    z-index:5;
+  }
+  .modal-backdrop .composer>header .icon-button{
+    position:relative;
+    z-index:6;
+    flex:none;
+    min-width:40px;
+    min-height:40px;
+    display:grid;
+    place-items:center;
+    border-radius:10px;
+    background:#f3f2fa;
+    color:#514b83;
+    touch-action:manipulation;
+  }
+  [data-theme=dark] .modal-backdrop .composer>header .icon-button{
+    background:#292b40;
+    color:#e1defb;
+  }
+  .modal-backdrop .composer.note-viewer{
+    display:flex;
+    flex-direction:column;
+    overflow:hidden !important;
+  }
+  .modal-backdrop .note-viewer .note-full-content{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+  }
+  .modal-backdrop .note-viewer footer{
+    flex:0 0 auto;
+  }
+}
