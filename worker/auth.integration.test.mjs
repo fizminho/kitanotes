@@ -26,6 +26,18 @@ class D1TestDatabase {
       };
     }};
   }
+  async batch(statements) {
+    this.sqlite.exec("BEGIN");
+    try {
+      const results=[];
+      for (const statement of statements) results.push(await statement.run());
+      this.sqlite.exec("COMMIT");
+      return results;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  }
   close() { this.sqlite.close(); }
 }
 
@@ -322,13 +334,46 @@ test("Passkey recovery codes are single-use and issue the normal session cookie"
     const first = await handleAuthRequest(request(),env);
     assert.equal(first.status,200);
     assert.match(first.headers.get("set-cookie") ?? "",/__Host-kitanotes_session=/);
-    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE code_hash=?").get(hash).count,0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").get(hash).count,0);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM sessions WHERE user_id='recovery-user'").get().count,1);
     const second = await handleAuthRequest(request(),env);
     assert.equal(second.status,401);
   } finally { db.close(); }
 });
 
+
+
+test("Passkey recovery rolls back code consumption if session creation fails", async () => {
+  const db = new D1TestDatabase();
+  const now = new Date().toISOString();
+  const code = "11112222-33334444-55556666-77778888";
+  const hash = createHash("sha256").update(code.replace(/-/g,"")).digest("base64url");
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('recovery-atomic','passkey:recovery-atomic','atomic@example.com','atomic@example.com',0,?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at) VALUES (?,?,?)").run(hash,"recovery-atomic",now);
+  const originalBatch=db.batch.bind(db);
+  db.batch=async statements=>{
+    db.sqlite.exec("BEGIN");
+    try {
+      await statements[0].run();
+      throw new Error("injected session insert failure");
+    } catch(error) {
+      db.sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  };
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const response=await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/recovery/verify", {
+      method:"POST",headers:{origin:"https://kitanotes.test","content-type":"application/json"},body:JSON.stringify({code})
+    }),env);
+    assert.equal(response.status,503);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").get(hash).count,1);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM sessions WHERE user_id='recovery-atomic'").get().count,0);
+  } finally {
+    db.batch=originalBatch;
+    db.close();
+  }
+});
 
 test("Google recovery linking is bound to the authenticated passkey account", async () => {
   const db = new D1TestDatabase();
