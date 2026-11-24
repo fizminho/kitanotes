@@ -585,12 +585,16 @@ async function regeneratePasskeyRecoveryCodes(request: Request, env: AuthEnv): P
   if (limited) return limited;
   const codes = Array.from({length:10},makeRecoveryCode);
   const now = new Date().toISOString();
+  if (!env.DB.batch) return json({error:"RECOVERY_TEMPORARILY_UNAVAILABLE"},503);
   const statements = [
     env.DB.prepare("DELETE FROM passkey_recovery_codes WHERE user_id=?").bind(user.id),
     ...await Promise.all(codes.map(async code=>env.DB!.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)").bind(await sha256(normalizeRecoveryCode(code)),user.id,now)))
   ];
-  if (env.DB.batch) await env.DB.batch(statements);
-  else for (const statement of statements) await statement.run();
+  try {
+    await env.DB.batch(statements);
+  } catch {
+    return json({error:"RECOVERY_TEMPORARILY_UNAVAILABLE"},503);
+  }
   return json({recoveryCodes:codes});
 }
 

@@ -87,6 +87,84 @@ test("sensitive Passkey account actions require a fresh step-up grant", async ()
   } finally { db.close(); }
 });
 
+test("Recovery-code regeneration preserves existing codes when the D1 batch fails", async () => {
+  const db = new D1TestDatabase();
+  const now = new Date().toISOString();
+  const userId = "recovery-regenerate-atomic";
+  const sessionToken = "recovery-regenerate-session";
+  const stepUpToken = "recovery-regenerate-step-up";
+  const oldCode = "AAAA-BBBB-CCCC-DDDD";
+  const oldHash = createHash("sha256").update(oldCode.replace(/-/g, "")).digest("base64url");
+  const sessionHash = createHash("sha256").update(sessionToken).digest("base64url");
+  const stepUpHash = createHash("sha256").update(stepUpToken).digest("base64url");
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)")
+    .run(userId,"google-recovery-atomic","atomic-recovery@example.com","atomic-recovery@example.com",now,now);
+  db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)")
+    .run("recovery-regenerate-session",userId,sessionHash,new Date(Date.now()+3600000).toISOString(),now);
+  db.sqlite.prepare("INSERT INTO passkey_step_up_grants (id,user_id,session_hash,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)")
+    .run("recovery-regenerate-grant",userId,sessionHash,stepUpHash,new Date(Date.now()+120000).toISOString(),now);
+  db.sqlite.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)")
+    .run(oldHash,userId,now);
+  const originalBatch = db.batch.bind(db);
+  db.batch = async statements => {
+    db.sqlite.exec("BEGIN");
+    try {
+      await statements[0].run();
+      throw new Error("injected recovery-code insert failure");
+    } catch (error) {
+      db.sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  };
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/recovery/regenerate", {
+      method:"POST",
+      headers:{origin:"https://kitanotes.test",cookie:"__Host-kitanotes_session="+sessionToken,"content-type":"application/json"},
+      body:JSON.stringify({stepUpToken})
+    }),env);
+    assert.equal(response.status,503);
+    assert.equal((await response.json()).error,"RECOVERY_TEMPORARILY_UNAVAILABLE");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE user_id=?").get(userId).count,1);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE user_id=? AND code_hash=? AND used_at IS NULL").get(userId,oldHash).count,1);
+  } finally {
+    db.batch = originalBatch;
+    db.close();
+  }
+});
+
+test("Recovery-code regeneration fails closed when D1 batch is unavailable", async () => {
+  const db = new D1TestDatabase();
+  const now = new Date().toISOString();
+  const userId = "recovery-regenerate-no-batch";
+  const sessionToken = "recovery-regenerate-no-batch-session";
+  const stepUpToken = "recovery-regenerate-no-batch-step-up";
+  const oldCode = "EEEE-FFFF-GGGG-HHHH";
+  const oldHash = createHash("sha256").update(oldCode.replace(/-/g, "")).digest("base64url");
+  const sessionHash = createHash("sha256").update(sessionToken).digest("base64url");
+  const stepUpHash = createHash("sha256").update(stepUpToken).digest("base64url");
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)")
+    .run(userId,"google-recovery-no-batch","no-batch@example.com","no-batch@example.com",now,now);
+  db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)")
+    .run("recovery-no-batch-session",userId,sessionHash,new Date(Date.now()+3600000).toISOString(),now);
+  db.sqlite.prepare("INSERT INTO passkey_step_up_grants (id,user_id,session_hash,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)")
+    .run("recovery-no-batch-grant",userId,sessionHash,stepUpHash,new Date(Date.now()+120000).toISOString(),now);
+  db.sqlite.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)")
+    .run(oldHash,userId,now);
+  try {
+    db.batch = undefined;
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/recovery/regenerate", {
+      method:"POST",
+      headers:{origin:"https://kitanotes.test",cookie:"__Host-kitanotes_session="+sessionToken,"content-type":"application/json"},
+      body:JSON.stringify({stepUpToken})
+    }),env);
+    assert.equal(response.status,503);
+    assert.equal((await response.json()).error,"RECOVERY_TEMPORARILY_UNAVAILABLE");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE user_id=? AND code_hash=? AND used_at IS NULL").get(userId,oldHash).count,1);
+  } finally { db.close(); }
+});
+
 test("Google callback creates user/workspace/session and logout revokes it", async () => {
   const db = new D1TestDatabase();
   const secret = "local-test-session-secret-with-more-than-32-characters";
