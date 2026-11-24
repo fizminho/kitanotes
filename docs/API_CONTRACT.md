@@ -5,13 +5,19 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 ## Authentication
 
 - `GET /auth/google`: start Google OIDC login (state, nonce and PKCE).
+- `GET /auth/google/link`: while signed in, explicitly link a verified Google identity to the current passkey account; no email-only auto-linking.
 - `GET /auth/google/callback`: validate Google identity, upsert user, create personal workspace and issue session cookie.
 - `GET /api/auth/status`: return whether D1 and Google OAuth configuration are present; exposes no secret values.
 - `GET /api/auth/me`: return `{ authenticated: true, user }` or HTTP 401.
 - `POST /api/auth/logout`: revoke current session. Requires a same-origin `Origin` header.
+- `POST /api/auth/passkeys/signup/options` and `POST /api/auth/passkeys/signup/verify`: create a new account with a discoverable passkey, create its personal workspace and session, and return one-time recovery codes.
+- `POST /api/auth/passkeys/recovery/verify`: consume one recovery code and issue a normal session.
+- `POST /api/auth/passkeys/recovery/regenerate`: replace all existing recovery codes for the authenticated user and return a new one-time set.
 - `POST /api/auth/passkeys/register/options` and `POST /api/auth/passkeys/register/verify`: register a discoverable passkey for the currently authenticated user.
 - `POST /api/auth/passkeys/authenticate/options` and `POST /api/auth/passkeys/authenticate/verify`: authenticate a discoverable passkey and issue the same session cookie as Google login.
 - `GET /api/auth/passkeys`: list current-user passkeys. `DELETE /api/auth/passkeys/:credentialId`: revoke a current-user passkey.
+
+Recovery codes are generated as ten random 128-bit values, stored only as SHA-256 hashes, and can each be used once. Regenerating codes invalidates every previous code. Passkey signup email is initially unverified; link Google from the authenticated account to verify it and enable email-verified invitation acceptance.
 
 ## Notes
 

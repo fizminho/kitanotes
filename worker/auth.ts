@@ -161,6 +161,16 @@ async function startGoogleLogin(request: Request, env: AuthEnv): Promise<Respons
   const fingerprint = await hmac(clientIp, env.SESSION_SECRET!);
   const rate = await consumeRateLimit(env.DB!, "oauth:start:" + fingerprint, 10, 10 * 60 * 1000);
   if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+  const linkMode = new URL(request.url).pathname === "/auth/google/link";
+  let linkUserId: string | undefined;
+  let linkSessionHash: string | undefined;
+  if (linkMode) {
+    const current = await getCurrentUser(request,env);
+    const sessionToken = getCookie(request,SESSION_COOKIE);
+    if (!current || !sessionToken) return json({error:"UNAUTHENTICATED"},401);
+    linkUserId = current.id;
+    linkSessionHash = await sha256(sessionToken);
+  }
   const requestedReturnTo = new URL(request.url).searchParams.get("returnTo") ?? "/";
   let returnTo = "/";
   if (requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") && !requestedReturnTo.includes("\\")) {
@@ -170,7 +180,7 @@ async function startGoogleLogin(request: Request, env: AuthEnv): Promise<Respons
   const state = randomToken();
   const nonce = randomToken();
   const verifier = randomToken(48);
-  const payload = base64Url(new TextEncoder().encode(JSON.stringify({ state, nonce, verifier, returnTo, issuedAt: Date.now() })));
+  const payload = base64Url(new TextEncoder().encode(JSON.stringify({ state, nonce, verifier, returnTo, issuedAt: Date.now(), linkUserId, linkSessionHash })));
   const signed = await signState(payload, env.SESSION_SECRET!);
   const challenge = await sha256(verifier);
   const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -263,6 +273,20 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
 
   try {
     const identity = await verifyGoogleIdToken(tokenPayload.id_token, env.GOOGLE_CLIENT_ID!, payload.nonce);
+    if (typeof payload.linkUserId === "string" && typeof payload.linkSessionHash === "string") {
+      const current = await getCurrentUser(request,env);
+      const currentToken = getCookie(request,SESSION_COOKIE);
+      if (!current || current.id !== payload.linkUserId || !currentToken || await sha256(currentToken) !== payload.linkSessionHash) return json({error:"ACCOUNT_LINK_SESSION_EXPIRED"},401,headers);
+      const emailNormalized = identity.email.trim().toLowerCase();
+      const existingSub = await env.DB!.prepare("SELECT id FROM users WHERE google_sub=? AND id<>? LIMIT 1").bind(identity.sub,current.id).first<{id:string}>();
+      const existingEmail = await env.DB!.prepare("SELECT id FROM users WHERE email_normalized=? AND id<>? LIMIT 1").bind(emailNormalized,current.id).first<{id:string}>();
+      if (existingSub || existingEmail) return json({error:"GOOGLE_ACCOUNT_ALREADY_IN_USE"},409,headers);
+      const updated = await env.DB!.prepare("UPDATE users SET google_sub=?,email=?,email_normalized=?,email_verified=1,display_name=COALESCE(display_name,?),avatar_url=COALESCE(avatar_url,?),updated_at=? WHERE id=? AND (google_sub LIKE 'passkey:%' OR google_sub=?)")
+        .bind(identity.sub,identity.email,emailNormalized,identity.name??null,identity.picture??null,new Date().toISOString(),current.id,identity.sub).run() as {meta?:{changes?:number}};
+      if (updated.meta?.changes !== 1) return json({error:"GOOGLE_ACCOUNT_ALREADY_LINKED"},409,headers);
+      headers.set("location",new URL("/",origin).toString());
+      return new Response(null,{status:302,headers});
+    }
     const session = await createUserAndSession(env, identity);
     appendCookie(headers, SESSION_COOKIE + "=" + session.token + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + SESSION_TTL_SECONDS);
     const returnTo = typeof payload.returnTo === "string" && payload.returnTo.startsWith("/") && !payload.returnTo.startsWith("//") && !payload.returnTo.includes("\\") ? payload.returnTo : "/";
@@ -273,20 +297,20 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
   }
 }
 
-export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null } | null> {
+export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null; googleLinked: boolean } | null> {
   if (!env.DB) return null;
   const token = getCookie(request, SESSION_COOKIE);
   if (!token) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    "SELECT u.id,u.email,u.display_name,u.avatar_url,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.visibility='private' ORDER BY w.created_at ASC LIMIT 1) AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
-  ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; expires_at: string; personal_workspace_id: string | null }>();
+    "SELECT u.id,u.email,u.display_name,u.avatar_url,u.google_sub,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.visibility='private' ORDER BY w.created_at ASC LIMIT 1) AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
+  ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; google_sub: string; expires_at: string; personal_workspace_id: string | null }>();
   if (!row) return null;
   if (row.expires_at <= new Date().toISOString()) {
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(hash).run();
     return null;
   }
-  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id };
+  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id, googleLinked: !(row.google_sub ?? "").startsWith("passkey:") };
 }
 
 async function logout(request: Request, env: AuthEnv): Promise<Response> {
@@ -355,6 +379,143 @@ async function consumePasskeyChallenge(env: AuthEnv, challenge: string, userId: 
     "DELETE FROM passkey_challenges WHERE id=? AND challenge=? AND purpose=? AND user_id IS ? AND expires_at>?"
   ).bind(row.id, challenge, purpose, userId, now).run() as { meta?: { changes?: number } };
   return result.meta?.changes === 1;
+}
+
+function makeRecoveryCode(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return hex.match(/.{1,8}/g)!.join("-");
+}
+
+function normalizeRecoveryCode(value: string): string {
+  return value.replace(/-/g, "").replace(/\\s/g, "").toUpperCase();
+}
+
+async function startPasskeySignup(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const limited = await passkeyRateLimit(request, env, "signup-options", 5);
+  if (limited) return limited;
+  const body = await readAuthJson(request);
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const displayName = typeof body?.displayName === "string" ? body.displayName.trim().slice(0, 80) : "";
+  const at = email.indexOf("@");
+  const validEmail = at > 0 && at === email.lastIndexOf("@") && email.lastIndexOf(".") > at + 1 && email.length - email.lastIndexOf(".") > 1 && !Array.from(email).some(char => char.charCodeAt(0) <= 32);
+  if (!validEmail || email.length > 254 || !displayName) {
+    return json({ error: "INVALID_SIGNUP_DETAILS" }, 400);
+  }
+  const existing = await env.DB.prepare("SELECT id FROM users WHERE email_normalized=? LIMIT 1").bind(email).first<{id:string}>();
+  if (existing) return json({ error: "ACCOUNT_ALREADY_EXISTS" }, 409);
+  const rp = passkeyRelyingParty(request, env);
+  const userId = crypto.randomUUID();
+  const options = await generateRegistrationOptions({
+    rpName: "KitaNotes",
+    rpID: rp.id,
+    userID: new TextEncoder().encode(userId),
+    userName: email,
+    userDisplayName: displayName,
+    attestationType: "none",
+    authenticatorSelection: { residentKey: "required", userVerification: "required" }
+  });
+  const now = new Date();
+  await env.DB.prepare("DELETE FROM passkey_signup_challenges WHERE expires_at<=?").bind(now.toISOString()).run();
+  await env.DB.prepare(
+    "INSERT INTO passkey_signup_challenges (id,user_id,email,email_normalized,display_name,challenge,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?)"
+  ).bind(crypto.randomUUID(),userId,email,email,displayName,options.challenge,new Date(now.getTime()+PASSKEY_CHALLENGE_TTL_SECONDS*1000).toISOString(),now.toISOString()).run();
+  return json(options);
+}
+
+async function finishPasskeySignup(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const limited = await passkeyRateLimit(request, env, "signup-verify", 5);
+  if (limited) return limited;
+  const body = await readAuthJson(request);
+  if (!body || typeof body.challenge !== "string" || !body.response || typeof body.response !== "object") return json({ error: "INVALID_PASSKEY_RESPONSE" }, 400);
+  const pending = await env.DB.prepare(
+    "SELECT id,user_id,email,email_normalized,display_name FROM passkey_signup_challenges WHERE challenge=? AND expires_at>? LIMIT 1"
+  ).bind(body.challenge,new Date().toISOString()).first<{id:string;user_id:string;email:string;email_normalized:string;display_name:string}>();
+  if (!pending) return json({ error: "PASSKEY_CHALLENGE_EXPIRED" }, 400);
+  try {
+    const rp = passkeyRelyingParty(request, env);
+    const verification = await verifyRegistrationResponse({
+      response: body.response,
+      expectedChallenge: body.challenge,
+      expectedOrigin: rp.origin,
+      expectedRPID: rp.id,
+      requireUserVerification: true
+    });
+    if (!verification.verified || !verification.registrationInfo) return json({ error: "PASSKEY_VERIFICATION_FAILED" }, 400);
+    const consumed = await env.DB.prepare(
+      "DELETE FROM passkey_signup_challenges WHERE id=? AND challenge=? AND expires_at>?"
+    ).bind(pending.id,body.challenge,new Date().toISOString()).run() as {meta?:{changes?:number}};
+    if (consumed.meta?.changes !== 1) return json({ error: "PASSKEY_CHALLENGE_ALREADY_USED" }, 409);
+    const info = verification.registrationInfo;
+    const credential = info.credential;
+    const now = new Date().toISOString();
+    const workspaceId = crypto.randomUUID();
+    const recoveryCodes = Array.from({length:10},makeRecoveryCode);
+    const statements = [
+      env.DB.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,display_name,avatar_url,created_at,updated_at) VALUES (?,?,?,?,0,?,NULL,?,?)")
+        .bind(pending.user_id,"passkey:"+pending.user_id,pending.email,pending.email_normalized,pending.display_name,now,now),
+      env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
+        .bind(workspaceId,"Personal",pending.user_id,"shared","private",now,now),
+      env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)")
+        .bind(workspaceId,pending.user_id,"owner",now),
+      env.DB.prepare("INSERT INTO passkey_credentials (credential_id,user_id,public_key,counter,transports_json,device_type,backed_up,created_at,last_used_at) VALUES (?,?,?,?,?,?,?,?,NULL)")
+        .bind(credential.id,pending.user_id,base64Url(credential.publicKey),credential.counter,JSON.stringify(credential.transports??[]),info.credentialDeviceType,info.credentialBackedUp?1:0,now),
+      ...await Promise.all(recoveryCodes.map(async code=>env.DB!.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)").bind(await sha256(normalizeRecoveryCode(code)),pending.user_id,now)))
+    ];
+    if (env.DB.batch) await env.DB.batch(statements);
+    else for (const statement of statements) await statement.run();
+    const session = await createSessionForUser(env,pending.user_id);
+    const headers = new Headers();
+    appendCookie(headers,SESSION_COOKIE+"="+session.token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
+    return json({verified:true,recoveryCodes,user:{id:pending.user_id,email:pending.email,displayName:pending.display_name,avatarUrl:null}},201,headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/UNIQUE|constraint/i.test(message)) return json({error:"ACCOUNT_ALREADY_EXISTS"},409);
+    return json({error:"PASSKEY_SIGNUP_FAILED"},400);
+  }
+}
+
+async function recoverWithPasskeyCode(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({error:"DATABASE_NOT_CONFIGURED"},503);
+  if (!isSameOriginMutation(request,env)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const limited = await passkeyRateLimit(request,env,"recovery-verify",8);
+  if (limited) return limited;
+  const body = await readAuthJson(request);
+  const raw = typeof body?.code === "string" ? body.code : "";
+  const normalized = normalizeRecoveryCode(raw);
+  if (!/^[A-F0-9]{32}$/.test(normalized)) return json({error:"RECOVERY_CODE_INVALID"},401);
+  const codeHash = await sha256(normalized);
+  const row = await env.DB.prepare("SELECT user_id FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").bind(codeHash).first<{user_id:string}>();
+  if (!row) return json({error:"RECOVERY_CODE_INVALID"},401);
+  const result = await env.DB.prepare("DELETE FROM passkey_recovery_codes WHERE code_hash=? AND user_id=? AND used_at IS NULL").bind(codeHash,row.user_id).run() as {meta?:{changes?:number}};
+  if (result.meta?.changes !== 1) return json({error:"RECOVERY_CODE_INVALID"},401);
+  const session = await createSessionForUser(env,row.user_id);
+  const headers = new Headers();
+  appendCookie(headers,SESSION_COOKIE+"="+session.token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
+  return json({authenticated:true},200,headers);
+}
+
+async function regeneratePasskeyRecoveryCodes(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({error:"DATABASE_NOT_CONFIGURED"},503);
+  if (!isSameOriginMutation(request,env)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const user = await getCurrentUser(request,env);
+  if (!user) return json({error:"UNAUTHENTICATED"},401);
+  const limited = await passkeyRateLimit(request,env,"recovery-regenerate:"+user.id,3);
+  if (limited) return limited;
+  const codes = Array.from({length:10},makeRecoveryCode);
+  const now = new Date().toISOString();
+  const statements = [
+    env.DB.prepare("DELETE FROM passkey_recovery_codes WHERE user_id=?").bind(user.id),
+    ...await Promise.all(codes.map(async code=>env.DB!.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)").bind(await sha256(normalizeRecoveryCode(code)),user.id,now)))
+  ];
+  if (env.DB.batch) await env.DB.batch(statements);
+  else for (const statement of statements) await statement.run();
+  return json({recoveryCodes:codes});
 }
 
 async function startPasskeyRegistration(request: Request, env: AuthEnv): Promise<Response> {
@@ -536,8 +697,12 @@ async function removePasskey(request: Request, env: AuthEnv, credentialId: strin
 export async function handleAuthRequest(request: Request, env: AuthEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname === "/api/auth/status" && request.method === "GET") return json({ ready: authConfiguration(env) === null });
-  if (url.pathname === "/auth/google" && request.method === "GET") return startGoogleLogin(request, env);
+  if ((url.pathname === "/auth/google" || url.pathname === "/auth/google/link") && request.method === "GET") return startGoogleLogin(request, env);
   if (url.pathname === "/auth/google/callback" && request.method === "GET") return completeGoogleLogin(request, env);
+  if (url.pathname === "/api/auth/passkeys/signup/options" && request.method === "POST") return startPasskeySignup(request, env);
+  if (url.pathname === "/api/auth/passkeys/signup/verify" && request.method === "POST") return finishPasskeySignup(request, env);
+  if (url.pathname === "/api/auth/passkeys/recovery/verify" && request.method === "POST") return recoverWithPasskeyCode(request, env);
+  if (url.pathname === "/api/auth/passkeys/recovery/regenerate" && request.method === "POST") return regeneratePasskeyRecoveryCodes(request, env);
   if (url.pathname === "/api/auth/passkeys/register/options" && request.method === "POST") return startPasskeyRegistration(request, env);
   if (url.pathname === "/api/auth/passkeys/register/verify" && request.method === "POST") return finishPasskeyRegistration(request, env);
   if (url.pathname === "/api/auth/passkeys/authenticate/options" && request.method === "POST") return startPasskeyAuthentication(request, env);

@@ -991,3 +991,28 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     flex:0 0 38px;
   }
 }
+
+
+/* Passkey signup and account recovery dialogs */
+.auth-dialog-backdrop{position:fixed;inset:0;z-index:120;background:#17172b88;display:grid;place-items:center;padding:18px;overflow:auto}
+.auth-dialog{width:min(440px,100%);max-height:min(90dvh,760px);overflow:auto;background:var(--surface,#fff);color:var(--text,#303348);border:1px solid var(--border,#e8e9f1);border-radius:18px;padding:22px;box-shadow:0 24px 80px #17172b40}
+.auth-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.auth-dialog h2{font:800 20px var(--font-ui);margin:0;letter-spacing:-.4px}
+.auth-dialog p{font-size:13px;line-height:1.6;color:var(--muted,#777b8e);margin:0 0 16px}
+.auth-dialog form{display:grid;gap:13px}
+.auth-dialog form label{display:grid;gap:6px;font-size:12px;font-weight:700}
+.auth-dialog input{width:100%;min-height:44px;border:1px solid var(--border,#e5e6ef);border-radius:10px;padding:10px 12px;background:var(--surface,#fff);color:var(--text,#303348);font:500 14px var(--font-ui);box-sizing:border-box}
+.auth-dialog form small{font-size:11px;line-height:1.5;color:var(--muted,#888b9b)}
+.auth-dialog-error{color:#b42318!important;margin:0!important}
+.auth-dialog-primary,.auth-dialog-secondary{width:100%;min-height:44px;border-radius:10px;padding:10px 14px;font:700 13px var(--font-ui);cursor:pointer}
+.auth-dialog-primary{border:1px solid #6256d9;background:#6256d9;color:#fff}
+.auth-dialog-primary:disabled{opacity:.6;cursor:wait}
+.auth-dialog-secondary{margin-top:9px;border:1px solid var(--border,#e5e6ef);background:transparent;color:var(--text,#4b4e61)}
+.recovery-codes-content{display:grid;gap:12px}
+.recovery-code-list{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.recovery-code-list code{display:block;padding:9px 7px;text-align:center;border:1px solid var(--border,#e5e6ef);border-radius:8px;background:var(--surface-muted,#f7f7fb);font:700 11px ui-monospace,monospace;letter-spacing:.2px}
+.recovery-manage-button{white-space:nowrap}
+@media(max-width:760px){.auth-dialog-backdrop{padding:12px;align-items:center}.auth-dialog{padding:18px;border-radius:15px}.recovery-code-list{grid-template-columns:1fr 1fr}.recovery-manage-button{font-size:10px}}
+[data-theme=dark] .auth-dialog{background:#202235;color:#f0f1f8;border-color:#393d55}
+[data-theme=dark] .auth-dialog input{background:#181b2c;color:#f0f1f8;border-color:#393d55}
+[data-theme=dark] .recovery-code-list code{background:#181b2c;border-color:#393d55;color:#e8e8f2}
