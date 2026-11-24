@@ -142,7 +142,7 @@ test("Passkey registration options are only available to an authenticated same-o
     assert.equal(options.authenticatorSelection.residentKey, "required");
     assert.equal(options.authenticatorSelection.userVerification, "required");
     const pending = db.sqlite.prepare("SELECT user_id,purpose FROM passkey_challenges WHERE challenge=?").get(options.challenge);
-    assert.deepEqual(pending, { user_id: "existing-user", purpose: "register" });
+    assert.deepEqual({ ...pending }, { user_id: "existing-user", purpose: "register" });
   } finally {
     db.close();
   }
@@ -164,7 +164,7 @@ test("Passkey login options are discoverable and challenge-bound without creatin
     assert.equal(options.userVerification, "required");
     assert.equal(options.allowCredentials?.length ?? 0, 0);
     const pending = db.sqlite.prepare("SELECT user_id,purpose FROM passkey_challenges WHERE challenge=?").get(options.challenge);
-    assert.deepEqual(pending, { user_id: null, purpose: "authenticate" });
+    assert.deepEqual({ ...pending }, { user_id: null, purpose: "authenticate" });
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
   } finally {
     db.close();
