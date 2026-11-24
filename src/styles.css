@@ -939,3 +939,68 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 [data-theme=dark] .passkey-button{background:#24213c;border-color:#514a80;color:#c8c1ff}
 [data-theme=dark] .passkey-button:hover{background:#302b50;border-color:#7167b4}
 @media(max-width:760px){.passkey-button{min-height:34px;padding:6px 8px;font-size:10px;gap:5px}.passkey-button svg{width:14px;height:14px}.empty-auth-actions{width:100%}.empty-auth-actions>*{flex:1}}
+
+
+/* Mobile workspace picker: keep the menu inside the viewport and above app navigation. */
+@media(max-width:760px){
+  .topbar{
+    z-index:55;
+    overflow:visible;
+  }
+  .mobile-workspace-control{
+    position:relative;
+    z-index:56;
+    flex:1 1 0;
+    min-width:0;
+  }
+  .mobile-workspace-control .workspace-picker{
+    position:static;
+    flex:1 1 0;
+    min-width:0;
+  }
+  .mobile-workspace-control .workspace-picker-trigger{
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    gap:7px;
+  }
+  .mobile-workspace-control .workspace-picker-copy{
+    flex:1 1 0;
+    min-width:0;
+  }
+  .mobile-workspace-control .workspace-picker-menu{
+    position:absolute;
+    top:calc(100% + 8px);
+    left:0;
+    right:auto;
+    width:min(340px,calc(100vw - 24px));
+    max-width:calc(100vw - 24px);
+    max-height:min(62dvh,480px);
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    padding:7px;
+    z-index:90;
+    box-sizing:border-box;
+  }
+  .mobile-workspace-control .workspace-picker-option{
+    min-height:50px;
+    padding:9px;
+    gap:10px;
+    touch-action:manipulation;
+  }
+  .mobile-workspace-control .workspace-picker-option-copy{
+    min-width:0;
+    flex:1 1 0;
+  }
+  .mobile-workspace-control .workspace-picker-option-copy strong,
+  .mobile-workspace-control .workspace-picker-option-copy small{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .mobile-workspace-control .workspace-star-button{
+    flex:0 0 38px;
+  }
+}
