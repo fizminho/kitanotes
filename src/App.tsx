@@ -1370,11 +1370,23 @@ export default function App() {
     finally {setPasskeyBusy(false);}
   }
 
+  async function getPasskeyStepUpToken():Promise<string> {
+    const optionsResponse=await fetch("/api/auth/passkeys/step-up/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
+    const options=await optionsResponse.json() as any;
+    if(!optionsResponse.ok)throw new Error(options.error==="NO_PASSKEY_AVAILABLE"?"Add a passkey before changing recovery settings.":"Unable to start identity verification.");
+    const credential=await startAuthentication({optionsJSON:options});
+    const verifyResponse=await fetch("/api/auth/passkeys/step-up/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential})});
+    const result=await verifyResponse.json() as {verified?:boolean;stepUpToken?:string};
+    if(!verifyResponse.ok||!result.verified||!result.stepUpToken)throw new Error("Passkey verification failed. Please try again.");
+    return result.stepUpToken;
+  }
+
   async function regenerateRecoveryCodes() {
     if(passkeyBusy||!user)return;
     setPasskeyBusy(true);setAuthDialogError("");
     try {
-      const response=await fetch("/api/auth/passkeys/recovery/regenerate",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
+      const stepUpToken=await getPasskeyStepUpToken();
+      const response=await fetch("/api/auth/passkeys/recovery/regenerate",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({stepUpToken})});
       const result=await response.json() as {recoveryCodes?:string[]};
       if(!response.ok||!result.recoveryCodes?.length)throw new Error("Unable to generate recovery codes.");
       setRecoveryCodes(result.recoveryCodes);setAuthDialog("codes");
@@ -1386,11 +1398,12 @@ export default function App() {
     if(!user||passkeyBusy)return;
     setPasskeyBusy(true);
     try {
+      const stepUpToken=await getPasskeyStepUpToken();
       const optionsResponse=await fetch("/api/auth/passkeys/register/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
       const options=await optionsResponse.json() as any;
       if(!optionsResponse.ok)throw new Error(options.error==="UNAUTHENTICATED"?"Please sign in again before adding a passkey.":"Unable to start passkey setup.");
       const credential=await startRegistration({optionsJSON:options});
-      const verificationResponse=await fetch("/api/auth/passkeys/register/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential})});
+      const verificationResponse=await fetch("/api/auth/passkeys/register/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential,stepUpToken})});
       const verification=await verificationResponse.json() as {verified?:boolean;error?:string};
       if(!verificationResponse.ok||!verification.verified)throw new Error(verification.error==="PASSKEY_ALREADY_REGISTERED"?"This passkey is already linked to an account.":"Passkey setup could not be verified. Please try again.");
       pushToast("Passkey added. You can now sign in with Face ID or your device PIN.");
