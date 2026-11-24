@@ -555,7 +555,7 @@ export default function App() {
     if (!viewingNote || !canWrite || checklistSavingLine !== null) return;
     const lines = viewingNote.content.split("\n");
     const line = lines[lineIndex] ?? "";
-    const match = line.match(/^(\\s*)-\\s+(?:\\[([ xX])\\]\\s*)?(.*)$/);
+    const match = line.match(/^(\s*)-\s+(?:\[([ xX])\]\s*)?(.*)$/);
     if (!match) return;
     const checked = (match[2] ?? "").toLowerCase() === "x";
     lines[lineIndex] = match[1] + "- [" + (checked ? " " : "x") + "] " + match[3];
@@ -1512,7 +1512,7 @@ export default function App() {
         <section className="composer note-viewer" role="dialog" aria-modal="true" aria-labelledby="view-note-title">
           <header><div><span className="eyebrow">{viewingNote.categoryName||"NOTE"}</span><h2 id="view-note-title">{viewingNote.title}</h2></div><button className="icon-button" onClick={()=>setViewingNote(null)} aria-label="Close"><X size={19}/></button></header>
           <div className="note-full-content">{viewingNote.content ? viewingNote.content.split("\n").map((line,index)=>{
-            const item=line.match(/^(\\s*)-\\s+(?:\\[([ xX])\\]\\s*)?(.*)$/);
+            const item=line.match(/^(\s*)-\s+(?:\[([ xX])\]\s*)?(.*)$/);
             if(item){
               const checked=(item[2]??"").toLowerCase()==="x";
               return <div className={checked?"note-checklist-row checked":"note-checklist-row"} key={index}><input type="checkbox" checked={checked} disabled={!canWrite||checklistSavingLine!==null} onChange={()=>void toggleNoteChecklistItem(index)} aria-label={(checked?"Mark incomplete: ":"Mark complete: ")+item[3]}/><span>{item[3]}</span></div>;
