@@ -236,6 +236,11 @@ async function createUserAndSession(
     }
   }
   if (!userId) throw new Error("Unable to create user account");
+  if (existingGoogle?.id) {
+    await db.prepare(
+      "UPDATE users SET email=?,email_normalized=?,email_verified=1,display_name=?,avatar_url=?,updated_at=? WHERE id=?"
+    ).bind(identity.email,emailNormalized,identity.name??null,identity.picture??null,now,userId).run();
+  }
   const user = { id: userId };
 
   await db.prepare(
