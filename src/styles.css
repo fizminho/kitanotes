@@ -823,3 +823,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     flex:0 0 auto;
   }
 }
+
+
+/* Modal overlays must sit above the fixed mobile tab bar (z-index: 40). */
+@media(max-width:760px){
+  .modal-backdrop{
+    z-index:60;
+  }
+}
