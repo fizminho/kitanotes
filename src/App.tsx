@@ -104,6 +104,7 @@ export default function App() {
   const [notesError, setNotesError] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
@@ -188,6 +189,8 @@ export default function App() {
   const [aiSavingNote, setAiSavingNote] = useState(false);
   const [aiCreatingItems, setAiCreatingItems] = useState(false);
   const [aiNoteSaved, setAiNoteSaved] = useState(false);
+  const [aiSavedNoteId, setAiSavedNoteId] = useState<string | null>(null);
+  const [aiCreatedEventIds, setAiCreatedEventIds] = useState<Record<number,string>>({});
   const [aiItemsCreated, setAiItemsCreated] = useState(false);
   const [aiCreatedItems, setAiCreatedItems] = useState<string[]>([]);
 
@@ -777,7 +780,7 @@ export default function App() {
         })});
         const result=await response.json() as {note?:Note};
         if(!response.ok||!result.note)throw new Error("Unable to save the note.");
-        setNotes(current=>[result.note!,...current]);setAiNoteSaved(true);
+        setNotes(current=>[result.note!,...current]);setAiSavedNoteId(result.note!.id);setAiNoteSaved(true);
       }
       const hasCalendarItems=Boolean(aiDraft.events.length||aiDraft.reminders.length||aiDraft.tasks.some(task=>task.dueLocal));
       if(hasCalendarItems&&!aiItemsCreated){
@@ -804,13 +807,14 @@ export default function App() {
         if(!completed.has(eventKey)){
           const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
             workspaceId:activeWorkspaceId,title:event.title,description:event.description,
-            startsAt:zonedDateTimeToIso(event.startLocal,event.timezone),endsAt:zonedDateTimeToIso(event.endLocal,event.timezone),timezone:event.timezone
+            startsAt:zonedDateTimeToIso(event.startLocal,event.timezone),endsAt:zonedDateTimeToIso(event.endLocal,event.timezone),timezone:event.timezone,
+            linkedNoteId:aiSavedNoteId
           })});
           const result=await response.json() as {event?:CalendarEvent};
           if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
-          eventId=result.event.id;completed.add(eventKey);setEvents(current=>[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));setAiCreatedItems([...completed]);
+          eventId=result.event.id;setAiCreatedEventIds(current=>({...current,[index]:result.event!.id}));completed.add(eventKey);setEvents(current=>[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));setAiCreatedItems([...completed]);
         }else{
-          eventId=events.find(item=>item.title===event.title&&item.startsAt===zonedDateTimeToIso(event.startLocal,event.timezone))?.id;
+          eventId=aiCreatedEventIds[index]??events.find(item=>item.title===event.title&&item.startsAt===zonedDateTimeToIso(event.startLocal,event.timezone))?.id;
         }
         if(event.reminderLocal&&!completed.has("event-reminder:"+index)&&eventId){
           const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
@@ -1316,7 +1320,7 @@ export default function App() {
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}
             {notesLoading ? <div className="loading-state">Memuatkan nota…</div> : visibleNotes.length > 0 ? <div className="notes-grid">
-              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}
+              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>) }
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
               <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
@@ -1398,7 +1402,7 @@ export default function App() {
           aiNoteSaved={aiNoteSaved} aiItemsCreated={aiItemsCreated} aiSavingNote={aiSavingNote}
           aiCreatingItems={aiCreatingItems} saveAiNote={saveAiNote}
           onClose={()=>setAiModalOpen(false)}
-          onStartOver={()=>{setAiDraft(null);setAiError("");setAiNoteSaved(false);setAiItemsCreated(false);setAiCreatedItems([]);}}
+          onStartOver={()=>{setAiDraft(null);setAiError("");setAiNoteSaved(false);setAiSavedNoteId(null);setAiItemsCreated(false);setAiCreatedItems([]);setAiCreatedEventIds({});}}
         />
       </Suspense>}
       {inviteOpen && activeWorkspace && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setInviteOpen(false); }}>
@@ -1473,6 +1477,14 @@ export default function App() {
           <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
           <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div><label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
+        </section>
+      </div>}
+      {viewingNote && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setViewingNote(null);}}>
+        <section className="composer note-viewer" role="dialog" aria-modal="true" aria-labelledby="view-note-title">
+          <header><div><span className="eyebrow">{viewingNote.categoryName||"NOTE"}</span><h2 id="view-note-title">{viewingNote.title}</h2></div><button className="icon-button" onClick={()=>setViewingNote(null)} aria-label="Close"><X size={19}/></button></header>
+          <div className="note-full-content">{viewingNote.content||"No additional details."}</div>
+          <small className="record-audit">Created by {viewingNote.createdByName||"Workspace member"} · {new Date(viewingNote.createdAt).toLocaleString()}<br/>Last updated by {viewingNote.updatedByName||viewingNote.createdByName||"Workspace member"} · {new Date(viewingNote.updatedAt).toLocaleString()}</small>
+          <footer><span>Full note</span>{canWrite&&!showArchived&&<button className="primary-button" onClick={()=>{const note=viewingNote;setViewingNote(null);startEditNote(note);}}>Edit note</button>}</footer>
         </section>
       </div>}
       <div className="toast-stack" role="status" aria-live="polite">{toasts.map(toast=><div key={toast.id} className={"toast "+toast.tone}>{toast.text}</div>)}</div>
