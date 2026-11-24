@@ -1450,7 +1450,7 @@ export default function App() {
           </section>}
           {inviteToken && <section className="invite-panel">
             <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
-              <p>Anyone with this invitation link can join after signing in with Google.</p></div>
+              <p>Anyone with this invitation link can join after signing in with Google or an existing passkey.</p></div>
             {user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
               : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div>
               : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>}
