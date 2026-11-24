@@ -42,6 +42,56 @@ function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePicker
     </div>}
   </div>;
 }
+type AccountMenuProps = {
+  user:SessionUser|null;
+  authStatus:"loading"|"signed_out"|"ready"|"unavailable";
+  passkeyBusy:boolean;
+  onRegisterPasskey:()=>void;
+  onSignInWithPasskey:()=>void;
+  onRegenerateRecoveryCodes:()=>void;
+  onOpenSignup:()=>void;
+  onOpenRecovery:()=>void;
+  onSignOut:()=>void;
+};
+function AccountMenu({user,authStatus,passkeyBusy,onRegisterPasskey,onSignInWithPasskey,onRegenerateRecoveryCodes,onOpenSignup,onOpenRecovery,onSignOut}:AccountMenuProps){
+  const [open,setOpen]=useState(false);
+  const rootRef=useRef<HTMLDivElement|null>(null);
+  useEffect(()=>{
+    if(!open)return;
+    const onPointerDown=(event:PointerEvent)=>{if(rootRef.current&&!rootRef.current.contains(event.target as Node))setOpen(false);};
+    const onKeyDown=(event:KeyboardEvent)=>{if(event.key==="Escape")setOpen(false);};
+    document.addEventListener("pointerdown",onPointerDown);
+    document.addEventListener("keydown",onKeyDown);
+    return()=>{document.removeEventListener("pointerdown",onPointerDown);document.removeEventListener("keydown",onKeyDown);};
+  },[open]);
+  const signedIn=!!user;
+  return <div className="account-menu" ref={rootRef}>
+    <button type="button" className="account-control" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
+      {user?.avatarUrl?<img className="profile-avatar small" src={user.avatarUrl} alt=""/>:<span className="profile-avatar small">{user?.displayName?.slice(0,1).toUpperCase()??"?"}</span>}
+      <span className="account-control-label">{signedIn?(user.displayName||"Account"):"Account"}</span>
+      <ChevronDown size={15} className={open?"account-chevron open":"account-chevron"}/>
+    </button>
+    {open&&<div className="account-menu-panel" role="menu" aria-label="Account">
+      {signedIn?<>
+        <div className="account-menu-identity"><strong>{user.displayName||"KitaNotes account"}</strong><small>{user.email}</small></div>
+        <div className="account-menu-divider"/>
+        <button type="button" role="menuitem" onClick={()=>{onRegisterPasskey();setOpen(false);}} disabled={passkeyBusy}><Fingerprint size={16}/><span>Add a passkey</span></button>
+        <button type="button" role="menuitem" onClick={()=>{onRegenerateRecoveryCodes();setOpen(false);}} disabled={passkeyBusy}><LogIn size={16}/><span>Recovery codes</span></button>
+        {user.googleLinked===false&&<a role="menuitem" href="/auth/google/link" onClick={()=>setOpen(false)}><LogIn size={16}/><span>Link Google account</span></a>}
+        <div className="account-menu-divider"/>
+        <button type="button" role="menuitem" className="account-menu-signout" onClick={()=>{onSignOut();setOpen(false);}}><LogOut size={16}/><span>Sign out</span></button>
+      </>:authStatus==="signed_out"?<>
+        <div className="account-menu-identity"><strong>Welcome to KitaNotes</strong><small>Sign in or create an account</small></div>
+        <div className="account-menu-divider"/>
+        <button type="button" role="menuitem" onClick={()=>{onOpenSignup();setOpen(false);}} disabled={passkeyBusy}><Fingerprint size={16}/><span>Create account with Passkey</span></button>
+        <button type="button" role="menuitem" onClick={()=>{onSignInWithPasskey();setOpen(false);}} disabled={passkeyBusy}><Fingerprint size={16}/><span>Sign in with Passkey</span></button>
+        <a role="menuitem" href="/auth/google" onClick={()=>setOpen(false)}><LogIn size={16}/><span>Continue with Google</span></a>
+        <div className="account-menu-divider"/>
+        <button type="button" role="menuitem" onClick={()=>{onOpenRecovery();setOpen(false);}}><LogIn size={16}/><span>Recover account</span></button>
+      </>:<div className="account-menu-identity"><strong>{authStatus==="loading"?"Checking session…":"Sign-in setup pending"}</strong><small>{authStatus==="unavailable"?"Account services are not available yet.": "Please wait."}</small></div>}
+    </div>}
+  </div>;
+}
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
 function dateKey(value:Date):string { return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0"); }
 function dateTimeInputFor(value:string,timezone:string):string {
@@ -1497,12 +1547,7 @@ export default function App() {
       <section className="main-panel">
         <header className="topbar">
           <div className="mobile-workspace-control">
-            <label className="mobile-workspace-switch" aria-label="Choose workspace">
-              <span>Workspace</span>
-              <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
-                {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}
-              </select>
-            </label>
+            <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
             <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button mobile active":"workspace-star-button mobile"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}><Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/></button>
           </div>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
@@ -1510,7 +1555,7 @@ export default function App() {
             {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceModalOpen}><Plus size={14}/> New space</button>}
             <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
-            {user ? <><button type="button" className="passkey-button" onClick={()=>void registerPasskey()} disabled={passkeyBusy} title="Add a passkey" aria-label="Add a passkey"><Fingerprint size={16}/><span>{passkeyBusy?"Working…":"Add passkey"}</span></button><button type="button" className="text-action recovery-manage-button" onClick={()=>void regenerateRecoveryCodes()} disabled={passkeyBusy}>Recovery codes</button>{user.googleLinked===false&&<a className="text-action recovery-manage-button" href="/auth/google/link">Link Google</a>}<button className="account-control" onClick={signOut} aria-label={"Sign out from KitaNotes account " + user.email} title={"Signed in as " + user.email + ". Tap to sign out."}>{user.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <span className="profile-avatar small">{user.displayName?.slice(0, 1).toUpperCase() ?? "?"}</span>}<LogOut size={15}/></button></> : authStatus === "signed_out" ? <><button type="button" className="passkey-button" onClick={()=>{setAuthDialogError("");setAuthDialog("signup");}} disabled={passkeyBusy}><Fingerprint size={16}/><span>Create account</span></button><button type="button" className="passkey-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/><span>{passkeyBusy?"Checking…":"Use passkey"}</span></button><a className="signin-button" href="/auth/google"><LogIn size={15} /> Google</a><button type="button" className="text-action recovery-manage-button" onClick={()=>{setAuthDialogError("");setAuthDialog("recovery");}}>Recovery</button></> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
+            <AccountMenu user={user} authStatus={authStatus} passkeyBusy={passkeyBusy} onRegisterPasskey={()=>void registerPasskey()} onSignInWithPasskey={()=>void signInWithPasskey()} onRegenerateRecoveryCodes={()=>void regenerateRecoveryCodes()} onOpenSignup={()=>{setAuthDialogError("");setAuthDialog("signup");}} onOpenRecovery={()=>{setAuthDialogError("");setAuthDialog("recovery");}} onSignOut={signOut}/>
           </div>
         </header>
         <div className="content">
