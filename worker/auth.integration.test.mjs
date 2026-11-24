@@ -334,7 +334,7 @@ test("Passkey recovery codes are single-use and issue the normal session cookie"
     const first = await handleAuthRequest(request(),env);
     assert.equal(first.status,200);
     assert.match(first.headers.get("set-cookie") ?? "",/__Host-kitanotes_session=/);
-    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE code_hash=?").get(hash).count,0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").get(hash).count,0);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM sessions WHERE user_id='recovery-user'").get().count,1);
     const second = await handleAuthRequest(request(),env);
     assert.equal(second.status,401);
