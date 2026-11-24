@@ -104,7 +104,8 @@ export default function App() {
   const [notesError, setNotesError] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
-  const [viewingNote, setViewingNote] = useState<Note | null>(null);\n  const [checklistSavingLine, setChecklistSavingLine] = useState<number | null>(null);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);
+  const [checklistSavingLine, setChecklistSavingLine] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
