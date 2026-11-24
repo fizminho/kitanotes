@@ -285,16 +285,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 [data-theme=dark] .workspace-star-button{background:#1b1d2b;border-color:#34364a;color:#9296ad}
 [data-theme=dark] .workspace-star-button.active{background:#2a2750;border-color:#4a4384;color:#c3bcff}
 [data-theme=dark] .workspace-star-button:hover:not(:disabled){background:#2a2750;border-color:#4a4384;color:#c3bcff}
-@media(max-width:760px){
-  .workspace-switch-row{display:none}
-  .mobile-workspace-control{display:flex;align-items:center;gap:5px;flex:1;min-width:0}
-  .mobile-workspace-control .workspace-picker{flex:1;min-width:0}
-  .mobile-workspace-control .workspace-picker-trigger{min-height:40px;padding:7px 9px;border-radius:10px}
-  .mobile-workspace-control .workspace-picker-copy strong{font-size:11px}
-  .mobile-workspace-control .workspace-picker-copy small{font-size:9px}
-  .mobile-workspace-control .workspace-picker-menu{left:auto;right:0;width:min(300px,calc(100vw - 28px))}
-  .workspace-star-button.mobile{width:36px;height:36px;border-radius:9px}
-}
+@media(max-width:760px){.workspace-switch-row{display:none}.mobile-workspace-control{display:flex;align-items:center;gap:5px;flex:1;min-width:0}.workspace-star-button.mobile{width:36px;height:36px;border-radius:9px}}
 
 
 /* Mobile UX pass: thumb-friendly navigation, spacing and readable calendar. */
@@ -920,12 +911,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 
 
-/* Shared workspace picker, consistent on desktop and mobile. */
+/* Desktop workspace picker only. Mobile retains its native compact selector. */
 .workspace-picker{position:relative;min-width:0}
-.workspace-picker.compact .workspace-picker-trigger{min-height:40px;padding:7px 9px;border-radius:10px}
-.workspace-picker.compact .workspace-picker-copy strong{font-size:11px}
-.workspace-picker.compact .workspace-picker-copy small{font-size:9px}
-.workspace-picker.compact .workspace-picker-menu{left:auto;right:0;width:min(300px,calc(100vw - 28px))}
 [data-theme=dark] .workspace-picker-empty{color:#a0a4b8}
 
 
