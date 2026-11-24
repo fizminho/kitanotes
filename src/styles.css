@@ -918,9 +918,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .page-actions{gap:7px}
   .page-actions .secondary-button,.page-actions .primary-button{padding-inline:11px;font-size:11px}
 }
-[data-theme=dark] .workspace-switch:hover{background:#222438;border-color:#4a4384}
-[data-theme=dark] .workspace-switch>svg{color:#a0a4b8}
-[data-theme=dark] .workspace-switch:focus-within{outline-color:#a69cf0}
 
 
 /* Shared workspace picker, consistent on desktop and mobile. */
