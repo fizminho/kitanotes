@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { createHmac, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { handleAuthRequest } from "./auth.ts";
 
