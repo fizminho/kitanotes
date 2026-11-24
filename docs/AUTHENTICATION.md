@@ -54,25 +54,26 @@ For local development, copy `.dev.vars.example` to `.dev.vars`, replace the plac
 
 ## D1 prerequisites
 
-Apply `migrations/0001_initial.sql` and `migrations/0002_sessions.sql` to a dedicated KitaNotes D1 database before testing sign-in. Replace the placeholder database ID in `wrangler.toml` with the actual KitaNotes database ID. Never reuse Investlah's D1 database.
+Apply all migrations in order, including `migrations/0019_passkeys.sql` and `migrations/0020_passkey_signup_recovery.sql`, to a dedicated KitaNotes D1 database before testing sign-in. Replace the placeholder database ID in `wrangler.toml` with the actual KitaNotes database ID. Never reuse Investlah's D1 database.
 
 
 ## Calendar interoperability
 
 KitaNotes uses the iCalendar (`.ics`) format for calendar import and export. It does not request Google Calendar API permissions; users export events from Apple Calendar, Google Calendar or Outlook and import the `.ics` file into a KitaNotes workspace.
 
-## Passkey sign-in and existing-account linking
+## Passkey signup, sign-in and account recovery
 
-KitaNotes uses SimpleWebAuthn for WebAuthn registration and assertion verification. Passkeys are additional credentials for an existing KitaNotes user, not separate user accounts.
+KitaNotes uses SimpleWebAuthn for WebAuthn registration and assertion verification. A passkey can be the primary credential for a new account or an additional credential for an existing account.
 
-1. An existing user signs in with Google.
-2. While that authenticated session is active, the user chooses **Add passkey**.
-3. The Worker creates a short-lived challenge and verifies the browser's WebAuthn registration response against the configured application origin and RP ID.
-4. The credential is stored against the existing `users.id`. No email-based account matching or automatic account merge is performed.
-5. On a later device, **Use passkey** starts discoverable-credential authentication. A successful assertion resolves the credential to its existing `user_id` and issues the same opaque, hashed D1 session used by Google login.
+1. A new user chooses **Create account** and enters a display name and email address. The email is initially unverified.
+2. The browser creates a discoverable Passkey with user verification. Only after successful attestation does the Worker create the user, personal workspace, membership, credential and session.
+3. Ten one-time recovery codes are displayed once. Each code contains 128 bits of random entropy; only SHA-256 hashes are stored. The user must save them securely.
+4. Existing Google users continue to sign in with Google first, then choose **Add passkey** to link a passkey to that same account.
+5. A passkey-only user can choose **Link Google** while signed in. The OAuth state is bound to the current session and account; the verified Google identity is linked only to that account. Email matching alone never links accounts.
+6. If all passkeys are lost, the user can enter one unused recovery code. The code is atomically consumed and a normal KitaNotes session is issued. After recovery, the user should add a new passkey and regenerate the recovery codes.
 
 The registration ceremony requires a discoverable credential (`residentKey: required`) and user verification. Authentication also requires user verification. Challenges expire after five minutes, are single-use, and are bound to the registration user where applicable. Authentication responses must include the matching user handle. Credential counters are checked and updated.
 
 The RP ID is the hostname from `APP_BASE_URL`; the expected origin is its exact origin. Production must remain HTTPS. The browser and Worker use the MIT-licensed `@simplewebauthn/browser` and `@simplewebauthn/server` packages.
 
-Existing Google login remains enabled as the recovery and account-linking path. A passkey can only be added after the user has authenticated to the account they intend to link. Never link a passkey merely because a user typed an email address or phone number.
+Google login remains available. A passkey-only account email is not considered verified until the user completes the explicit **Link Google** flow. This is required for email-verified workspace invitation acceptance. A recovery code is a one-time emergency sign-in method, not an email reset. Users should keep multiple passkeys registered where possible and store recovery codes in a password manager. Never link accounts merely because a user typed an email address or phone number.
