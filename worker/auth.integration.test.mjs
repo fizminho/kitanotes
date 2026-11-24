@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql", "migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql", "migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql", "migrations/0019_passkeys.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -114,6 +114,79 @@ test("Google callback creates user/workspace/session and logout revokes it", asy
     assert.equal(afterLogout.status, 401);
   } finally {
     globalThis.fetch = originalFetch;
+    db.close();
+  }
+});
+
+
+
+test("Passkey registration options are only available to an authenticated same-origin account", async () => {
+  const db = new D1TestDatabase();
+  const secret = "local-test-session-secret-with-more-than-32-characters";
+  const now = new Date().toISOString();
+  const token = "existing-google-session-token";
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256").update(token).digest("base64url");
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('existing-user','google-sub-existing','existing@example.com','existing@example.com',1,?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('existing-session','existing-user',?,?,?)").run(hash,"2099-01-01T00:00:00.000Z",now);
+  try {
+    const env = { DB: db, SESSION_SECRET: secret, APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/register/options", {
+      method: "POST",
+      headers: { origin: "https://kitanotes.test", cookie: "__Host-kitanotes_session=" + token }
+    }), env);
+    assert.equal(response.status, 200);
+    const options = await response.json();
+    assert.ok(options.challenge);
+    assert.equal(options.rp.id, "kitanotes.test");
+    assert.equal(options.authenticatorSelection.residentKey, "required");
+    assert.equal(options.authenticatorSelection.userVerification, "required");
+    const pending = db.sqlite.prepare("SELECT user_id,purpose FROM passkey_challenges WHERE challenge=?").get(options.challenge);
+    assert.deepEqual(pending, { user_id: "existing-user", purpose: "register" });
+  } finally {
+    db.close();
+  }
+});
+
+test("Passkey login options are discoverable and challenge-bound without creating a new user", async () => {
+  const db = new D1TestDatabase();
+  const now = new Date().toISOString();
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('existing-user','google-sub-existing','existing@example.com','existing@example.com',1,?,?)").run(now,now);
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/authenticate/options", {
+      method: "POST",
+      headers: { origin: "https://kitanotes.test" }
+    }), env);
+    assert.equal(response.status, 200);
+    const options = await response.json();
+    assert.ok(options.challenge);
+    assert.equal(options.userVerification, "required");
+    assert.equal(options.allowCredentials, undefined);
+    const pending = db.sqlite.prepare("SELECT user_id,purpose FROM passkey_challenges WHERE challenge=?").get(options.challenge);
+    assert.deepEqual(pending, { user_id: null, purpose: "authenticate" });
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("Passkey endpoints reject cross-origin mutations and malformed verification payloads", async () => {
+  const db = new D1TestDatabase();
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const csrf = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/authenticate/options", {
+      method: "POST",
+      headers: { origin: "https://attacker.test" }
+    }), env);
+    assert.equal(csrf.status, 403);
+    const malformed = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/authenticate/verify", {
+      method: "POST",
+      headers: { origin: "https://kitanotes.test", "content-type": "application/json" },
+      body: JSON.stringify({ challenge: "not-a-real-challenge", response: {} })
+    }), env);
+    assert.equal(malformed.status, 400);
+  } finally {
     db.close();
   }
 });
