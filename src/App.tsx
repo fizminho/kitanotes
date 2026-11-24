@@ -317,6 +317,39 @@ export default function App() {
     return () => { active = false; };
   }, [user, activeWorkspaceId, showArchived]);
 
+  // Keep an open shared note fresh without a scheduled Worker cron or realtime infrastructure.
+  useEffect(() => {
+    if (!viewingNote?.id) return;
+    let active = true;
+    let inFlight = false;
+    const syncOpenNote = async () => {
+      if (!active || document.visibilityState !== "visible" || inFlight || checklistSavingLine !== null) return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/notes/" + encodeURIComponent(viewingNote.id), {
+          credentials: "same-origin",
+          cache: "no-store"
+        });
+        if (!response.ok) return;
+        const result = await response.json() as { note?: Note };
+        if (!active || !result.note || result.note.id !== viewingNote.id) return;
+        setViewingNote(current => {
+          if (!current || current.id !== result.note!.id || current.version >= result.note!.version) return current;
+          return result.note!;
+        });
+        setNotes(current => current.map(note =>
+          note.id === result.note!.id && note.version < result.note!.version ? result.note! : note
+        ));
+      } catch {
+        // A transient network failure is retried on the next polling cycle.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => { void syncOpenNote(); }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [viewingNote?.id, checklistSavingLine]);
+
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
   useEffect(() => { setCategoryFilter(""); }, [activeWorkspaceId]);
 
