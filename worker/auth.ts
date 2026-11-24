@@ -304,7 +304,6 @@ async function logout(request: Request, env: AuthEnv): Promise<Response> {
 const PASSKEY_CHALLENGE_TTL_SECONDS = 5 * 60;
 const MAX_AUTH_BODY_BYTES = 32 * 1024;
 
-type PasskeyChallengeRow = { id: string; user_id: string | null; challenge: string; purpose: "register" | "authenticate"; expires_at: string };
 type PasskeyCredentialRow = { credential_id: string; user_id: string; public_key: string; counter: number; transports_json: string | null; email: string; display_name: string | null; avatar_url: string | null };
 
 function passkeyRelyingParty(request: Request, env: AuthEnv): { id: string; origin: string } {
@@ -340,6 +339,7 @@ async function passkeyRateLimit(request: Request, env: AuthEnv, action: string, 
 
 async function savePasskeyChallenge(env: AuthEnv, challenge: string, userId: string | null, purpose: "register" | "authenticate"): Promise<void> {
   const now = new Date();
+  await env.DB!.prepare("DELETE FROM passkey_challenges WHERE expires_at<=?").bind(now.toISOString()).run();
   await env.DB!.prepare(
     "INSERT INTO passkey_challenges (id,user_id,challenge,purpose,expires_at,created_at) VALUES (?,?,?,?,?,?)"
   ).bind(crypto.randomUUID(), userId, challenge, purpose, new Date(now.getTime() + PASSKEY_CHALLENGE_TTL_SECONDS * 1000).toISOString(), now.toISOString()).run();
