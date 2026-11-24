@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql", "migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql", "migrations/0019_passkeys.sql", "migrations/0020_passkey_signup_recovery.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql", "migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql", "migrations/0019_passkeys.sql", "migrations/0020_passkey_signup_recovery.sql", "migrations/0021_passkey_step_up.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -52,6 +52,27 @@ test("Passkey endpoints reject oversized chunked JSON bodies before buffering th
   } finally {
     db.close();
   }
+});
+
+test("sensitive Passkey account actions require a fresh step-up grant", async () => {
+  const db = new D1TestDatabase();
+  try {
+    const now = new Date().toISOString();
+    const userId = "step-up-user";
+    const token = "test-session-token";
+    const hash = createHash("sha256").update(token).digest("base64url");
+    db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,display_name,created_at,updated_at) VALUES (?,?,?,?,1,?,?,?)")
+      .run(userId,"google-step-up","stepup@example.com","stepup@example.com","Step Up",now,now);
+    db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)")
+      .run("session-step-up",userId,hash,new Date(Date.now()+3600000).toISOString(),now);
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const request = new Request("https://kitanotes.test/api/auth/passkeys/recovery/regenerate", {
+      method:"POST",headers:{origin:"https://kitanotes.test",cookie:"__Host-kitanotes_session="+token,"content-type":"application/json"},body:"{}"
+    });
+    const response = await handleAuthRequest(request,env);
+    assert.equal(response.status,403);
+    assert.equal((await response.json()).error,"STEP_UP_REQUIRED");
+  } finally { db.close(); }
 });
 
 test("Google callback creates user/workspace/session and logout revokes it", async () => {
