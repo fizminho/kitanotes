@@ -9,6 +9,9 @@ All routes are same-origin under the Cloudflare Worker. JSON responses are marke
 - `GET /api/auth/status`: return whether D1 and Google OAuth configuration are present; exposes no secret values.
 - `GET /api/auth/me`: return `{ authenticated: true, user }` or HTTP 401.
 - `POST /api/auth/logout`: revoke current session. Requires a same-origin `Origin` header.
+- `POST /api/auth/passkeys/register/options` and `POST /api/auth/passkeys/register/verify`: register a discoverable passkey for the currently authenticated user.
+- `POST /api/auth/passkeys/authenticate/options` and `POST /api/auth/passkeys/authenticate/verify`: authenticate a discoverable passkey and issue the same session cookie as Google login.
+- `GET /api/auth/passkeys`: list current-user passkeys. `DELETE /api/auth/passkeys/:credentialId`: revoke a current-user passkey.
 
 ## Notes
 
