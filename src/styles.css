@@ -1065,3 +1065,50 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .top-actions .install-app-button{display:none}
   .mobile-workspace-control .workspace-star-button{width:32px;height:36px;flex-basis:32px}
 }
+
+@media(max-width:760px){
+  .mobile-workspace-control .workspace-picker-trigger{
+    display:flex;align-items:center;width:100%;min-width:0;
+    border:1px solid var(--line,#e9eaf0);background:var(--surface,#fff);
+    color:var(--text,#303348);text-align:left;cursor:pointer;
+  }
+  .mobile-workspace-control .workspace-picker-trigger[aria-expanded=true]{
+    border-color:#cfcaf5;background:var(--surface-soft,#fbfaff);
+  }
+  .mobile-workspace-control .workspace-picker-copy,
+  .mobile-workspace-control .workspace-picker-option-copy{
+    display:grid;min-width:0;flex:1 1 0;gap:2px;
+  }
+  .mobile-workspace-control .workspace-picker-copy strong,
+  .mobile-workspace-control .workspace-picker-option-copy strong{
+    display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:11px;
+  }
+  .mobile-workspace-control .workspace-picker-copy small,
+  .mobile-workspace-control .workspace-picker-option-copy small{
+    display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--muted,#9295a4);font-size:9px;
+  }
+  .mobile-workspace-control .workspace-picker-chevron{flex:none;color:var(--muted,#9295a4)}
+  .mobile-workspace-control .workspace-picker-menu{
+    border:1px solid var(--line,#e9eaf0);border-radius:12px;
+    background:var(--surface,#fff);box-shadow:0 14px 38px #20243824;
+  }
+  .mobile-workspace-control .workspace-picker-option{
+    display:flex;align-items:center;width:100%;min-width:0;
+    border:0;border-radius:9px;background:transparent;color:var(--text,#45495d);
+    text-align:left;cursor:pointer;
+  }
+  .mobile-workspace-control .workspace-picker-option.active,
+  .mobile-workspace-control .workspace-picker-option:hover{background:var(--accent-soft,#f0efff);color:var(--accent,#5e53c4)}
+  .mobile-workspace-control .workspace-picker-option-avatar{
+    width:29px;height:29px;flex:none;display:grid;place-items:center;
+    border-radius:8px;background:#eeecff;color:#6558ce;font-size:11px;font-weight:700;
+  }
+  .mobile-workspace-control .workspace-picker-option>svg{flex:none;color:var(--accent,#6658d9)}
+  .mobile-workspace-control .workspace-picker-empty{padding:12px;color:var(--muted,#9295a4);font-size:11px}
+  [data-theme=dark] .mobile-workspace-control .workspace-picker-trigger,
+  [data-theme=dark] .mobile-workspace-control .workspace-picker-menu{background:#1b1d2b;border-color:#34364a;color:#e6e7f0}
+  [data-theme=dark] .mobile-workspace-control .workspace-picker-option{color:#e6e7f0}
+  [data-theme=dark] .mobile-workspace-control .workspace-picker-option-avatar{background:#302c50;color:#c6c0ff}
+}
