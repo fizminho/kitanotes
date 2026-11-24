@@ -273,7 +273,7 @@ test("Passkey recovery codes are single-use and issue the normal session cookie"
     const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
     const request = () => new Request("https://kitanotes.test/api/auth/passkeys/recovery/verify", {
       method: "POST", headers: { origin: "https://kitanotes.test", "content-type": "application/json" },
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ code: code.replace("A1B2C3D4", "A1B2 C3D4").replace("E5F60718", "E5F6 0718") })
     });
     const first = await handleAuthRequest(request(),env);
     assert.equal(first.status,200);
@@ -310,4 +310,50 @@ test("Google recovery linking is bound to the authenticated passkey account", as
     assert.equal(decoded.linkSessionHash,hash);
     assert.equal(decoded.returnTo,"/");
   } finally { db.close(); }
+});
+
+
+test("verified Google login claims an unverified Passkey signup without creating a duplicate account", async () => {
+  const db = new D1TestDatabase();
+  const secret = "local-test-session-secret-with-more-than-32-characters";
+  const nowIso = new Date().toISOString();
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,display_name,created_at,updated_at) VALUES ('reserved-user','passkey:reserved-user','claimed@example.com','claimed@example.com',0,'Passkey User',?,?)").run(nowIso,nowIso);
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('reserved-workspace','Personal','reserved-user','shared','private',?,?)").run(nowIso,nowIso);
+  db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('reserved-workspace','reserved-user','owner',?)").run(nowIso);
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, publicExponent: 0x10001 });
+  const jwk = { ...publicKey.export({ format: "jwk" }), kid: "google-claim-key", alg: "RS256", use: "sig" };
+  const nonce = "claim-nonce";
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({ alg: "RS256", kid: "google-claim-key" }));
+  const claims = base64url(JSON.stringify({ iss: "https://accounts.google.com", aud: "test-client-id", exp: now + 300, iat: now, nonce, sub: "verified-google-sub", email: "claimed@example.com", email_verified: true, name: "Verified Owner" }));
+  const signingInput = header + "." + claims;
+  const idToken = signingInput + "." + sign("RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
+  const verifier = "claim-pkce-verifier";
+  const state = "claim-state";
+  const encodedState = base64url(JSON.stringify({ state, nonce, verifier, returnTo: "/", issuedAt: Date.now() }));
+  const signature = createHmac("sha256", secret).update(encodedState).digest("base64url");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ id_token: idToken }), { status: 200 });
+    if (url === "https://www.googleapis.com/oauth2/v3/certs") return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+    throw new Error("Unexpected fetch URL: " + url);
+  };
+  try {
+    const env = { DB: db, GOOGLE_CLIENT_ID: "test-client-id", GOOGLE_CLIENT_SECRET: "test-client-secret", SESSION_SECRET: secret, APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/auth/google/callback?code=google-code&state=" + state, {
+      headers: { cookie: "__Host-kitanotes_oauth=" + encodedState + "." + signature }
+    }), env);
+    assert.equal(response.status, 302);
+    const user = db.sqlite.prepare("SELECT id,google_sub,email_verified FROM users WHERE email_normalized='claimed@example.com'").get();
+    assert.equal(user.id, "reserved-user");
+    assert.equal(user.google_sub, "verified-google-sub");
+    assert.equal(user.email_verified, 1);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM users WHERE email_normalized='claimed@example.com'").get().count, 1);
+    assert.ok(db.sqlite.prepare("SELECT id FROM workspaces WHERE id='reserved-workspace' AND owner_user_id='reserved-user'").get());
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM sessions WHERE user_id='reserved-user'").get().count, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    db.close();
+  }
 });
