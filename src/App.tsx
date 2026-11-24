@@ -1373,7 +1373,8 @@ export default function App() {
   async function getPasskeyStepUpToken():Promise<string> {
     const optionsResponse=await fetch("/api/auth/passkeys/step-up/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
     const options=await optionsResponse.json() as any;
-    if(!optionsResponse.ok)throw new Error(options.error==="NO_PASSKEY_AVAILABLE"?"Add a passkey before changing recovery settings.":"Unable to start identity verification.");
+    if(!optionsResponse.ok&&options.error==="NO_PASSKEY_AVAILABLE")return ""; 
+    if(!optionsResponse.ok)throw new Error("Unable to start identity verification.");
     const credential=await startAuthentication({optionsJSON:options});
     const verifyResponse=await fetch("/api/auth/passkeys/step-up/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential})});
     const result=await verifyResponse.json() as {verified?:boolean;stepUpToken?:string};
