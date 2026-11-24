@@ -31,6 +31,29 @@ class D1TestDatabase {
 
 const base64url = value => Buffer.from(value).toString("base64url");
 
+test("Passkey endpoints reject oversized chunked JSON bodies before buffering them", async () => {
+  const db = new D1TestDatabase();
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const oversized = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"email":"' + "x".repeat(40 * 1024)));
+        controller.close();
+      }
+    });
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/signup/options", {
+      method: "POST",
+      headers: { origin: "https://kitanotes.test", "content-type": "application/json" },
+      body: oversized,
+      duplex: "half"
+    }), env);
+    assert.equal(response.status, 400);
+    assert.equal(await db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_signup_challenges").get().count, 0);
+  } finally {
+    db.close();
+  }
+});
+
 test("Google callback creates user/workspace/session and logout revokes it", async () => {
   const db = new D1TestDatabase();
   const secret = "local-test-session-secret-with-more-than-32-characters";
