@@ -840,3 +840,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .note-checklist-row span{min-width:0;overflow-wrap:anywhere}
 .note-checklist-row.checked span{color:#999cac;text-decoration:line-through;text-decoration-thickness:1.5px}
 .note-content-line{min-height:1.7em}
+
+
+.note-viewer-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.note-viewer-actions .primary-button,.note-viewer-actions .secondary-button{min-height:42px}
+@media(max-width:760px){
+  .note-viewer-actions{width:100%}
+  .note-viewer-actions button{flex:1 1 130px}
+}
