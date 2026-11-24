@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql", "migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql", "migrations/0019_passkeys.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql", "migrations/0004_calendar_reminders_notifications.sql", "migrations/0005_shared_note_notifications.sql", "migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql", "migrations/0019_passkeys.sql", "migrations/0020_passkey_signup_recovery.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -240,3 +240,48 @@ test("Google OAuth callbacks are rate limited per IP fingerprint", async () => {
     db.close();
   }
 });
+
+test("Passkey signup options create a short-lived challenge without creating an account", async () => {
+  const db = new D1TestDatabase();
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/api/auth/passkeys/signup/options", {
+      method: "POST",
+      headers: { origin: "https://kitanotes.test", "content-type": "application/json" },
+      body: JSON.stringify({ displayName: "New Person", email: "new@example.com" })
+    }), env);
+    assert.equal(response.status, 200);
+    const options = await response.json();
+    assert.ok(options.challenge);
+    assert.equal(options.authenticatorSelection.residentKey, "required");
+    assert.equal(options.authenticatorSelection.userVerification, "required");
+    const pending = db.sqlite.prepare("SELECT email_normalized,display_name FROM passkey_signup_challenges WHERE challenge=?").get(options.challenge);
+    assert.deepEqual({ ...pending }, { email_normalized: "new@example.com", display_name: "New Person" });
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM users").get().count, 0);
+  } finally { db.close(); }
+});
+
+test("Passkey recovery codes are single-use and issue the normal session cookie", async () => {
+  const db = new D1TestDatabase();
+  const now = new Date().toISOString();
+  const code = "A1B2C3D4-E5F60718-192A3B4C-5D6E7F80";
+  const normalized = code.replace(/-/g, "");
+  const hash = createHash("sha256").update(normalized).digest("base64url");
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('recovery-user','passkey:recovery-user','recovery@example.com','recovery@example.com',0,?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at) VALUES (?,?,?)").run(hash,"recovery-user",now);
+  try {
+    const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
+    const request = () => new Request("https://kitanotes.test/api/auth/passkeys/recovery/verify", {
+      method: "POST", headers: { origin: "https://kitanotes.test", "content-type": "application/json" },
+      body: JSON.stringify({ code })
+    });
+    const first = await handleAuthRequest(request(),env);
+    assert.equal(first.status,200);
+    assert.match(first.headers.get("set-cookie") ?? "",/__Host-kitanotes_session=/);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_recovery_codes WHERE code_hash=?").get(hash).count,0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM sessions WHERE user_id='recovery-user'").get().count,1);
+    const second = await handleAuthRequest(request(),env);
+    assert.equal(second.status,401);
+  } finally { db.close(); }
+});
+
