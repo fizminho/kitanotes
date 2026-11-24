@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star } from "lucide-react";
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
 
@@ -130,6 +131,7 @@ export default function App() {
   const [workspaceAiDraft,setWorkspaceAiDraft]=useState<WorkspaceAiDraft|null>(null);
   const [workspaceAiError,setWorkspaceAiError]=useState("");
   const [authStatus, setAuthStatus] = useState<"loading" | "signed_out" | "ready" | "unavailable">("loading");
+  const [passkeyBusy,setPasskeyBusy]=useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState("");
@@ -1332,6 +1334,42 @@ export default function App() {
     }
   }
 
+  async function registerPasskey() {
+    if(!user||passkeyBusy)return;
+    setPasskeyBusy(true);
+    try {
+      const optionsResponse=await fetch("/api/auth/passkeys/register/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
+      const options=await optionsResponse.json() as any;
+      if(!optionsResponse.ok)throw new Error(options.error==="UNAUTHENTICATED"?"Please sign in again before adding a passkey.":"Unable to start passkey setup.");
+      const credential=await startRegistration({optionsJSON:options});
+      const verificationResponse=await fetch("/api/auth/passkeys/register/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential})});
+      const verification=await verificationResponse.json() as {verified?:boolean;error?:string};
+      if(!verificationResponse.ok||!verification.verified)throw new Error(verification.error==="PASSKEY_ALREADY_REGISTERED"?"This passkey is already linked to an account.":"Passkey setup could not be verified. Please try again.");
+      pushToast("Passkey added. You can now sign in with Face ID or your device PIN.");
+    } catch(error) {
+      pushToast(error instanceof Error?error.message:"Unable to add a passkey.", "error");
+    } finally { setPasskeyBusy(false); }
+  }
+
+  async function signInWithPasskey() {
+    if(passkeyBusy)return;
+    setPasskeyBusy(true);
+    try {
+      const optionsResponse=await fetch("/api/auth/passkeys/authenticate/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
+      const options=await optionsResponse.json() as any;
+      if(!optionsResponse.ok)throw new Error("Passkey sign-in is temporarily unavailable.");
+      const credential=await startAuthentication({optionsJSON:options});
+      const verificationResponse=await fetch("/api/auth/passkeys/authenticate/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential})});
+      const verification=await verificationResponse.json() as {authenticated?:boolean;error?:string};
+      if(!verificationResponse.ok||!verification.authenticated)throw new Error(verification.error==="PASSKEY_NOT_RECOGNISED"?"No matching KitaNotes passkey was found on this device.":"Passkey sign-in failed. Try Google sign-in instead.");
+      const returnTo=inviteToken?"/invite/accept?token="+encodeURIComponent(inviteToken):"/";
+      window.location.assign(returnTo);
+    } catch(error) {
+      if(error instanceof Error&&error.name==="NotAllowedError")pushToast("Passkey sign-in was cancelled or timed out.","error");
+      else pushToast(error instanceof Error?error.message:"Unable to sign in with a passkey.","error");
+    } finally { setPasskeyBusy(false); }
+  }
+
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
     setUser(null);
@@ -1379,7 +1417,7 @@ export default function App() {
             {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceModalOpen}><Plus size={14}/> New space</button>}
             <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
-            {user ? <button className="account-control" onClick={signOut} aria-label={"Sign out from Google account " + user.email} title={"Signed in as " + user.email + ". Tap to sign out."}>{user.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <span className="profile-avatar small">{user.displayName?.slice(0, 1).toUpperCase() ?? "?"}</span>}<LogOut size={15}/></button> : authStatus === "signed_out" ? <a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
+            {user ? <><button type="button" className="passkey-button" onClick={()=>void registerPasskey()} disabled={passkeyBusy} title="Add a passkey" aria-label="Add a passkey"><Fingerprint size={16}/><span>{passkeyBusy?"Working…":"Add passkey"}</span></button><button className="account-control" onClick={signOut} aria-label={"Sign out from KitaNotes account " + user.email} title={"Signed in as " + user.email + ". Tap to sign out."}>{user.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <span className="profile-avatar small">{user.displayName?.slice(0, 1).toUpperCase() ?? "?"}</span>}<LogOut size={15}/></button></> : authStatus === "signed_out" ? <><a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a><button type="button" className="passkey-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/><span>{passkeyBusy?"Checking…":"Use passkey"}</span></button></> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
           </div>
         </header>
         <div className="content">
@@ -1443,7 +1481,7 @@ export default function App() {
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
               <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
               <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google to create and sync your notes."}</p>
-              {user&&canWrite&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a> : null}
+              {user&&canWrite&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
             </div>}
           </>}
 
