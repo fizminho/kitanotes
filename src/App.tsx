@@ -13,7 +13,7 @@ type Toast = { id:number; text:string; tone:"ok"|"error" };
 type View = "notes" | "calendar" | "shared";
 type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}> };
 
-type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void; compact?:boolean };
+type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void };
 function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePickerProps){
   const [open,setOpen]=useState(false);
   const rootRef=useRef<HTMLDivElement|null>(null);
