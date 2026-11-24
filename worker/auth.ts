@@ -369,12 +369,43 @@ function isSameOriginMutation(request: Request, env: AuthEnv): boolean {
 }
 
 async function readAuthJson(request: Request): Promise<Record<string, any> | null> {
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > MAX_AUTH_BODY_BYTES) return null;
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_AUTH_BODY_BYTES) return null;
+  const declaredHeader = request.headers.get("content-length");
+  if (declaredHeader !== null) {
+    const declared = Number(declaredHeader);
+    if (!Number.isSafeInteger(declared) || declared < 0 || declared > MAX_AUTH_BODY_BYTES) return null;
+  }
+
+  // Do not call request.text() here: a chunked request can omit Content-Length
+  // and force the Worker to buffer an arbitrarily large body before rejecting it.
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
   try {
-    const value = JSON.parse(text);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_AUTH_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : null;
   } catch {
     return null;
