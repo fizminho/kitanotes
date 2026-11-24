@@ -131,6 +131,12 @@ export default function App() {
   const [workspaceAiError,setWorkspaceAiError]=useState("");
   const [authStatus, setAuthStatus] = useState<"loading" | "signed_out" | "ready" | "unavailable">("loading");
   const [passkeyBusy,setPasskeyBusy]=useState(false);
+  const [authDialog,setAuthDialog]=useState<"signup"|"recovery"|"codes"|null>(null);
+  const [signupName,setSignupName]=useState("");
+  const [signupEmail,setSignupEmail]=useState("");
+  const [recoveryCode,setRecoveryCode]=useState("");
+  const [authDialogError,setAuthDialogError]=useState("");
+  const [recoveryCodes,setRecoveryCodes]=useState<string[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState("");
@@ -1333,6 +1339,49 @@ export default function App() {
     }
   }
 
+  async function createPasskeyAccount(event?:React.FormEvent) {
+    event?.preventDefault();
+    if(passkeyBusy)return;
+    setPasskeyBusy(true);setAuthDialogError("");
+    try {
+      const optionsResponse=await fetch("/api/auth/passkeys/signup/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({displayName:signupName.trim(),email:signupEmail.trim()})});
+      const options=await optionsResponse.json() as any;
+      if(!optionsResponse.ok)throw new Error(options.error==="ACCOUNT_ALREADY_EXISTS"?"An account with this email already exists. Sign in with Google, then add a passkey.":options.error==="INVALID_SIGNUP_DETAILS"?"Enter your name and a valid email address.":"Unable to start passkey signup.");
+      const credential=await startRegistration({optionsJSON:options});
+      const verifyResponse=await fetch("/api/auth/passkeys/signup/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({challenge:options.challenge,response:credential})});
+      const result=await verifyResponse.json() as {verified?:boolean;recoveryCodes?:string[];user?:SessionUser;error?:string};
+      if(!verifyResponse.ok||!result.verified||!result.user||!result.recoveryCodes?.length)throw new Error(result.error==="ACCOUNT_ALREADY_EXISTS"?"An account with this email already exists. Sign in with Google first.":"Passkey account could not be created. Please try again.");
+      setUser({...result.user,personalWorkspaceId:null});setAuthStatus("ready");
+      setRecoveryCodes(result.recoveryCodes);setAuthDialog("codes");setSignupName("");setSignupEmail("");
+    } catch(error) { setAuthDialogError(error instanceof Error?error.message:"Unable to create a passkey account."); }
+    finally {setPasskeyBusy(false);}
+  }
+
+  async function signInWithRecoveryCode(event?:React.FormEvent) {
+    event?.preventDefault();
+    if(passkeyBusy)return;
+    setPasskeyBusy(true);setAuthDialogError("");
+    try {
+      const response=await fetch("/api/auth/passkeys/recovery/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({code:recoveryCode})});
+      if(!response.ok)throw new Error("That recovery code is invalid or has already been used.");
+      const returnTo=inviteToken?"/invite/accept?token="+encodeURIComponent(inviteToken):"/";
+      window.location.assign(returnTo);
+    } catch(error) { setAuthDialogError(error instanceof Error?error.message:"Unable to recover this account."); }
+    finally {setPasskeyBusy(false);}
+  }
+
+  async function regenerateRecoveryCodes() {
+    if(passkeyBusy||!user)return;
+    setPasskeyBusy(true);setAuthDialogError("");
+    try {
+      const response=await fetch("/api/auth/passkeys/recovery/regenerate",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});
+      const result=await response.json() as {recoveryCodes?:string[]};
+      if(!response.ok||!result.recoveryCodes?.length)throw new Error("Unable to generate recovery codes.");
+      setRecoveryCodes(result.recoveryCodes);setAuthDialog("codes");
+    } catch(error) {pushToast(error instanceof Error?error.message:"Unable to generate recovery codes.","error");}
+    finally {setPasskeyBusy(false);}
+  }
+
   async function registerPasskey() {
     if(!user||passkeyBusy)return;
     setPasskeyBusy(true);
@@ -1378,6 +1427,32 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {authDialog&&<div className="auth-dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&authDialog!=="codes")setAuthDialog(null);}}>
+        <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+          <header><h2 id="auth-dialog-title">{authDialog==="signup"?"Create your KitaNotes account":authDialog==="recovery"?"Recover your account":"Save your recovery codes"}</h2><button type="button" className="mini-icon" onClick={()=>setAuthDialog(null)} aria-label="Close"><X size={17}/></button></header>
+          {authDialog==="signup"&&<form onSubmit={event=>void createPasskeyAccount(event)}>
+            <p>Create an account with Face ID, Touch ID or your device PIN. Your email is stored as unverified until you link a Google account.</p>
+            <label>Display name<input required maxLength={80} value={signupName} onChange={event=>setSignupName(event.target.value)} autoComplete="name" placeholder="Your name"/></label>
+            <label>Email address<input required type="email" maxLength={254} value={signupEmail} onChange={event=>setSignupEmail(event.target.value)} autoComplete="email" placeholder="you@example.com"/></label>
+            {authDialogError&&<p className="auth-dialog-error">{authDialogError}</p>}
+            <button className="auth-dialog-primary" type="submit" disabled={passkeyBusy}>{passkeyBusy?"Creating account…":"Continue with Passkey"}</button>
+            <small>Google accounts already registered should sign in with Google first, then add a passkey.</small>
+          </form>}
+          {authDialog==="recovery"&&<form onSubmit={event=>void signInWithRecoveryCode(event)}>
+            <p>Enter one unused recovery code you saved when setting up your account. Each code works once.</p>
+            <label>Recovery code<input required value={recoveryCode} onChange={event=>setRecoveryCode(event.target.value)} autoComplete="off" spellCheck={false} placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX"/></label>
+            {authDialogError&&<p className="auth-dialog-error">{authDialogError}</p>}
+            <button className="auth-dialog-primary" type="submit" disabled={passkeyBusy}>{passkeyBusy?"Checking code…":"Recover account"}</button>
+          </form>}
+          {authDialog==="codes"&&<div className="recovery-codes-content">
+            <p><strong>These codes are shown only once.</strong> Save them somewhere safe, preferably in a password manager. Each code can be used once to sign in if you lose access to all your passkeys.</p>
+            <div className="recovery-code-list">{recoveryCodes.map(code=><code key={code}>{code}</code>)}</div>
+            <button type="button" className="auth-dialog-primary" onClick={()=>{void navigator.clipboard.writeText(recoveryCodes.join("\n")).then(()=>pushToast("Recovery codes copied."),()=>pushToast("Clipboard unavailable. Copy the codes manually.","error"));}}>Copy all codes</button>
+            <button type="button" className="auth-dialog-secondary" onClick={()=>setAuthDialog(null)}>I have saved my codes</button>
+          </div>}
+        </section>
+      </div>}
+
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="KitaNotes home">
           <img className="brand-logo" src="/icons/mark-96.png" alt="" width="34" height="34" />
@@ -1421,7 +1496,7 @@ export default function App() {
             {user&&<button className="topbar-action" onClick={createPersonalWorkspace} disabled={workspaceModalOpen}><Plus size={14}/> New space</button>}
             <button className="icon-button" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label="Toggle dark mode" title="Toggle dark mode">{theme==="dark"?<Sun size={18}/>:<Moon size={18}/>}</button>{!isInstalled&&<button className="install-app-button" onClick={installApp}>Install app</button>}
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={()=>setNotificationsOpen(value=>!value)} disabled={!user}><Bell size={18}/>{unreadCount>0&&<span>{unreadCount>9?"9+":unreadCount}</span>}</button>
-            {user ? <><button type="button" className="passkey-button" onClick={()=>void registerPasskey()} disabled={passkeyBusy} title="Add a passkey" aria-label="Add a passkey"><Fingerprint size={16}/><span>{passkeyBusy?"Working…":"Add passkey"}</span></button><button className="account-control" onClick={signOut} aria-label={"Sign out from KitaNotes account " + user.email} title={"Signed in as " + user.email + ". Tap to sign out."}>{user.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <span className="profile-avatar small">{user.displayName?.slice(0, 1).toUpperCase() ?? "?"}</span>}<LogOut size={15}/></button></> : authStatus === "signed_out" ? <><a className="signin-button" href="/auth/google"><LogIn size={15} /> Continue with Google</a><button type="button" className="passkey-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/><span>{passkeyBusy?"Checking…":"Use passkey"}</span></button></> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
+            {user ? <><button type="button" className="passkey-button" onClick={()=>void registerPasskey()} disabled={passkeyBusy} title="Add a passkey" aria-label="Add a passkey"><Fingerprint size={16}/><span>{passkeyBusy?"Working…":"Add passkey"}</span></button><button type="button" className="text-action recovery-manage-button" onClick={()=>void regenerateRecoveryCodes()} disabled={passkeyBusy}>Recovery codes</button><button className="account-control" onClick={signOut} aria-label={"Sign out from KitaNotes account " + user.email} title={"Signed in as " + user.email + ". Tap to sign out."}>{user.avatarUrl ? <img className="profile-avatar small" src={user.avatarUrl} alt="" /> : <span className="profile-avatar small">{user.displayName?.slice(0, 1).toUpperCase() ?? "?"}</span>}<LogOut size={15}/></button></> : authStatus === "signed_out" ? <><button type="button" className="passkey-button" onClick={()=>{setAuthDialogError("");setAuthDialog("signup");}} disabled={passkeyBusy}><Fingerprint size={16}/><span>Create account</span></button><button type="button" className="passkey-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/><span>{passkeyBusy?"Checking…":"Use passkey"}</span></button><a className="signin-button" href="/auth/google"><LogIn size={15} /> Google</a><button type="button" className="text-action recovery-manage-button" onClick={()=>{setAuthDialogError("");setAuthDialog("recovery");}}>Recovery</button></> : <span className="setup-label">{authStatus === "loading" ? "Checking session…" : "Sign-in setup pending"}</span>}
           </div>
         </header>
         <div className="content">
