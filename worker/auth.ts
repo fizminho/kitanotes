@@ -691,8 +691,11 @@ async function finishPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response
  const credential=await env.DB.prepare("SELECT credential_id,public_key,counter,transports_json FROM passkey_credentials WHERE credential_id=? AND user_id=?").bind(body.response.id,user.id).first<{credential_id:string;public_key:string;counter:number;transports_json:string|null}>();
  if(!credential)return json({error:"PASSKEY_NOT_RECOGNISED"},401);
  try{
+  // With allowCredentials populated, WebAuthn authenticators may omit userHandle.
+  // The credential ID has already been looked up under this user, so null is safe;
+  // when supplied, still require an exact match to prevent account confusion.
   const userHandle=body.response.response?.userHandle;
-  if(typeof userHandle!=="string"||userHandle!==base64Url(new TextEncoder().encode(user.id)))return json({error:"PASSKEY_USER_HANDLE_INVALID"},401);
+  if(userHandle!=null&&(typeof userHandle!=="string"||userHandle!==base64Url(new TextEncoder().encode(user.id))))return json({error:"PASSKEY_USER_HANDLE_INVALID"},401);
   const rp=passkeyRelyingParty(request,env);
   const verified=await verifyAuthenticationResponse({response:body.response,expectedChallenge:body.challenge,expectedOrigin:rp.origin,expectedRPID:rp.id,credential:{id:credential.credential_id,publicKey:fromBase64Url(credential.public_key),counter:credential.counter,transports:credential.transports_json?JSON.parse(credential.transports_json):[]},requireUserVerification:true});
   if(!verified.verified)return json({error:"PASSKEY_VERIFICATION_FAILED"},401);
