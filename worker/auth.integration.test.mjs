@@ -273,7 +273,7 @@ test("Passkey recovery codes are single-use and issue the normal session cookie"
     const env = { DB: db, SESSION_SECRET: "local-test-session-secret-with-more-than-32-characters", APP_BASE_URL: "https://kitanotes.test" };
     const request = () => new Request("https://kitanotes.test/api/auth/passkeys/recovery/verify", {
       method: "POST", headers: { origin: "https://kitanotes.test", "content-type": "application/json" },
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ code: code.replace("A1B2C3D4", "A1B2 C3D4").replace("E5F60718", "E5F6 0718") })
     });
     const first = await handleAuthRequest(request(),env);
     assert.equal(first.status,200);
