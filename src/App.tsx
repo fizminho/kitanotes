@@ -758,6 +758,7 @@ export default function App() {
 
   async function saveAiNote() {
     if(!aiDraft||!activeWorkspaceId||aiSavingNote)return;
+    let savedNoteId=aiSavedNoteId;
     setAiSavingNote(true);setAiError("");
     try{
       let categoryId=selectedCategoryId||null;
@@ -780,11 +781,11 @@ export default function App() {
         })});
         const result=await response.json() as {note?:Note};
         if(!response.ok||!result.note)throw new Error("Unable to save the note.");
-        setNotes(current=>[result.note!,...current]);setAiSavedNoteId(result.note!.id);setAiNoteSaved(true);
+        savedNoteId=result.note!.id;setNotes(current=>[result.note!,...current]);setAiSavedNoteId(savedNoteId);setAiNoteSaved(true);
       }
       const hasCalendarItems=Boolean(aiDraft.events.length||aiDraft.reminders.length||aiDraft.tasks.some(task=>task.dueLocal));
       if(hasCalendarItems&&!aiItemsCreated){
-        const itemsSaved=await createAiItems();
+        const itemsSaved=await createAiItems(savedNoteId);
         if(!itemsSaved)return;
       }
       setAiModalOpen(false);setAiDraft(null);setAiInput("");setOcrFile(null);setAiInput("");
@@ -793,7 +794,7 @@ export default function App() {
     finally{setAiSavingNote(false);}
   }
 
-  async function createAiItems():Promise<boolean> {
+  async function createAiItems(linkedNoteId:string|null=aiSavedNoteId):Promise<boolean> {
     if(!aiDraft||!activeWorkspaceId)return false;
     if(aiItemsCreated)return true;
     if(aiCreatingItems)return false;
@@ -808,7 +809,7 @@ export default function App() {
           const response=await fetch("/api/events",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
             workspaceId:activeWorkspaceId,title:event.title,description:event.description,
             startsAt:zonedDateTimeToIso(event.startLocal,event.timezone),endsAt:zonedDateTimeToIso(event.endLocal,event.timezone),timezone:event.timezone,
-            linkedNoteId:aiSavedNoteId
+            linkedNoteId
           })});
           const result=await response.json() as {event?:CalendarEvent};
           if(!response.ok||!result.event)throw new Error("Unable to create event: "+event.title);
