@@ -1347,7 +1347,7 @@ export default function App() {
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <div className="workspace-switch-row">
-          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange=(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);} />
+          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
@@ -1371,7 +1371,7 @@ export default function App() {
       <section className="main-panel">
         <header className="topbar">
           <div className="mobile-workspace-control">
-            <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange=(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);} compact />
+            <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} compact />
             <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button mobile active":"workspace-star-button mobile"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}><Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/></button>
           </div>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
