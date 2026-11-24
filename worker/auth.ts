@@ -492,7 +492,6 @@ async function finishPasskeySignup(request: Request, env: AuthEnv): Promise<Resp
   if (limited) return limited;
   const body = await readAuthJson(request);
   if (!body || typeof body.challenge !== "string" || !body.response || typeof body.response !== "object") return json({ error: "INVALID_PASSKEY_RESPONSE" }, 400);
-  if (!await consumeStepUpGrant(request,env,user.id,typeof body.stepUpToken==="string"?body.stepUpToken:null)) return json({error:"STEP_UP_REQUIRED"},403);
   const pending = await env.DB.prepare(
     "SELECT id,user_id,email,email_normalized,display_name FROM passkey_signup_challenges WHERE challenge=? AND expires_at>? LIMIT 1"
   ).bind(body.challenge,new Date().toISOString()).first<{id:string;user_id:string;email:string;email_normalized:string;display_name:string}>();
@@ -617,6 +616,7 @@ async function finishPasskeyRegistration(request: Request, env: AuthEnv): Promis
   if (limited) return limited;
   const body = await readAuthJson(request);
   if (!body || typeof body.challenge !== "string" || !body.response || typeof body.response !== "object") return json({ error: "INVALID_PASSKEY_RESPONSE" }, 400);
+  if (!await consumeStepUpGrant(request,env,user.id,typeof body.stepUpToken==="string"?body.stepUpToken:null)) return json({error:"STEP_UP_REQUIRED"},403);
   const pending = await env.DB.prepare(
     "SELECT id FROM passkey_challenges WHERE challenge=? AND purpose='register' AND user_id=? AND expires_at>? LIMIT 1"
   ).bind(body.challenge, user.id, new Date().toISOString()).first<{ id: string }>();
