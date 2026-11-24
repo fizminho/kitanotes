@@ -551,6 +551,37 @@ export default function App() {
     setComposerOpen(true);
   }, []);
 
+  async function enableNoteChecklist() {
+    if (!viewingNote || !canWrite || checklistSavingLine !== null) return;
+    const lines = viewingNote.content.split("\n");
+    let converted = 0;
+    const checklistContent = lines.map(line => {
+      if (/^\s*-\s+\[[ xX]\]\s+/.test(line)) return line;
+      const match = line.match(/^(\s*)-\s+(.*)$/);
+      if (!match || !match[2].trim()) return line;
+      converted++;
+      return match[1] + "- [ ] " + match[2];
+    }).join("\n");
+    if (!converted) return;
+    setChecklistSavingLine(-1);
+    try {
+      const response = await fetch("/api/notes/" + encodeURIComponent(viewingNote.id), {
+        method: "PATCH", credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ version: viewingNote.version, content: checklistContent })
+      });
+      const result = await response.json() as { note?: Note; error?: string };
+      if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "Nota ini telah berubah di tempat lain. Refresh dan cuba lagi." : "Tak dapat aktifkan checklist.");
+      setViewingNote(result.note);
+      setNotes(current => current.map(note => note.id === result.note!.id ? result.note! : note));
+      pushToast("Checklist diaktifkan");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Tak dapat aktifkan checklist.", "error");
+    } finally {
+      setChecklistSavingLine(null);
+    }
+  }
+
   async function toggleNoteChecklistItem(lineIndex: number) {
     if (!viewingNote || !canWrite || checklistSavingLine !== null) return;
     const lines = viewingNote.content.split("\n");
@@ -1512,15 +1543,15 @@ export default function App() {
         <section className="composer note-viewer" role="dialog" aria-modal="true" aria-labelledby="view-note-title">
           <header><div><span className="eyebrow">{viewingNote.categoryName||"NOTE"}</span><h2 id="view-note-title">{viewingNote.title}</h2></div><button className="icon-button" onClick={()=>setViewingNote(null)} aria-label="Close"><X size={19}/></button></header>
           <div className="note-full-content">{viewingNote.content ? viewingNote.content.split("\n").map((line,index)=>{
-            const item=line.match(/^(\s*)-\s+(?:\[([ xX])\]\s*)?(.*)$/);
+            const item=line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
             if(item){
-              const checked=(item[2]??"").toLowerCase()==="x";
+              const checked=item[2].toLowerCase()==="x";
               return <div className={checked?"note-checklist-row checked":"note-checklist-row"} key={index}><input type="checkbox" checked={checked} disabled={!canWrite||checklistSavingLine!==null} onChange={()=>void toggleNoteChecklistItem(index)} aria-label={(checked?"Mark incomplete: ":"Mark complete: ")+item[3]}/><span>{item[3]}</span></div>;
             }
             return <div className="note-content-line" key={index}>{line||" "}</div>;
           }) : "No additional details."}</div>
           <small className="record-audit">Created by {viewingNote.createdByName||"Workspace member"} · {new Date(viewingNote.createdAt).toLocaleString()}<br/>Last updated by {viewingNote.updatedByName||viewingNote.createdByName||"Workspace member"} · {new Date(viewingNote.updatedAt).toLocaleString()}</small>
-          <footer><span>Full note</span>{canWrite&&!showArchived&&<button className="primary-button" onClick={()=>{const note=viewingNote;setViewingNote(null);startEditNote(note);}}>Edit note</button>}</footer>
+          <footer><span>Full note</span><div className="note-viewer-actions">{canWrite&&!showArchived&&viewingNote.content.split("\n").some(line=>/^\s*-\s+(?!\[[ xX]\]\s).+/.test(line))&&<button className="secondary-button" disabled={checklistSavingLine!==null} onClick={()=>void enableNoteChecklist()}>{checklistSavingLine===-1?"Enabling…":"Enable checklist"}</button>}{canWrite&&!showArchived&&<button className="primary-button" onClick={()=>{const note=viewingNote;setViewingNote(null);startEditNote(note);}}>Edit note</button>}</div></footer>
         </section>
       </div>}
       <div className="toast-stack" role="status" aria-live="polite">{toasts.map(toast=><div key={toast.id} className={"toast "+toast.tone}>{toast.text}</div>)}</div>
