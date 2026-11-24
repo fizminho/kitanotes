@@ -927,3 +927,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .workspace-picker.compact .workspace-picker-copy small{font-size:9px}
 .workspace-picker.compact .workspace-picker-menu{left:auto;right:0;width:min(300px,calc(100vw - 28px))}
 [data-theme=dark] .workspace-picker-empty{color:#a0a4b8}
+
+
+/* Passkey actions stay visually distinct from Google sign-in and remain touch-friendly. */
+.passkey-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 11px;border:1px solid #dcd8f8;border-radius:9px;background:#f8f7ff;color:#5d54bb;font:700 11px var(--font-ui);cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}
+.passkey-button:hover{background:#efedff;border-color:#bdb5f0}
+.passkey-button:disabled{opacity:.6;cursor:wait}
+.passkey-button:focus-visible{outline:2px solid #8175e8;outline-offset:3px}
+.empty-auth-actions{display:flex;justify-content:center;align-items:center;gap:9px;flex-wrap:wrap}
+.empty-auth-actions .primary-button,.empty-auth-actions .secondary-button{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+[data-theme=dark] .passkey-button{background:#24213c;border-color:#514a80;color:#c8c1ff}
+[data-theme=dark] .passkey-button:hover{background:#302b50;border-color:#7167b4}
+@media(max-width:760px){.passkey-button{min-height:34px;padding:6px 8px;font-size:10px;gap:5px}.passkey-button svg{width:14px;height:14px}.empty-auth-actions{width:100%}.empty-auth-actions>*{flex:1}}
