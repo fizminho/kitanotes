@@ -11,6 +11,37 @@ type SortMode = "updated" | "oldest" | "title";
 type Toast = { id:number; text:string; tone:"ok"|"error" };
 type View = "notes" | "calendar" | "shared";
 type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}> };
+
+type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void; compact?:boolean };
+function WorkspacePicker({workspaces,activeWorkspaceId,onChange,compact=false}:WorkspacePickerProps){
+  const [open,setOpen]=useState(false);
+  const rootRef=useRef<HTMLDivElement|null>(null);
+  const active=workspaces.find(item=>item.id===activeWorkspaceId);
+  useEffect(()=>{
+    if(!open)return;
+    const onPointerDown=(event:PointerEvent)=>{if(rootRef.current&&!rootRef.current.contains(event.target as Node))setOpen(false);};
+    const onKeyDown=(event:KeyboardEvent)=>{if(event.key==="Escape")setOpen(false);};
+    document.addEventListener("pointerdown",onPointerDown);
+    document.addEventListener("keydown",onKeyDown);
+    return()=>{document.removeEventListener("pointerdown",onPointerDown);document.removeEventListener("keydown",onKeyDown);};
+  },[open]);
+  return <div className={compact?"workspace-picker compact":"workspace-picker"} ref={rootRef}>
+    <button type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
+      {!compact&&<span className="workspace-avatar">K</span>}
+      <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
+      <ChevronDown size={16} className={open?"workspace-picker-chevron open":"workspace-picker-chevron"}/>
+    </button>
+    {open&&<div className="workspace-picker-menu" role="listbox" aria-label="Workspaces">
+      {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
+        <span className="workspace-picker-option-avatar">{workspace.name.trim().slice(0,1).toUpperCase()||"K"}</span>
+        <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
+        {workspace.id===activeWorkspaceId&&<Check size={16}/>}
+      </button>)}
+      {!workspaces.length&&<div className="workspace-picker-empty">No workspaces available</div>}
+    </div>}
+  </div>;
+}
+
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
 function dateKey(value:Date):string { return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0"); }
 function dateTimeInputFor(value:string,timezone:string):string {
@@ -1316,14 +1347,7 @@ export default function App() {
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <div className="workspace-switch-row">
-          <label className="workspace-switch" aria-label="Choose workspace">
-            <span className="workspace-avatar">K</span>
-            <span className="workspace-copy"><strong>{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"}</strong><small>{workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
-            <select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>
-              {workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}
-            </select>
-            <ChevronDown size={16} />
-          </label>
+          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange=(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);} />
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
@@ -1347,7 +1371,7 @@ export default function App() {
       <section className="main-panel">
         <header className="topbar">
           <div className="mobile-workspace-control">
-            <label className="mobile-workspace-switch"><span>Workspace</span><select aria-label="Switch workspace" value={activeWorkspaceId} onChange={event=>{setActiveWorkspaceId(event.target.value);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}}>{workspaces.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}{workspace.visibility==="shared"?" · Shared":" · Private"}</option>)}</select></label>
+            <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange=(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);} compact />
             <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button mobile active":"workspace-star-button mobile"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}><Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/></button>
           </div>
           <div className="breadcrumb">{workspaces.find(item=>item.id===activeWorkspaceId)?.name??"My workspace"} <span>/</span> {view === "notes" ? "Notes" : view === "calendar" ? "Calendar" : "Shared with me"}</div>
