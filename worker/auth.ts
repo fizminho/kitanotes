@@ -564,6 +564,8 @@ async function regeneratePasskeyRecoveryCodes(request: Request, env: AuthEnv): P
   if (!isSameOriginMutation(request,env)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const user = await getCurrentUser(request,env);
   if (!user) return json({error:"UNAUTHENTICATED"},401);
+  const body = await readAuthJson(request);
+  if (!body || !await consumeStepUpGrant(request,env,user.id,typeof body.stepUpToken==="string"?body.stepUpToken:null)) return json({error:"STEP_UP_REQUIRED"},403);
   const limited = await passkeyRateLimit(request,env,"recovery-regenerate:"+user.id,3);
   if (limited) return limited;
   const codes = Array.from({length:10},makeRecoveryCode);
@@ -614,6 +616,8 @@ async function finishPasskeyRegistration(request: Request, env: AuthEnv): Promis
   if (limited) return limited;
   const body = await readAuthJson(request);
   if (!body || typeof body.challenge !== "string" || !body.response || typeof body.response !== "object") return json({ error: "INVALID_PASSKEY_RESPONSE" }, 400);
+  const existingCredentials = await env.DB.prepare("SELECT COUNT(*) AS count FROM passkey_credentials WHERE user_id=?").bind(user.id).first<{count:number}>();
+  if ((existingCredentials?.count ?? 0) > 0 && !await consumeStepUpGrant(request,env,user.id,typeof body.stepUpToken==="string"?body.stepUpToken:null)) return json({error:"STEP_UP_REQUIRED"},403);
   const pending = await env.DB.prepare(
     "SELECT id FROM passkey_challenges WHERE challenge=? AND purpose='register' AND user_id=? AND expires_at>? LIMIT 1"
   ).bind(body.challenge, user.id, new Date().toISOString()).first<{ id: string }>();
@@ -650,6 +654,56 @@ async function finishPasskeyRegistration(request: Request, env: AuthEnv): Promis
     if (/UNIQUE|constraint/i.test(message)) return json({ error: "PASSKEY_ALREADY_REGISTERED" }, 409);
     return json({ error: "PASSKEY_REGISTRATION_FAILED" }, 400);
   }
+}
+
+const STEP_UP_TTL_SECONDS = 120;
+async function consumeStepUpGrant(request:Request,env:AuthEnv,userId:string,token:string|null):Promise<boolean>{
+ const sessionToken=getCookie(request,SESSION_COOKIE);if(!sessionToken||!token||token.length>256)return false;
+ const result=await env.DB!.prepare("DELETE FROM passkey_step_up_grants WHERE token_hash=? AND user_id=? AND session_hash=? AND expires_at>?")
+ .bind(await sha256(token),userId,await sha256(sessionToken),new Date().toISOString()).run() as {meta?:{changes?:number}};
+ return result.meta?.changes===1;
+}
+async function startPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response>{
+ if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
+ if(!isSameOriginMutation(request,env))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+ const user=await getCurrentUser(request,env),sessionToken=getCookie(request,SESSION_COOKIE);
+ if(!user||!sessionToken)return json({error:"UNAUTHENTICATED"},401);
+ const limited=await passkeyRateLimit(request,env,"step-up-options:"+user.id,8);if(limited)return limited;
+ const credentials=await env.DB.prepare("SELECT credential_id,transports_json FROM passkey_credentials WHERE user_id=?").bind(user.id).all<{credential_id:string;transports_json:string|null}>();
+ if(!credentials.results.length)return json({error:"NO_PASSKEY_AVAILABLE"},409);
+ const rp=passkeyRelyingParty(request,env),options=await generateAuthenticationOptions({rpID:rp.id,userVerification:"required",allowCredentials:credentials.results.map(x=>({id:x.credential_id,transports:x.transports_json?JSON.parse(x.transports_json):undefined}))});
+ const now=new Date(),sessionHash=await sha256(sessionToken);
+ await env.DB.prepare("DELETE FROM passkey_step_up_challenges WHERE expires_at<=?").bind(now.toISOString()).run();
+ await env.DB.prepare("INSERT INTO passkey_step_up_challenges (id,user_id,session_hash,challenge,expires_at,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),user.id,sessionHash,options.challenge,new Date(now.getTime()+PASSKEY_CHALLENGE_TTL_SECONDS*1000).toISOString(),now.toISOString()).run();
+ return json(options);
+}
+async function finishPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response>{
+ if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
+ if(!isSameOriginMutation(request,env))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+ const user=await getCurrentUser(request,env),sessionToken=getCookie(request,SESSION_COOKIE);
+ if(!user||!sessionToken)return json({error:"UNAUTHENTICATED"},401);
+ const limited=await passkeyRateLimit(request,env,"step-up-verify:"+user.id,8);if(limited)return limited;
+ const body=await readAuthJson(request);
+ if(!body||typeof body.challenge!=="string"||!body.response||typeof body.response.id!=="string")return json({error:"INVALID_PASSKEY_RESPONSE"},400);
+ const sessionHash=await sha256(sessionToken);
+ const pending=await env.DB.prepare("SELECT id FROM passkey_step_up_challenges WHERE challenge=? AND user_id=? AND session_hash=? AND expires_at>? LIMIT 1").bind(body.challenge,user.id,sessionHash,new Date().toISOString()).first<{id:string}>();
+ if(!pending)return json({error:"STEP_UP_CHALLENGE_EXPIRED"},400);
+ const credential=await env.DB.prepare("SELECT credential_id,public_key,counter,transports_json FROM passkey_credentials WHERE credential_id=? AND user_id=?").bind(body.response.id,user.id).first<{credential_id:string;public_key:string;counter:number;transports_json:string|null}>();
+ if(!credential)return json({error:"PASSKEY_NOT_RECOGNISED"},401);
+ try{
+  const userHandle=body.response.response?.userHandle;
+  if(typeof userHandle!=="string"||userHandle!==base64Url(new TextEncoder().encode(user.id)))return json({error:"PASSKEY_USER_HANDLE_INVALID"},401);
+  const rp=passkeyRelyingParty(request,env);
+  const verified=await verifyAuthenticationResponse({response:body.response,expectedChallenge:body.challenge,expectedOrigin:rp.origin,expectedRPID:rp.id,credential:{id:credential.credential_id,publicKey:fromBase64Url(credential.public_key),counter:credential.counter,transports:credential.transports_json?JSON.parse(credential.transports_json):[]},requireUserVerification:true});
+  if(!verified.verified)return json({error:"PASSKEY_VERIFICATION_FAILED"},401);
+  const consumed=await env.DB.prepare("DELETE FROM passkey_step_up_challenges WHERE id=? AND session_hash=? AND expires_at>?").bind(pending.id,sessionHash,new Date().toISOString()).run() as {meta?:{changes?:number}};
+  if(consumed.meta?.changes!==1)return json({error:"STEP_UP_CHALLENGE_ALREADY_USED"},409);
+  const counter=await env.DB.prepare("UPDATE passkey_credentials SET counter=?,last_used_at=? WHERE credential_id=? AND counter=?").bind(verified.authenticationInfo.newCounter,new Date().toISOString(),credential.credential_id,credential.counter).run() as {meta?:{changes?:number}};
+  if(counter.meta?.changes!==1)return json({error:"PASSKEY_COUNTER_CONFLICT"},409);
+  const token=randomToken();
+  await env.DB.prepare("INSERT INTO passkey_step_up_grants (id,user_id,session_hash,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),user.id,sessionHash,await sha256(token),new Date(Date.now()+STEP_UP_TTL_SECONDS*1000).toISOString(),new Date().toISOString()).run();
+  return json({verified:true,stepUpToken:token,expiresIn:STEP_UP_TTL_SECONDS});
+ }catch{return json({error:"STEP_UP_VERIFICATION_FAILED"},401);}
 }
 
 async function startPasskeyAuthentication(request: Request, env: AuthEnv): Promise<Response> {
@@ -747,6 +801,7 @@ async function removePasskey(request: Request, env: AuthEnv, credentialId: strin
   if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
   const user = await getCurrentUser(request, env);
   if (!user) return json({ error: "UNAUTHENTICATED" }, 401);
+  if (!await consumeStepUpGrant(request,env,user.id,request.headers.get("x-kitanotes-step-up"))) return json({error:"STEP_UP_REQUIRED"},403);
   const result = await env.DB.prepare(
     "DELETE FROM passkey_credentials WHERE credential_id=? AND user_id=?"
   ).bind(credentialId, user.id).run() as { meta?: { changes?: number } };
@@ -764,6 +819,8 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
   if (url.pathname === "/api/auth/passkeys/recovery/regenerate" && request.method === "POST") return regeneratePasskeyRecoveryCodes(request, env);
   if (url.pathname === "/api/auth/passkeys/register/options" && request.method === "POST") return startPasskeyRegistration(request, env);
   if (url.pathname === "/api/auth/passkeys/register/verify" && request.method === "POST") return finishPasskeyRegistration(request, env);
+  if (url.pathname === "/api/auth/passkeys/step-up/options" && request.method === "POST") return startPasskeyStepUp(request,env);
+  if (url.pathname === "/api/auth/passkeys/step-up/verify" && request.method === "POST") return finishPasskeyStepUp(request,env);
   if (url.pathname === "/api/auth/passkeys/authenticate/options" && request.method === "POST") return startPasskeyAuthentication(request, env);
   if (url.pathname === "/api/auth/passkeys/authenticate/verify" && request.method === "POST") return finishPasskeyAuthentication(request, env);
   if (url.pathname === "/api/auth/passkeys" && request.method === "GET") return listPasskeys(request, env);
