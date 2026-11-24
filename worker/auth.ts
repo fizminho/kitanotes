@@ -310,7 +310,7 @@ export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ 
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(hash).run();
     return null;
   }
-  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id, googleLinked: !row.google_sub.startsWith("passkey:") };
+  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id, googleLinked: !(row.google_sub ?? "").startsWith("passkey:") };
 }
 
 async function logout(request: Request, env: AuthEnv): Promise<Response> {
