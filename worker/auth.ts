@@ -400,7 +400,9 @@ async function startPasskeySignup(request: Request, env: AuthEnv): Promise<Respo
   const body = await readAuthJson(request);
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const displayName = typeof body?.displayName === "string" ? body.displayName.trim().slice(0, 80) : "";
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || email.length > 254 || !displayName) {
+  const at = email.indexOf("@");
+  const validEmail = at > 0 && at === email.lastIndexOf("@") && email.lastIndexOf(".") > at + 1 && email.length - email.lastIndexOf(".") > 1 && !Array.from(email).some(char => char.charCodeAt(0) <= 32);
+  if (!validEmail || email.length > 254 || !displayName) {
     return json({ error: "INVALID_SIGNUP_DETAILS" }, 400);
   }
   const existing = await env.DB.prepare("SELECT id FROM users WHERE email_normalized=? LIMIT 1").bind(email).first<{id:string}>();
