@@ -29,3 +29,8 @@ An account with no registered Passkeys can enroll its first Passkey using its ex
 - Run live browser tests on iOS/macOS/Android authenticators.
 
 This implementation has not been applied to production D1 and has not undergone a live external penetration test.
+
+
+## Passkey signup transaction
+
+Initial Passkey signup requires D1 `batch()`. The signup challenge is consumed in the same atomic batch as creation of the user, personal workspace, workspace membership, Passkey credential, recovery-code hashes, and initial session. If D1 batch is unavailable or any statement fails, the batch is rolled back and the endpoint returns `503 PASSKEY_SIGNUP_TEMPORARILY_UNAVAILABLE`; it does not fall back to sequential writes or issue a session cookie. A challenge is only considered consumed when the first batch statement reports exactly one changed row. The client can restart signup to obtain a fresh challenge after a transient failure.
