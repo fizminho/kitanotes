@@ -285,3 +285,29 @@ test("Passkey recovery codes are single-use and issue the normal session cookie"
   } finally { db.close(); }
 });
 
+
+test("Google recovery linking is bound to the authenticated passkey account", async () => {
+  const db = new D1TestDatabase();
+  const secret = "local-test-session-secret-with-more-than-32-characters";
+  const token = "passkey-account-session";
+  const now = new Date().toISOString();
+  const hash = createHash("sha256").update(token).digest("base64url");
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES ('passkey-user','passkey:passkey-user','owner@example.com','owner@example.com',0,?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES ('passkey-session','passkey-user',?,?,?)").run(hash,"2099-01-01T00:00:00.000Z",now);
+  try {
+    const env = { DB: db, GOOGLE_CLIENT_ID: "test-client-id", GOOGLE_CLIENT_SECRET: "test-client-secret", SESSION_SECRET: secret, APP_BASE_URL: "https://kitanotes.test" };
+    const response = await handleAuthRequest(new Request("https://kitanotes.test/auth/google/link", {
+      headers: { cookie: "__Host-kitanotes_session=" + token }
+    }),env);
+    assert.equal(response.status,302);
+    const cookie = response.headers.get("set-cookie") ?? "";
+    const stateCookie = cookie.match(/__Host-kitanotes_oauth=([^;]+)/)?.[1];
+    assert.ok(stateCookie);
+    const [payload,signature] = stateCookie.split(".");
+    assert.equal(signature,createHmac("sha256",secret).update(payload).digest("base64url"));
+    const decoded = JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));
+    assert.equal(decoded.linkUserId,"passkey-user");
+    assert.equal(decoded.linkSessionHash,hash);
+    assert.equal(decoded.returnTo,"/");
+  } finally { db.close(); }
+});
