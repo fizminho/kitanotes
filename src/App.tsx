@@ -104,7 +104,7 @@ export default function App() {
   const [notesError, setNotesError] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
-  const [viewingNote, setViewingNote] = useState<Note | null>(null);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);\n  const [checklistSavingLine, setChecklistSavingLine] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
@@ -550,6 +550,34 @@ export default function App() {
     setSelectedCategoryId(note.categoryId ?? "");
     setComposerOpen(true);
   }, []);
+
+  async function toggleNoteChecklistItem(lineIndex: number) {
+    if (!viewingNote || !canWrite || checklistSavingLine !== null) return;
+    const lines = viewingNote.content.split("\n");
+    const line = lines[lineIndex] ?? "";
+    const match = line.match(/^(\\s*)-\\s+(?:\\[([ xX])\\]\\s*)?(.*)$/);
+    if (!match) return;
+    const checked = (match[2] ?? "").toLowerCase() === "x";
+    lines[lineIndex] = match[1] + "- [" + (checked ? " " : "x") + "] " + match[3];
+    setChecklistSavingLine(lineIndex);
+    try {
+      const response = await fetch("/api/notes/" + encodeURIComponent(viewingNote.id), {
+        method: "PATCH", credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ version: viewingNote.version, content: lines.join("\n") })
+      });
+      const result = await response.json() as { note?: Note; error?: string };
+      if (!response.ok || !result.note) {
+        throw new Error(result.error === "VERSION_CONFLICT" ? "Nota ini telah berubah di tempat lain. Refresh dan cuba lagi." : "Tak dapat kemas kini checklist.");
+      }
+      setViewingNote(result.note);
+      setNotes(current => current.map(note => note.id === result.note!.id ? result.note! : note));
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Tak dapat kemas kini checklist.", "error");
+    } finally {
+      setChecklistSavingLine(null);
+    }
+  }
 
   async function saveNote() {
     if (!draftTitle.trim() || saving) return;
@@ -1483,7 +1511,14 @@ export default function App() {
       {viewingNote && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setViewingNote(null);}}>
         <section className="composer note-viewer" role="dialog" aria-modal="true" aria-labelledby="view-note-title">
           <header><div><span className="eyebrow">{viewingNote.categoryName||"NOTE"}</span><h2 id="view-note-title">{viewingNote.title}</h2></div><button className="icon-button" onClick={()=>setViewingNote(null)} aria-label="Close"><X size={19}/></button></header>
-          <div className="note-full-content">{viewingNote.content||"No additional details."}</div>
+          <div className="note-full-content">{viewingNote.content ? viewingNote.content.split("\n").map((line,index)=>{
+            const item=line.match(/^(\\s*)-\\s+(?:\\[([ xX])\\]\\s*)?(.*)$/);
+            if(item){
+              const checked=(item[2]??"").toLowerCase()==="x";
+              return <div className={checked?"note-checklist-row checked":"note-checklist-row"} key={index}><input type="checkbox" checked={checked} disabled={!canWrite||checklistSavingLine!==null} onChange={()=>void toggleNoteChecklistItem(index)} aria-label={(checked?"Mark incomplete: ":"Mark complete: ")+item[3]}/><span>{item[3]}</span></div>;
+            }
+            return <div className="note-content-line" key={index}>{line||" "}</div>;
+          }) : "No additional details."}</div>
           <small className="record-audit">Created by {viewingNote.createdByName||"Workspace member"} · {new Date(viewingNote.createdAt).toLocaleString()}<br/>Last updated by {viewingNote.updatedByName||viewingNote.createdByName||"Workspace member"} · {new Date(viewingNote.updatedAt).toLocaleString()}</small>
           <footer><span>Full note</span>{canWrite&&!showArchived&&<button className="primary-button" onClick={()=>{const note=viewingNote;setViewingNote(null);startEditNote(note);}}>Edit note</button>}</footer>
         </section>
