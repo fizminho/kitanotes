@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { handleAuthRequest } from "./auth.ts";
+import { handleAuthRequest, commitPasskeyStepUp } from "./auth.ts";
 
 class D1TestDatabase {
   constructor() {
@@ -64,6 +64,87 @@ test("Passkey endpoints reject oversized chunked JSON bodies before buffering th
   } finally {
     db.close();
   }
+});
+
+
+function seedStepUpAtomicFixture(db,{counter=4,challenge=true}={}) {
+  const now=new Date().toISOString(), userId="step-up-atomic-user", sessionHash="step-up-atomic-session-hash";
+  db.sqlite.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,created_at,updated_at) VALUES (?,?,?,?,1,?,?)")
+    .run(userId,"google-step-up-atomic","stepup-atomic@example.com","stepup-atomic@example.com",now,now);
+  db.sqlite.prepare("INSERT INTO passkey_credentials (credential_id,user_id,public_key,counter,transports_json,device_type,backed_up,created_at,last_used_at) VALUES (?,?,?,?,?,?,?,?,NULL)")
+    .run("step-up-credential",userId,"cHVibGljLWtleQ==",counter,"[]","singleDevice",0,now);
+  if(challenge) db.sqlite.prepare("INSERT INTO passkey_step_up_challenges (id,user_id,session_hash,challenge,expires_at,created_at) VALUES (?,?,?,?,?,?)")
+    .run("step-up-challenge",userId,sessionHash,"step-up-challenge-value",new Date(Date.now()+300000).toISOString(),now);
+  return {now,userId,sessionHash};
+}
+function stepUpAtomicInput(fixture,overrides={}) {
+  return {challengeId:"step-up-challenge",userId:fixture.userId,sessionHash:fixture.sessionHash,credentialId:"step-up-credential",expectedCounter:4,newCounter:5,grantId:"step-up-grant",grantTokenHash:"hashed-step-up-token",grantExpiresAt:new Date(Date.now()+120000).toISOString(),now:new Date().toISOString(),...overrides};
+}
+
+test("Passkey step-up commits challenge consumption, counter update, and grant together", async () => {
+  const db=new D1TestDatabase();
+  try {
+    const fixture=seedStepUpAtomicFixture(db);
+    const result=await commitPasskeyStepUp({DB:db},stepUpAtomicInput(fixture));
+    assert.equal(result,"committed");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_challenges WHERE id='step-up-challenge'").get().count,0);
+    assert.equal(db.sqlite.prepare("SELECT counter FROM passkey_credentials WHERE credential_id='step-up-credential'").get().counter,5);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_grants WHERE token_hash='hashed-step-up-token'").get().count,1);
+  } finally { db.close(); }
+});
+
+test("Passkey step-up rolls back challenge and counter when grant insertion fails", async () => {
+  const db=new D1TestDatabase();
+  try {
+    const fixture=seedStepUpAtomicFixture(db);
+    const originalBatch=db.batch.bind(db);
+    db.batch=async statements=>{
+      db.sqlite.exec("BEGIN");
+      try {
+        await statements[0].run();
+        await statements[1].run();
+        throw new Error("injected step-up grant insert failure");
+      } catch(error) {
+        db.sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    };
+    const result=await commitPasskeyStepUp({DB:db},stepUpAtomicInput(fixture));
+    assert.equal(result,"unavailable");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_challenges WHERE id='step-up-challenge'").get().count,1);
+    assert.equal(db.sqlite.prepare("SELECT counter FROM passkey_credentials WHERE credential_id='step-up-credential'").get().counter,4);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_grants").get().count,0);
+    db.batch=originalBatch;
+  } finally { db.close(); }
+});
+
+test("Passkey step-up rejects a stale credential counter and rolls back challenge consumption", async () => {
+  const db=new D1TestDatabase();
+  try {
+    const fixture=seedStepUpAtomicFixture(db,{counter:9});
+    const result=await commitPasskeyStepUp({DB:db},stepUpAtomicInput(fixture));
+    assert.equal(result,"conflict");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_challenges WHERE id='step-up-challenge'").get().count,1);
+    assert.equal(db.sqlite.prepare("SELECT counter FROM passkey_credentials WHERE credential_id='step-up-credential'").get().counter,9);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_grants").get().count,0);
+  } finally { db.close(); }
+});
+
+test("Passkey step-up rejects replayed or missing challenges without changing the credential", async () => {
+  const db=new D1TestDatabase();
+  try {
+    const fixture=seedStepUpAtomicFixture(db,{challenge:false});
+    const result=await commitPasskeyStepUp({DB:db},stepUpAtomicInput(fixture));
+    assert.equal(result,"conflict");
+    assert.equal(db.sqlite.prepare("SELECT counter FROM passkey_credentials WHERE credential_id='step-up-credential'").get().counter,4);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM passkey_step_up_grants").get().count,0);
+  } finally { db.close(); }
+});
+
+test("Passkey step-up fails closed when D1 batch is unavailable", async () => {
+  const fixture={userId:"step-up-no-batch",sessionHash:"session-hash"};
+  const result=await commitPasskeyStepUp({DB:{prepare(){throw new Error("must not be called");}}},stepUpAtomicInput(fixture));
+  assert.equal(result,"unavailable");
 });
 
 test("sensitive Passkey account actions require a fresh step-up grant", async () => {

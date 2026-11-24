@@ -706,6 +706,46 @@ async function startPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response>
  await env.DB.prepare("INSERT INTO passkey_step_up_challenges (id,user_id,session_hash,challenge,expires_at,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),user.id,sessionHash,options.challenge,new Date(now.getTime()+PASSKEY_CHALLENGE_TTL_SECONDS*1000).toISOString(),now.toISOString()).run();
  return json(options);
 }
+export async function commitPasskeyStepUp(
+ env: AuthEnv,
+ input: {
+  challengeId: string;
+  userId: string;
+  sessionHash: string;
+  credentialId: string;
+  expectedCounter: number;
+  newCounter: number;
+  grantId: string;
+  grantTokenHash: string;
+  grantExpiresAt: string;
+  now: string;
+ }
+): Promise<"committed" | "conflict" | "unavailable"> {
+ const db=env.DB;
+ if(!db?.batch)return "unavailable";
+ const statements=[
+  db.prepare("UPDATE passkey_credentials SET counter=?,last_used_at=? WHERE credential_id=? AND user_id=? AND counter=? AND EXISTS (SELECT 1 FROM passkey_step_up_challenges WHERE id=? AND user_id=? AND session_hash=? AND expires_at>?)")
+   .bind(input.newCounter,input.now,input.credentialId,input.userId,input.expectedCounter,input.challengeId,input.userId,input.sessionHash,input.now),
+  db.prepare("DELETE FROM passkey_step_up_challenges WHERE id=? AND user_id=? AND session_hash=? AND expires_at>? AND EXISTS (SELECT 1 FROM passkey_credentials WHERE credential_id=? AND user_id=? AND last_used_at=?)")
+   .bind(input.challengeId,input.userId,input.sessionHash,input.now,input.credentialId,input.userId,input.now),
+  db.prepare("INSERT INTO passkey_step_up_grants (id,user_id,session_hash,token_hash,expires_at,created_at) SELECT ?,?,?,?,?,? WHERE changes()=1")
+   .bind(input.grantId,input.userId,input.sessionHash,input.grantTokenHash,input.grantExpiresAt,input.now),
+  // Force the D1 batch to abort if the guarded grant INSERT did not insert exactly one row.
+  // D1 batch is transactional, so this rolls back the counter update and challenge deletion too.
+  db.prepare("INSERT INTO passkey_step_up_grants (id,user_id,session_hash,token_hash,expires_at,created_at) SELECT ?,NULL,?,?,?,? WHERE changes()!=1")
+   .bind("step-up-atomic-guard-"+input.grantId,input.sessionHash,input.grantTokenHash,input.grantExpiresAt,input.now)
+ ];
+ try{
+  const results=await db.batch(statements) as Array<{meta?:{changes?:number}}>;
+  if(results[0]?.meta?.changes===1&&results[1]?.meta?.changes===1&&results[2]?.meta?.changes===1)return "committed";
+  return "conflict";
+ }catch(error){
+  const message=error instanceof Error?error.message:String(error);
+  if(message.includes("NOT NULL constraint failed: passkey_step_up_grants.user_id"))return "conflict";
+  return "unavailable";
+ }
+}
+
 async function finishPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response>{
  if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
  if(!isSameOriginMutation(request,env))return json({error:"CSRF_ORIGIN_REJECTED"},403);
@@ -714,8 +754,8 @@ async function finishPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response
  const limited=await passkeyRateLimit(request,env,"step-up-verify:"+user.id,8);if(limited)return limited;
  const body=await readAuthJson(request);
  if(!body||typeof body.challenge!=="string"||!body.response||typeof body.response.id!=="string")return json({error:"INVALID_PASSKEY_RESPONSE"},400);
- const sessionHash=await sha256(sessionToken);
- const pending=await env.DB.prepare("SELECT id FROM passkey_step_up_challenges WHERE challenge=? AND user_id=? AND session_hash=? AND expires_at>? LIMIT 1").bind(body.challenge,user.id,sessionHash,new Date().toISOString()).first<{id:string}>();
+ const now=new Date().toISOString(),sessionHash=await sha256(sessionToken);
+ const pending=await env.DB.prepare("SELECT id FROM passkey_step_up_challenges WHERE challenge=? AND user_id=? AND session_hash=? AND expires_at>? LIMIT 1").bind(body.challenge,user.id,sessionHash,now).first<{id:string}>();
  if(!pending)return json({error:"STEP_UP_CHALLENGE_EXPIRED"},400);
  const credential=await env.DB.prepare("SELECT credential_id,public_key,counter,transports_json FROM passkey_credentials WHERE credential_id=? AND user_id=?").bind(body.response.id,user.id).first<{credential_id:string;public_key:string;counter:number;transports_json:string|null}>();
  if(!credential)return json({error:"PASSKEY_NOT_RECOGNISED"},401);
@@ -728,12 +768,16 @@ async function finishPasskeyStepUp(request:Request,env:AuthEnv):Promise<Response
   const rp=passkeyRelyingParty(request,env);
   const verified=await verifyAuthenticationResponse({response:body.response,expectedChallenge:body.challenge,expectedOrigin:rp.origin,expectedRPID:rp.id,credential:{id:credential.credential_id,publicKey:fromBase64Url(credential.public_key),counter:credential.counter,transports:credential.transports_json?JSON.parse(credential.transports_json):[]},requireUserVerification:true});
   if(!verified.verified)return json({error:"PASSKEY_VERIFICATION_FAILED"},401);
-  const consumed=await env.DB.prepare("DELETE FROM passkey_step_up_challenges WHERE id=? AND session_hash=? AND expires_at>?").bind(pending.id,sessionHash,new Date().toISOString()).run() as {meta?:{changes?:number}};
-  if(consumed.meta?.changes!==1)return json({error:"STEP_UP_CHALLENGE_ALREADY_USED"},409);
-  const counter=await env.DB.prepare("UPDATE passkey_credentials SET counter=?,last_used_at=? WHERE credential_id=? AND counter=?").bind(verified.authenticationInfo.newCounter,new Date().toISOString(),credential.credential_id,credential.counter).run() as {meta?:{changes?:number}};
-  if(counter.meta?.changes!==1)return json({error:"PASSKEY_COUNTER_CONFLICT"},409);
+  if(!env.DB.batch)return json({error:"STEP_UP_TEMPORARILY_UNAVAILABLE"},503);
   const token=randomToken();
-  await env.DB.prepare("INSERT INTO passkey_step_up_grants (id,user_id,session_hash,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),user.id,sessionHash,await sha256(token),new Date(Date.now()+STEP_UP_TTL_SECONDS*1000).toISOString(),new Date().toISOString()).run();
+  const committed=await commitPasskeyStepUp(env,{
+   challengeId:pending.id,userId:user.id,sessionHash,credentialId:credential.credential_id,
+   expectedCounter:credential.counter,newCounter:verified.authenticationInfo.newCounter,
+   grantId:crypto.randomUUID(),grantTokenHash:await sha256(token),
+   grantExpiresAt:new Date(Date.now()+STEP_UP_TTL_SECONDS*1000).toISOString(),now
+  });
+  if(committed==="conflict")return json({error:"STEP_UP_VERIFICATION_CONFLICT"},409);
+  if(committed!=="committed")return json({error:"STEP_UP_TEMPORARILY_UNAVAILABLE"},503);
   return json({verified:true,stepUpToken:token,expiresIn:STEP_UP_TTL_SECONDS});
  }catch{return json({error:"STEP_UP_VERIFICATION_FAILED"},401);}
 }

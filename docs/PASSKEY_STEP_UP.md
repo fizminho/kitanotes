@@ -22,9 +22,10 @@ An account with no registered Passkeys can enroll its first Passkey using its ex
 - Verify adding a second Passkey prompts for the existing Passkey.
 - Verify recovery-code regeneration prompts for the existing Passkey.
 - Verify a step-up token cannot be reused, used by another session, or used after expiry.
+- Verify step-up challenge consumption, credential counter update, and grant insertion roll back together on a stale counter, replay, or injected database failure.
 - Verify removing a Passkey requires step-up.
 - Recovery-code regeneration requires D1 batch support; it fails closed with a temporary-unavailable response if batch is unavailable or fails, preserving the previous recovery codes.
-- Step-up verification currently consumes the challenge and updates the credential counter before inserting the grant in separate writes. A later write failure can require the user to repeat step-up; it does not issue a grant, but this flow is not an atomic multi-write transaction.
+- Step-up verification now requires D1 batch support. The credential counter compare-and-swap, challenge consumption, and grant insertion run in one atomic batch. Guarded SQL statements force the batch to abort if the challenge or counter precondition fails, rolling back all writes. Missing batch support or a database failure returns a temporary-unavailable response without issuing a grant.
 - Test authenticators that omit userHandle when allowCredentials is populated.
 - Run live browser tests on iOS/macOS/Android authenticators.
 
