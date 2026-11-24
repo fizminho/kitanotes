@@ -831,3 +831,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     z-index:60;
   }
 }
+
+
+/* Interactive checklist items in the full-note reader. */
+.note-checklist-row{display:flex;align-items:flex-start;gap:12px;margin:5px 0;min-height:30px}
+.note-checklist-row input[type="checkbox"]{flex:0 0 20px;width:20px;height:20px;margin:3px 0 0;accent-color:#6658d9;cursor:pointer}
+.note-checklist-row input[type="checkbox"]:disabled{cursor:wait;opacity:.65}
+.note-checklist-row span{min-width:0;overflow-wrap:anywhere}
+.note-checklist-row.checked span{color:#999cac;text-decoration:line-through;text-decoration-thickness:1.5px}
+.note-content-line{min-height:1.7em}
