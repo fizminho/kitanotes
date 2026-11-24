@@ -161,6 +161,16 @@ async function startGoogleLogin(request: Request, env: AuthEnv): Promise<Respons
   const fingerprint = await hmac(clientIp, env.SESSION_SECRET!);
   const rate = await consumeRateLimit(env.DB!, "oauth:start:" + fingerprint, 10, 10 * 60 * 1000);
   if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+  const linkMode = new URL(request.url).pathname === "/auth/google/link";
+  let linkUserId: string | undefined;
+  let linkSessionHash: string | undefined;
+  if (linkMode) {
+    const current = await getCurrentUser(request,env);
+    const sessionToken = getCookie(request,SESSION_COOKIE);
+    if (!current || !sessionToken) return json({error:"UNAUTHENTICATED"},401);
+    linkUserId = current.id;
+    linkSessionHash = await sha256(sessionToken);
+  }
   const requestedReturnTo = new URL(request.url).searchParams.get("returnTo") ?? "/";
   let returnTo = "/";
   if (requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") && !requestedReturnTo.includes("\\")) {
@@ -170,7 +180,7 @@ async function startGoogleLogin(request: Request, env: AuthEnv): Promise<Respons
   const state = randomToken();
   const nonce = randomToken();
   const verifier = randomToken(48);
-  const payload = base64Url(new TextEncoder().encode(JSON.stringify({ state, nonce, verifier, returnTo, issuedAt: Date.now() })));
+  const payload = base64Url(new TextEncoder().encode(JSON.stringify({ state, nonce, verifier, returnTo, issuedAt: Date.now(), linkUserId, linkSessionHash })));
   const signed = await signState(payload, env.SESSION_SECRET!);
   const challenge = await sha256(verifier);
   const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -263,6 +273,20 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
 
   try {
     const identity = await verifyGoogleIdToken(tokenPayload.id_token, env.GOOGLE_CLIENT_ID!, payload.nonce);
+    if (typeof payload.linkUserId === "string" && typeof payload.linkSessionHash === "string") {
+      const current = await getCurrentUser(request,env);
+      const currentToken = getCookie(request,SESSION_COOKIE);
+      if (!current || current.id !== payload.linkUserId || !currentToken || await sha256(currentToken) !== payload.linkSessionHash) return json({error:"ACCOUNT_LINK_SESSION_EXPIRED"},401,headers);
+      const emailNormalized = identity.email.trim().toLowerCase();
+      const existingSub = await env.DB!.prepare("SELECT id FROM users WHERE google_sub=? AND id<>? LIMIT 1").bind(identity.sub,current.id).first<{id:string}>();
+      const existingEmail = await env.DB!.prepare("SELECT id FROM users WHERE email_normalized=? AND id<>? LIMIT 1").bind(emailNormalized,current.id).first<{id:string}>();
+      if (existingSub || existingEmail) return json({error:"GOOGLE_ACCOUNT_ALREADY_IN_USE"},409,headers);
+      const updated = await env.DB!.prepare("UPDATE users SET google_sub=?,email=?,email_normalized=?,email_verified=1,display_name=COALESCE(display_name,?),avatar_url=COALESCE(avatar_url,?),updated_at=? WHERE id=? AND (google_sub LIKE 'passkey:%' OR google_sub=?)")
+        .bind(identity.sub,identity.email,emailNormalized,identity.name??null,identity.picture??null,new Date().toISOString(),current.id,identity.sub).run() as {meta?:{changes?:number}};
+      if (updated.meta?.changes !== 1) return json({error:"GOOGLE_ACCOUNT_ALREADY_LINKED"},409,headers);
+      headers.set("location",new URL("/",origin).toString());
+      return new Response(null,{status:302,headers});
+    }
     const session = await createUserAndSession(env, identity);
     appendCookie(headers, SESSION_COOKIE + "=" + session.token + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + SESSION_TTL_SECONDS);
     const returnTo = typeof payload.returnTo === "string" && payload.returnTo.startsWith("/") && !payload.returnTo.startsWith("//") && !payload.returnTo.includes("\\") ? payload.returnTo : "/";
@@ -273,20 +297,20 @@ async function completeGoogleLogin(request: Request, env: AuthEnv): Promise<Resp
   }
 }
 
-export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null } | null> {
+export async function getCurrentUser(request: Request, env: AuthEnv): Promise<{ id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null; googleLinked: boolean } | null> {
   if (!env.DB) return null;
   const token = getCookie(request, SESSION_COOKIE);
   if (!token) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    "SELECT u.id,u.email,u.display_name,u.avatar_url,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.visibility='private' ORDER BY w.created_at ASC LIMIT 1) AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
-  ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; expires_at: string; personal_workspace_id: string | null }>();
+    "SELECT u.id,u.email,u.display_name,u.avatar_url,u.google_sub,s.expires_at,(SELECT w.id FROM workspaces w WHERE w.owner_user_id=u.id AND w.visibility='private' ORDER BY w.created_at ASC LIMIT 1) AS personal_workspace_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?"
+  ).bind(hash).first<{ id: string; email: string; display_name: string | null; avatar_url: string | null; google_sub: string; expires_at: string; personal_workspace_id: string | null }>();
   if (!row) return null;
   if (row.expires_at <= new Date().toISOString()) {
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(hash).run();
     return null;
   }
-  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id };
+  return { id: row.id, email: row.email, displayName: row.display_name, avatarUrl: row.avatar_url, personalWorkspaceId: row.personal_workspace_id, googleLinked: !row.google_sub.startsWith("passkey:") };
 }
 
 async function logout(request: Request, env: AuthEnv): Promise<Response> {
