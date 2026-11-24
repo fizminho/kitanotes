@@ -208,12 +208,35 @@ async function createUserAndSession(
   const now = new Date().toISOString();
   const emailNormalized = identity.email.trim().toLowerCase();
   const proposedUserId = crypto.randomUUID();
-  await db.prepare(
-    "INSERT INTO users (id,google_sub,email,email_normalized,email_verified,display_name,avatar_url,created_at,updated_at) VALUES (?,?,?,?,1,?,?,?,?) ON CONFLICT(google_sub) DO UPDATE SET email=excluded.email,email_normalized=excluded.email_normalized,email_verified=1,display_name=excluded.display_name,avatar_url=excluded.avatar_url,updated_at=excluded.updated_at"
-  ).bind(proposedUserId, identity.sub, identity.email, emailNormalized, identity.name ?? null, identity.picture ?? null, now, now).run();
-
-  const user = await db.prepare("SELECT id FROM users WHERE google_sub=?").bind(identity.sub).first<{ id: string }>();
-  if (!user?.id) throw new Error("Unable to create user account");
+  // A verified Google identity may claim an email previously reserved by an
+  // unverified Passkey-only signup. Reuse that account so its notes/workspace
+  // are preserved, but never merge with another verified or Google-linked user.
+  const existingGoogle = await db.prepare("SELECT id FROM users WHERE google_sub=? LIMIT 1")
+    .bind(identity.sub).first<{ id: string }>();
+  let userId = existingGoogle?.id ?? null;
+  if (!userId) {
+    const emailOwner = await db.prepare(
+      "SELECT id,google_sub,email_verified FROM users WHERE email_normalized=? LIMIT 1"
+    ).bind(emailNormalized).first<{ id: string; google_sub: string; email_verified: number }>();
+    if (emailOwner) {
+      if (emailOwner.email_verified !== 0 || !emailOwner.google_sub.startsWith("passkey:")) {
+        throw new Error("GOOGLE_EMAIL_ALREADY_IN_USE");
+      }
+      const claimed = await db.prepare(
+        "UPDATE users SET google_sub=?,email=?,email_normalized=?,email_verified=1,display_name=COALESCE(display_name,?),avatar_url=COALESCE(avatar_url,?),updated_at=? WHERE id=? AND email_verified=0 AND google_sub LIKE 'passkey:%'"
+      ).bind(identity.sub,identity.email,emailNormalized,identity.name??null,identity.picture??null,now,emailOwner.id).run() as {meta?:{changes?:number}};
+      if (claimed.meta?.changes !== 1) throw new Error("GOOGLE_EMAIL_ALREADY_IN_USE");
+      userId = emailOwner.id;
+    } else {
+      await db.prepare(
+        "INSERT INTO users (id,google_sub,email,email_normalized,email_verified,display_name,avatar_url,created_at,updated_at) VALUES (?,?,?,?,1,?,?,?,?) ON CONFLICT(google_sub) DO UPDATE SET email=excluded.email,email_normalized=excluded.email_normalized,email_verified=1,display_name=excluded.display_name,avatar_url=excluded.avatar_url,updated_at=excluded.updated_at"
+      ).bind(proposedUserId, identity.sub, identity.email, emailNormalized, identity.name ?? null, identity.picture ?? null, now, now).run();
+      const created = await db.prepare("SELECT id FROM users WHERE google_sub=?").bind(identity.sub).first<{ id: string }>();
+      userId = created?.id ?? null;
+    }
+  }
+  if (!userId) throw new Error("Unable to create user account");
+  const user = { id: userId };
 
   await db.prepare(
     "INSERT OR IGNORE INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,?,?,?,?)"
@@ -389,7 +412,7 @@ function makeRecoveryCode(): string {
 }
 
 function normalizeRecoveryCode(value: string): string {
-  return value.replace(/-/g, "").replace(/\\s/g, "").toUpperCase();
+  return value.replace(/-/g, "").replace(/\s/g, "").toUpperCase();
 }
 
 async function startPasskeySignup(request: Request, env: AuthEnv): Promise<Response> {
