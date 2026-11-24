@@ -162,7 +162,7 @@ test("Passkey login options are discoverable and challenge-bound without creatin
     const options = await response.json();
     assert.ok(options.challenge);
     assert.equal(options.userVerification, "required");
-    assert.equal(options.allowCredentials, undefined);
+    assert.equal(options.allowCredentials?.length ?? 0, 0);
     const pending = db.sqlite.prepare("SELECT user_id,purpose FROM passkey_challenges WHERE challenge=?").get(options.challenge);
     assert.deepEqual(pending, { user_id: null, purpose: "authenticate" });
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
