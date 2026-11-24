@@ -506,16 +506,18 @@ async function finishPasskeySignup(request: Request, env: AuthEnv): Promise<Resp
       requireUserVerification: true
     });
     if (!verification.verified || !verification.registrationInfo) return json({ error: "PASSKEY_VERIFICATION_FAILED" }, 400);
-    const consumed = await env.DB.prepare(
-      "DELETE FROM passkey_signup_challenges WHERE id=? AND challenge=? AND expires_at>?"
-    ).bind(pending.id,body.challenge,new Date().toISOString()).run() as {meta?:{changes?:number}};
-    if (consumed.meta?.changes !== 1) return json({ error: "PASSKEY_CHALLENGE_ALREADY_USED" }, 409);
+    // Account creation, challenge consumption, recovery codes and initial session
+    // must commit together. Never fall back to sequential writes on D1.
+    if (!env.DB.batch) return json({error:"PASSKEY_SIGNUP_TEMPORARILY_UNAVAILABLE"},503);
     const info = verification.registrationInfo;
     const credential = info.credential;
     const now = new Date().toISOString();
     const workspaceId = crypto.randomUUID();
     const recoveryCodes = Array.from({length:10},makeRecoveryCode);
+    const sessionToken = randomToken();
     const statements = [
+      env.DB.prepare("DELETE FROM passkey_signup_challenges WHERE id=? AND challenge=? AND expires_at>?")
+        .bind(pending.id,body.challenge,now),
       env.DB.prepare("INSERT INTO users (id,google_sub,email,email_normalized,email_verified,display_name,avatar_url,created_at,updated_at) VALUES (?,?,?,?,0,?,NULL,?,?)")
         .bind(pending.user_id,"passkey:"+pending.user_id,pending.email,pending.email_normalized,pending.display_name,now,now),
       env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
@@ -524,13 +526,21 @@ async function finishPasskeySignup(request: Request, env: AuthEnv): Promise<Resp
         .bind(workspaceId,pending.user_id,"owner",now),
       env.DB.prepare("INSERT INTO passkey_credentials (credential_id,user_id,public_key,counter,transports_json,device_type,backed_up,created_at,last_used_at) VALUES (?,?,?,?,?,?,?,?,NULL)")
         .bind(credential.id,pending.user_id,base64Url(credential.publicKey),credential.counter,JSON.stringify(credential.transports??[]),info.credentialDeviceType,info.credentialBackedUp?1:0,now),
-      ...await Promise.all(recoveryCodes.map(async code=>env.DB!.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)").bind(await sha256(normalizeRecoveryCode(code)),pending.user_id,now)))
+      ...await Promise.all(recoveryCodes.map(async code=>env.DB!.prepare("INSERT INTO passkey_recovery_codes (code_hash,user_id,created_at,used_at) VALUES (?,?,?,NULL)").bind(await sha256(normalizeRecoveryCode(code)),pending.user_id,now))),
+      env.DB.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)")
+        .bind(crypto.randomUUID(),pending.user_id,await sha256(sessionToken),new Date(Date.now()+SESSION_TTL_SECONDS*1000).toISOString(),now)
     ];
-    if (env.DB.batch) await env.DB.batch(statements);
-    else for (const statement of statements) await statement.run();
-    const session = await createSessionForUser(env,pending.user_id);
+    let results: unknown[];
+    try {
+      results = await env.DB.batch(statements);
+    } catch {
+      return json({error:"PASSKEY_SIGNUP_TEMPORARILY_UNAVAILABLE"},503);
+    }
+    if ((results[0] as {meta?:{changes?:number}})?.meta?.changes !== 1) {
+      return json({error:"PASSKEY_CHALLENGE_ALREADY_USED"},409);
+    }
     const headers = new Headers();
-    appendCookie(headers,SESSION_COOKIE+"="+session.token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
+    appendCookie(headers,SESSION_COOKIE+"="+sessionToken+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
     return json({verified:true,recoveryCodes,user:{id:pending.user_id,email:pending.email,displayName:pending.display_name,avatarUrl:null}},201,headers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
