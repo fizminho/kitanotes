@@ -464,11 +464,10 @@ async function recoverWithPasskeyCode(request: Request, env: AuthEnv): Promise<R
   const normalized = normalizeRecoveryCode(raw);
   if (!/^[A-F0-9]{32}$/.test(normalized)) return json({error:"RECOVERY_CODE_INVALID"},401);
   const codeHash = await sha256(normalized);
-  const result = await env.DB.prepare("DELETE FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").bind(codeHash).run() as {meta?:{changes?:number}};
-  if (result.meta?.changes !== 1) return json({error:"RECOVERY_CODE_INVALID"},401);
-  const row = await env.DB.prepare("SELECT user_id FROM passkey_recovery_codes WHERE code_hash=?").bind(codeHash).first<{user_id:string}>();
-  // The code row is deleted on use; resolve the owner from the one-time DELETE's pre-read instead.
+  const row = await env.DB.prepare("SELECT user_id FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").bind(codeHash).first<{user_id:string}>();
   if (!row) return json({error:"RECOVERY_CODE_INVALID"},401);
+  const result = await env.DB.prepare("DELETE FROM passkey_recovery_codes WHERE code_hash=? AND user_id=? AND used_at IS NULL").bind(codeHash,row.user_id).run() as {meta?:{changes?:number}};
+  if (result.meta?.changes !== 1) return json({error:"RECOVERY_CODE_INVALID"},401);
   const session = await createSessionForUser(env,row.user_id);
   const headers = new Headers();
   appendCookie(headers,SESSION_COOKIE+"="+session.token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
