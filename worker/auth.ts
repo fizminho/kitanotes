@@ -1,4 +1,5 @@
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
+import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from "@simplewebauthn/server";
 export type D1BoundStatementLike = {
   run(): Promise<unknown>;
   first<T = Record<string, unknown>>(): Promise<T | null>;
@@ -298,11 +299,251 @@ async function logout(request: Request, env: AuthEnv): Promise<Response> {
   return json({ ok: true }, 200, headers);
 }
 
+
+
+const PASSKEY_CHALLENGE_TTL_SECONDS = 5 * 60;
+const MAX_AUTH_BODY_BYTES = 32 * 1024;
+
+type PasskeyCredentialRow = { credential_id: string; user_id: string; public_key: string; counter: number; transports_json: string | null; email: string; display_name: string | null; avatar_url: string | null };
+
+function passkeyRelyingParty(request: Request, env: AuthEnv): { id: string; origin: string } {
+  const configured = baseUrl(request, env);
+  return { id: configured.hostname, origin: configured.origin };
+}
+
+function isSameOriginMutation(request: Request, env: AuthEnv): boolean {
+  const origin = request.headers.get("origin");
+  return !!origin && origin === baseUrl(request, env).origin;
+}
+
+async function readAuthJson(request: Request): Promise<Record<string, any> | null> {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > MAX_AUTH_BODY_BYTES) return null;
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_AUTH_BODY_BYTES) return null;
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : null;
+  } catch {
+    return null;
+  }
+}
+
+async function passkeyRateLimit(request: Request, env: AuthEnv, action: string, limit: number): Promise<Response | null> {
+  if (!env.DB || !env.SESSION_SECRET || env.SESSION_SECRET.length < 32) return json({ error: "AUTH_NOT_CONFIGURED" }, 503);
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const fingerprint = await hmac(ip, env.SESSION_SECRET);
+  const rate = await consumeRateLimit(env.DB, "passkey:" + action + ":" + fingerprint, limit, 10 * 60 * 1000);
+  return rate.allowed ? null : rateLimitResponse(rate.retryAfterSeconds);
+}
+
+async function savePasskeyChallenge(env: AuthEnv, challenge: string, userId: string | null, purpose: "register" | "authenticate"): Promise<void> {
+  const now = new Date();
+  await env.DB!.prepare("DELETE FROM passkey_challenges WHERE expires_at<=?").bind(now.toISOString()).run();
+  await env.DB!.prepare(
+    "INSERT INTO passkey_challenges (id,user_id,challenge,purpose,expires_at,created_at) VALUES (?,?,?,?,?,?)"
+  ).bind(crypto.randomUUID(), userId, challenge, purpose, new Date(now.getTime() + PASSKEY_CHALLENGE_TTL_SECONDS * 1000).toISOString(), now.toISOString()).run();
+}
+
+async function consumePasskeyChallenge(env: AuthEnv, challenge: string, userId: string | null, purpose: "register" | "authenticate"): Promise<boolean> {
+  const now = new Date().toISOString();
+  const row = await env.DB!.prepare(
+    "SELECT id FROM passkey_challenges WHERE challenge=? AND purpose=? AND user_id IS ? AND expires_at>? LIMIT 1"
+  ).bind(challenge, purpose, userId, now).first<{ id: string }>();
+  if (!row) return false;
+  const result = await env.DB!.prepare(
+    "DELETE FROM passkey_challenges WHERE id=? AND challenge=? AND purpose=? AND user_id IS ? AND expires_at>?"
+  ).bind(row.id, challenge, purpose, userId, now).run() as { meta?: { changes?: number } };
+  return result.meta?.changes === 1;
+}
+
+async function startPasskeyRegistration(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const user = await getCurrentUser(request, env);
+  if (!user) return json({ error: "UNAUTHENTICATED" }, 401);
+  const limited = await passkeyRateLimit(request, env, "register-options:" + user.id, 10);
+  if (limited) return limited;
+  const rp = passkeyRelyingParty(request, env);
+  const existing = await env.DB.prepare(
+    "SELECT credential_id,transports_json FROM passkey_credentials WHERE user_id=?"
+  ).bind(user.id).all<{ credential_id: string; transports_json: string | null }>();
+  const options = await generateRegistrationOptions({
+    rpName: "KitaNotes",
+    rpID: rp.id,
+    userID: new TextEncoder().encode(user.id),
+    userName: user.email,
+    userDisplayName: user.displayName || user.email,
+    attestationType: "none",
+    authenticatorSelection: { residentKey: "required", userVerification: "required" },
+    excludeCredentials: existing.results.map(item => ({
+      id: item.credential_id,
+      transports: item.transports_json ? JSON.parse(item.transports_json) : undefined
+    }))
+  });
+  await savePasskeyChallenge(env, options.challenge, user.id, "register");
+  return json(options);
+}
+
+async function finishPasskeyRegistration(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const user = await getCurrentUser(request, env);
+  if (!user) return json({ error: "UNAUTHENTICATED" }, 401);
+  const limited = await passkeyRateLimit(request, env, "register-verify:" + user.id, 10);
+  if (limited) return limited;
+  const body = await readAuthJson(request);
+  if (!body || typeof body.challenge !== "string" || !body.response || typeof body.response !== "object") return json({ error: "INVALID_PASSKEY_RESPONSE" }, 400);
+  const pending = await env.DB.prepare(
+    "SELECT id FROM passkey_challenges WHERE challenge=? AND purpose='register' AND user_id=? AND expires_at>? LIMIT 1"
+  ).bind(body.challenge, user.id, new Date().toISOString()).first<{ id: string }>();
+  if (!pending) return json({ error: "PASSKEY_CHALLENGE_EXPIRED" }, 400);
+  try {
+    const rp = passkeyRelyingParty(request, env);
+    const verification = await verifyRegistrationResponse({
+      response: body.response,
+      expectedChallenge: body.challenge,
+      expectedOrigin: rp.origin,
+      expectedRPID: rp.id,
+      requireUserVerification: true
+    });
+    if (!verification.verified || !verification.registrationInfo) return json({ error: "PASSKEY_VERIFICATION_FAILED" }, 400);
+    const info = verification.registrationInfo;
+    const credential = info.credential;
+    const consumed = await consumePasskeyChallenge(env, body.challenge, user.id, "register");
+    if (!consumed) return json({ error: "PASSKEY_CHALLENGE_ALREADY_USED" }, 409);
+    await env.DB.prepare(
+      "INSERT INTO passkey_credentials (credential_id,user_id,public_key,counter,transports_json,device_type,backed_up,created_at,last_used_at) VALUES (?,?,?,?,?,?,?,?,NULL)"
+    ).bind(
+      credential.id,
+      user.id,
+      base64Url(credential.publicKey),
+      credential.counter,
+      JSON.stringify(credential.transports ?? []),
+      info.credentialDeviceType,
+      info.credentialBackedUp ? 1 : 0,
+      new Date().toISOString()
+    ).run();
+    return json({ verified: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/UNIQUE|constraint/i.test(message)) return json({ error: "PASSKEY_ALREADY_REGISTERED" }, 409);
+    return json({ error: "PASSKEY_REGISTRATION_FAILED" }, 400);
+  }
+}
+
+async function startPasskeyAuthentication(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const limited = await passkeyRateLimit(request, env, "authenticate-options", 20);
+  if (limited) return limited;
+  const rp = passkeyRelyingParty(request, env);
+  const options = await generateAuthenticationOptions({ rpID: rp.id, userVerification: "required" });
+  await savePasskeyChallenge(env, options.challenge, null, "authenticate");
+  return json(options);
+}
+
+async function finishPasskeyAuthentication(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const limited = await passkeyRateLimit(request, env, "authenticate-verify", 20);
+  if (limited) return limited;
+  const body = await readAuthJson(request);
+  if (!body || typeof body.challenge !== "string" || !body.response || typeof body.response.id !== "string") return json({ error: "INVALID_PASSKEY_RESPONSE" }, 400);
+  const pending = await env.DB.prepare(
+    "SELECT id FROM passkey_challenges WHERE challenge=? AND purpose='authenticate' AND user_id IS NULL AND expires_at>? LIMIT 1"
+  ).bind(body.challenge, new Date().toISOString()).first<{ id: string }>();
+  if (!pending) return json({ error: "PASSKEY_CHALLENGE_EXPIRED" }, 400);
+  const credential = await env.DB.prepare(
+    "SELECT p.credential_id,p.user_id,p.public_key,p.counter,p.transports_json,u.email,u.display_name,u.avatar_url FROM passkey_credentials p JOIN users u ON u.id=p.user_id WHERE p.credential_id=?"
+  ).bind(body.response.id).first<PasskeyCredentialRow>();
+  if (!credential) return json({ error: "PASSKEY_NOT_RECOGNISED" }, 401);
+  try {
+    const expectedUserHandle = base64Url(new TextEncoder().encode(credential.user_id));
+    const suppliedUserHandle = body.response.response?.userHandle;
+    if (typeof suppliedUserHandle !== "string" || suppliedUserHandle !== expectedUserHandle) return json({ error: "PASSKEY_USER_HANDLE_INVALID" }, 401);
+    const rp = passkeyRelyingParty(request, env);
+    const transports = credential.transports_json ? JSON.parse(credential.transports_json) : [];
+    const verification = await verifyAuthenticationResponse({
+      response: body.response,
+      expectedChallenge: body.challenge,
+      expectedOrigin: rp.origin,
+      expectedRPID: rp.id,
+      credential: {
+        id: credential.credential_id,
+        publicKey: fromBase64Url(credential.public_key),
+        counter: credential.counter,
+        transports
+      },
+      requireUserVerification: true
+    });
+    if (!verification.verified) return json({ error: "PASSKEY_VERIFICATION_FAILED" }, 401);
+    const consumed = await consumePasskeyChallenge(env, body.challenge, null, "authenticate");
+    if (!consumed) return json({ error: "PASSKEY_CHALLENGE_ALREADY_USED" }, 409);
+    const updated = await env.DB.prepare(
+      "UPDATE passkey_credentials SET counter=?,last_used_at=? WHERE credential_id=? AND counter=?"
+    ).bind(verification.authenticationInfo.newCounter, new Date().toISOString(), credential.credential_id, credential.counter).run() as { meta?: { changes?: number } };
+    if (updated.meta?.changes !== 1) return json({ error: "PASSKEY_COUNTER_CONFLICT" }, 409);
+    const session = await createSessionForUser(env, credential.user_id);
+    const headers = new Headers();
+    appendCookie(headers, SESSION_COOKIE + "=" + session.token + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + SESSION_TTL_SECONDS);
+    return json({
+      authenticated: true,
+      user: { id: credential.user_id, email: credential.email, displayName: credential.display_name, avatarUrl: credential.avatar_url }
+    }, 200, headers);
+  } catch {
+    return json({ error: "PASSKEY_AUTHENTICATION_FAILED" }, 401);
+  }
+}
+
+async function createSessionForUser(env: AuthEnv, userId: string): Promise<{ token: string; expiresAt: string }> {
+  const token = randomToken();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
+  await env.DB!.prepare(
+    "INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)"
+  ).bind(crypto.randomUUID(), userId, await sha256(token), expiresAt, now).run();
+  return { token, expiresAt };
+}
+
+async function listPasskeys(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  const user = await getCurrentUser(request, env);
+  if (!user) return json({ error: "UNAUTHENTICATED" }, 401);
+  const result = await env.DB.prepare(
+    "SELECT credential_id,device_type,backed_up,created_at,last_used_at FROM passkey_credentials WHERE user_id=? ORDER BY created_at DESC"
+  ).bind(user.id).all<{ credential_id: string; device_type: string; backed_up: number; created_at: string; last_used_at: string | null }>();
+  return json({ passkeys: result.results.map(item => ({
+    id: item.credential_id,
+    deviceType: item.device_type,
+    backedUp: item.backed_up === 1,
+    createdAt: item.created_at,
+    lastUsedAt: item.last_used_at
+  })) });
+}
+
+async function removePasskey(request: Request, env: AuthEnv, credentialId: string): Promise<Response> {
+  if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
+  if (!isSameOriginMutation(request, env)) return json({ error: "CSRF_ORIGIN_REJECTED" }, 403);
+  const user = await getCurrentUser(request, env);
+  if (!user) return json({ error: "UNAUTHENTICATED" }, 401);
+  const result = await env.DB.prepare(
+    "DELETE FROM passkey_credentials WHERE credential_id=? AND user_id=?"
+  ).bind(credentialId, user.id).run() as { meta?: { changes?: number } };
+  return result.meta?.changes === 1 ? json({ ok: true }) : json({ error: "PASSKEY_NOT_FOUND" }, 404);
+}
+
 export async function handleAuthRequest(request: Request, env: AuthEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname === "/api/auth/status" && request.method === "GET") return json({ ready: authConfiguration(env) === null });
   if (url.pathname === "/auth/google" && request.method === "GET") return startGoogleLogin(request, env);
   if (url.pathname === "/auth/google/callback" && request.method === "GET") return completeGoogleLogin(request, env);
+  if (url.pathname === "/api/auth/passkeys/register/options" && request.method === "POST") return startPasskeyRegistration(request, env);
+  if (url.pathname === "/api/auth/passkeys/register/verify" && request.method === "POST") return finishPasskeyRegistration(request, env);
+  if (url.pathname === "/api/auth/passkeys/authenticate/options" && request.method === "POST") return startPasskeyAuthentication(request, env);
+  if (url.pathname === "/api/auth/passkeys/authenticate/verify" && request.method === "POST") return finishPasskeyAuthentication(request, env);
+  if (url.pathname === "/api/auth/passkeys" && request.method === "GET") return listPasskeys(request, env);
+  if (url.pathname.startsWith("/api/auth/passkeys/") && request.method === "DELETE") return removePasskey(request, env, decodeURIComponent(url.pathname.slice("/api/auth/passkeys/".length)));
   if (url.pathname === "/api/auth/me" && request.method === "GET") {
     if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" }, 503);
     const user = await getCurrentUser(request, env);
