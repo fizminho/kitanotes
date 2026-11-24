@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
 import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star } from "lucide-react";
@@ -16,33 +17,64 @@ type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise
 type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void; compact?:boolean };
 function WorkspacePicker({workspaces,activeWorkspaceId,onChange,compact=false}:WorkspacePickerProps){
   const [open,setOpen]=useState(false);
+  const [menuPosition,setMenuPosition]=useState<{top:number;left:number;width:number;maxHeight:number}|null>(null);
   const rootRef=useRef<HTMLDivElement|null>(null);
+  const triggerRef=useRef<HTMLButtonElement|null>(null);
+  const menuRef=useRef<HTMLDivElement|null>(null);
   const active=workspaces.find(item=>item.id===activeWorkspaceId);
+
+  const updateMenuPosition=useCallback(()=>{
+    if(!compact||!triggerRef.current)return;
+    const rect=triggerRef.current.getBoundingClientRect();
+    const width=Math.min(340,window.innerWidth-24);
+    const left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12));
+    const top=Math.min(rect.bottom+8,window.innerHeight-120);
+    setMenuPosition({top,left,width,maxHeight:Math.max(160,Math.min(480,window.innerHeight-top-12))});
+  },[compact]);
+
   useEffect(()=>{
     if(!open)return;
-    const onPointerDown=(event:PointerEvent)=>{if(rootRef.current&&!rootRef.current.contains(event.target as Node))setOpen(false);};
+    const onPointerDown=(event:PointerEvent)=>{
+      const target=event.target as Node;
+      if(rootRef.current?.contains(target)||menuRef.current?.contains(target))return;
+      setOpen(false);
+    };
     const onKeyDown=(event:KeyboardEvent)=>{if(event.key==="Escape")setOpen(false);};
+    const onViewportChange=()=>updateMenuPosition();
     document.addEventListener("pointerdown",onPointerDown);
     document.addEventListener("keydown",onKeyDown);
-    return()=>{document.removeEventListener("pointerdown",onPointerDown);document.removeEventListener("keydown",onKeyDown);};
-  },[open]);
+    if(compact){
+      updateMenuPosition();
+      window.addEventListener("resize",onViewportChange);
+      window.addEventListener("scroll",onViewportChange,true);
+    }
+    return()=>{
+      document.removeEventListener("pointerdown",onPointerDown);
+      document.removeEventListener("keydown",onKeyDown);
+      window.removeEventListener("resize",onViewportChange);
+      window.removeEventListener("scroll",onViewportChange,true);
+    };
+  },[open,compact,updateMenuPosition]);
+
+  const menu=<div ref={menuRef} className="workspace-picker-menu" role="listbox" aria-label="Workspaces"
+    style={compact&&menuPosition?{position:"fixed",top:menuPosition.top,left:menuPosition.left,right:"auto",width:menuPosition.width,maxWidth:"none",maxHeight:menuPosition.maxHeight,zIndex:9999,boxSizing:"border-box"}:undefined}>
+    {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
+      <span className="workspace-picker-option-avatar">{workspace.name.trim().slice(0,1).toUpperCase()||"K"}</span>
+      <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
+      {workspace.id===activeWorkspaceId&&<Check size={16}/>}
+    </button>)}
+    {!workspaces.length&&<div className="workspace-picker-empty">No workspaces available</div>}
+  </div>;
+
   return <div className={compact?"workspace-picker compact":"workspace-picker"} ref={rootRef}>
-    <button type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
+    <button ref={triggerRef} type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
       {!compact&&<span className="workspace-avatar">K</span>}
       <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
       <ChevronDown size={16} className={open?"workspace-picker-chevron open":"workspace-picker-chevron"}/>
     </button>
-    {open&&<div className="workspace-picker-menu" role="listbox" aria-label="Workspaces">
-      {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
-        <span className="workspace-picker-option-avatar">{workspace.name.trim().slice(0,1).toUpperCase()||"K"}</span>
-        <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
-        {workspace.id===activeWorkspaceId&&<Check size={16}/>}
-      </button>)}
-      {!workspaces.length&&<div className="workspace-picker-empty">No workspaces available</div>}
-    </div>}
+    {open&&(compact?createPortal(menu,document.body):menu)}
   </div>;
 }
-
 function localDateTime(value: Date): string { const pad=(n:number)=>String(n).padStart(2,"0"); return value.getFullYear()+"-"+pad(value.getMonth()+1)+"-"+pad(value.getDate())+"T"+pad(value.getHours())+":"+pad(value.getMinutes()); }
 function dateKey(value:Date):string { return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0"); }
 function dateTimeInputFor(value:string,timezone:string):string {
