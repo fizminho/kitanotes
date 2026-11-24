@@ -695,7 +695,7 @@ async function removePasskey(request: Request, env: AuthEnv, credentialId: strin
 export async function handleAuthRequest(request: Request, env: AuthEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname === "/api/auth/status" && request.method === "GET") return json({ ready: authConfiguration(env) === null });
-  if (url.pathname === "/auth/google" && request.method === "GET") return startGoogleLogin(request, env);
+  if ((url.pathname === "/auth/google" || url.pathname === "/auth/google/link") && request.method === "GET") return startGoogleLogin(request, env);
   if (url.pathname === "/auth/google/callback" && request.method === "GET") return completeGoogleLogin(request, env);
   if (url.pathname === "/api/auth/passkeys/signup/options" && request.method === "POST") return startPasskeySignup(request, env);
   if (url.pathname === "/api/auth/passkeys/signup/verify" && request.method === "POST") return finishPasskeySignup(request, env);
