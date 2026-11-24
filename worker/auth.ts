@@ -551,11 +551,26 @@ async function recoverWithPasskeyCode(request: Request, env: AuthEnv): Promise<R
   const codeHash = await sha256(normalized);
   const row = await env.DB.prepare("SELECT user_id FROM passkey_recovery_codes WHERE code_hash=? AND used_at IS NULL").bind(codeHash).first<{user_id:string}>();
   if (!row) return json({error:"RECOVERY_CODE_INVALID"},401);
-  const result = await env.DB.prepare("DELETE FROM passkey_recovery_codes WHERE code_hash=? AND user_id=? AND used_at IS NULL").bind(codeHash,row.user_id).run() as {meta?:{changes?:number}};
-  if (result.meta?.changes !== 1) return json({error:"RECOVERY_CODE_INVALID"},401);
-  const session = await createSessionForUser(env,row.user_id);
+  // Consume the recovery code and create the session in one D1 batch.
+  // The unique marker ensures the session INSERT only follows this request's
+  // successful UPDATE, including under concurrent recovery attempts.
+  if (!env.DB.batch) return json({error:"RECOVERY_TEMPORARILY_UNAVAILABLE"},503);
+  const token=randomToken();
+  const now=new Date().toISOString();
+  const expiresAt=new Date(Date.now()+SESSION_TTL_SECONDS*1000).toISOString();
+  const consumedAt=now+":"+randomToken(8);
+  try {
+    const results=await env.DB.batch([
+      env.DB.prepare("UPDATE passkey_recovery_codes SET used_at=? WHERE code_hash=? AND user_id=? AND used_at IS NULL").bind(consumedAt,codeHash,row.user_id),
+      env.DB.prepare("INSERT INTO sessions (id,user_id,token_hash,expires_at,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM passkey_recovery_codes WHERE code_hash=? AND user_id=? AND used_at=?)")
+        .bind(crypto.randomUUID(),row.user_id,await sha256(token),expiresAt,now,codeHash,row.user_id,consumedAt)
+    ]);
+    if ((results[1] as {meta?:{changes?:number}})?.meta?.changes !== 1) return json({error:"RECOVERY_CODE_INVALID"},401);
+  } catch {
+    return json({error:"RECOVERY_TEMPORARILY_UNAVAILABLE"},503);
+  }
   const headers = new Headers();
-  appendCookie(headers,SESSION_COOKIE+"="+session.token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
+  appendCookie(headers,SESSION_COOKIE+"="+token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+SESSION_TTL_SECONDS);
   return json({authenticated:true},200,headers);
 }
 
