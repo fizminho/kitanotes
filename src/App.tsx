@@ -220,7 +220,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get("token"));
   const [inviteStatus, setInviteStatus] = useState<"idle" | "accepting" | "accepted" | "error">("idle");
-  const [invitePreview,setInvitePreview]=useState<{valid:boolean;workspaceName?:string;inviterName?:string;role?:"editor"|"viewer";memberCount?:number;expiresAt?:string;error?:string}|null>(null);
+  const [invitePreview,setInvitePreview]=useState<{valid:boolean;workspaceName?:string;inviterName?:string;role?:"editor"|"viewer";memberCount?:number;expiresAt?:string;error?:string;workspaceName?:string;inviterName?:string}|null>(null);
   const [inviteError, setInviteError] = useState("");
   const [inviteNotice, setInviteNotice] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -1317,13 +1317,13 @@ export default function App() {
         throw new Error(message);
       }
       setInviteStatus("accepted");
-      setInviteNotice("Invitation accepted. The shared workspace is now available.");
+      setInviteNotice("You joined the workspace as "+(result.role==="editor"?"Editor":"Viewer")+". Events from this workspace will now appear in your calendar.");
       setInviteToken(null);
       const workspaceResponse = await fetch("/api/workspaces", { credentials: "same-origin" });
       if (workspaceResponse.ok) {
         const workspaceResult = await workspaceResponse.json() as { workspaces: Workspace[] };
         setWorkspaces(workspaceResult.workspaces);
-        if (result.workspaceId && workspaceResult.workspaces.some(item => item.id === result.workspaceId)) setActiveWorkspaceId(result.workspaceId);
+        if (result.workspaceId && workspaceResult.workspaces.some(item => item.id === result.workspaceId)) {const joined=workspaceResult.workspaces.find(item=>item.id===result.workspaceId)!;setActiveWorkspaceId(result.workspaceId);setInviteNotice("You joined "+joined.name+" as "+(result.role==="editor"?"Editor":"Viewer")+". "+(joined.icon??"📁")+" Calendar colour "+(joined.color??"#7565d8")+". Events from this workspace will now appear in your calendar.");}
       }
     } catch (error) {
       setInviteStatus("error");

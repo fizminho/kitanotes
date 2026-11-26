@@ -325,8 +325,8 @@ async function invitationPreview(request:Request,env:InvitationEnv):Promise<Resp
   const row=await env.DB!.prepare("SELECT i.workspace_id,i.role,i.status,i.expires_at,w.name AS workspace_name,u.display_name AS inviter_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id LEFT JOIN users u ON u.id=i.invited_by_user_id WHERE i.token_hash=?")
     .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";status:string;expires_at:string;workspace_name:string;inviter_name:string|null}>();
   if(!row)return json({valid:false,error:"INVITATION_INVALID"});
-  if(row.status!=="pending")return json({valid:false,error:row.status==="revoked"?"INVITATION_REVOKED":"INVITATION_ALREADY_USED"});
-  if(row.expires_at<=new Date().toISOString())return json({valid:false,error:"INVITATION_EXPIRED"},410);
+  if(row.status!=="pending")return json({valid:false,error:row.status==="revoked"?"INVITATION_REVOKED":"INVITATION_ALREADY_USED",workspaceName:row.workspace_name,inviterName:row.inviter_name||"the workspace owner"});
+  if(row.expires_at<=new Date().toISOString())return json({valid:false,error:"INVITATION_EXPIRED",workspaceName:row.workspace_name,inviterName:row.inviter_name||"the workspace owner"},410);
   const count=await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id=?").bind(row.workspace_id).first<{total:number}>();
   return json({valid:true,workspaceName:row.workspace_name,inviterName:row.inviter_name||"A workspace member",role:row.role,memberCount:count?.total??0,expiresAt:row.expires_at});
 }
