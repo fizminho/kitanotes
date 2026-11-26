@@ -239,6 +239,8 @@ export default function App() {
   const [eventReminderAt, setEventReminderAt] = useState("");
   const [eventReminderAuto,setEventReminderAuto]=useState(true);
   const [eventLinkedNoteId, setEventLinkedNoteId] = useState("");
+  const [eventWorkspaceId,setEventWorkspaceId]=useState("");
+  const [eventWorkspaceNotes,setEventWorkspaceNotes]=useState<Note[]>([]);
   const [eventTimezone, setEventTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur");
   const [eventSaving, setEventSaving] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -1031,23 +1033,27 @@ export default function App() {
     setEventReminderAt(defaultReminderDateTime(start,eventTimezone));
     setEventReminderAuto(true);
     setEventLinkedNoteId("");
+    const writable=workspaces.filter(item=>item.role==="owner"||item.role==="editor");
+    const target=writable.some(item=>item.id===activeWorkspaceId)?activeWorkspaceId:(writable[0]?.id??"");
+    setEventWorkspaceId(target);
+    setEventWorkspaceNotes(target===activeWorkspaceId?notes:[]);
     setEventsError("");
     setEventComposerOpen(true);
   }
 
   function startEditEvent(item:CalendarEvent) {
-    setEditingEvent(item);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
+    setEditingEvent(item);setEventWorkspaceId(item.workspaceId);setEventWorkspaceNotes(item.workspaceId===activeWorkspaceId?notes:[]);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
     setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
     const reminder=eventReminders.filter(value=>value.eventId===item.id).sort((a,b)=>b.dueAt.localeCompare(a.dueAt))[0]??null;
     setEditingEventReminder(reminder);setEventReminderAt(reminder&&reminder.status==="pending"?dateTimeInputFor(reminder.dueAt,reminder.timezone):"");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
   }
 
   async function saveEvent() {
-    if(!activeWorkspaceId||!eventTitle.trim()||eventSaving)return;
+    if(!(workspaces.some(item=>item.id===eventWorkspaceId&&(item.role==="owner"||item.role==="editor")))||!eventTitle.trim()||eventSaving)return;
     setEventSaving(true);setEventsError("");
     try {
       const payload={title:eventTitle,description:eventDescription,startsAt:zonedDateTimeToIso(eventStart,eventTimezone),endsAt:zonedDateTimeToIso(eventEnd,eventTimezone),timezone:eventTimezone,linkedNoteId:eventLinkedNoteId||null};
-      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:activeWorkspaceId})});
+      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:eventWorkspaceId})});
       const result=await response.json() as {event?:CalendarEvent};
       if(!response.ok||!result.event)throw new Error(response.status===409?"This event changed elsewhere. Close and reopen it before saving.":"Unable to save this event.");
       setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
@@ -1061,7 +1067,7 @@ export default function App() {
         }
       }else if(eventReminderAt){
         const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:activeWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone
+          workspaceId:eventWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone
         })});
         if(!reminderResponse.ok)throw new Error("Event saved, but its reminder could not be created.");
       }
@@ -1599,7 +1605,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">NOTES · CALENDAR · SHARED WORKSPACES</div><h1>{view === "notes" ? "My Notes" : view === "calendar" ? "Calendar" : "Shared with Me"}</h1><p>{view === "notes" ? "Save notes, organise them into categories, and find them when you need them." : view === "calendar" ? "View your saved events and reminders." : "Notes and workspaces shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
+            {view === "calendar" && user && workspaces.some(item=>item.role==="owner"||item.role==="editor") && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "calendar" && user && !workspaces.some(item=>item.role==="owner"||item.role==="editor") && <span className="calendar-readonly-hint">You have view-only access to your joined workspaces.</span>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
@@ -1625,14 +1631,14 @@ export default function App() {
 
           {view === "calendar" && <Suspense fallback={<div className="loading-state">Loading calendar…</div>}>
             <CalendarView
-              events={events} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError}
+              events={events} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError} workspaces={workspaces}
               holidayFeedStatus={holidayFeedStatus} holidayState={holidayState} onHolidayStateChange={saveHolidayState}
               calendarMode={calendarMode} setCalendarMode={setCalendarMode} calendarCursor={calendarCursor}
               setCalendarCursor={setCalendarCursor} calendarHeading={calendarHeading} calendarDays={calendarDays}
               calendarAgendaItems={calendarAgendaItems} calendarTransferBusy={calendarTransferBusy}
               calendarIcsInputRef={calendarIcsInputRef} onImportCalendarIcs={importCalendarIcs}
               onExportCalendarIcs={exportCalendarIcs} onMoveCalendar={moveCalendar}
-              onEditEvent={startEditEvent} onDeleteEvent={deleteEvent}
+              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent}
             />
           </Suspense>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
@@ -1753,14 +1759,15 @@ export default function App() {
       {eventComposerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEventComposerOpen(false);}}>
         <section className="composer event-composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
           <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">{editingEvent?"Edit event":"New event"}</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <label className="field-label">Workspace<select className="invite-input" value={eventWorkspaceId} disabled={!!editingEvent} onChange={async e=>{const id=e.target.value;setEventWorkspaceId(id);setEventLinkedNoteId("");if(id===activeWorkspaceId){setEventWorkspaceNotes(notes);return;}try{const response=await fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(id),{credentials:"same-origin"});if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}catch(error){setEventWorkspaceNotes([]);setEventsError(error instanceof Error?error.message:"Unable to load workspace notes.");}}}>{workspaces.filter(item=>item.role==="owner"||item.role==="editor").map(item=><option key={item.id} value={item.id}>{item.name} · {item.role==="owner"?"Owner":"Editor"}</option>)}</select>{editingEvent&&<small className="calendar-reminder-help">Events stay in their original workspace. Create a new event to use another workspace.</small>}</label>
           <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>{setEventStart(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(e.target.value,eventTimezone));}}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>{setEventTimezone(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(eventStart,e.target.value));}} placeholder="Asia/Kuala_Lumpur"/></label>
-          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{eventWorkspaceNotes.filter(note=>note.workspaceId===eventWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
           <label className="field-label">Event reminder{editingEventReminder&&<small className="calendar-reminder-help">{editingEventReminder.status==="pending"?"Current reminder":"Previous reminder"}: {new Date(editingEventReminder.dueAt).toLocaleString(undefined,{timeZone:editingEventReminder.timezone,dateStyle:"medium",timeStyle:"short"})} · {editingEventReminder.timezone} · {editingEventReminder.status}</small>}<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>{setEventReminderAt(e.target.value);setEventReminderAuto(false);}}/>{!editingEventReminder&&<small className="calendar-reminder-help">Automatically set to 1 day before. You can change the time or leave it empty.</small>}<button type="button" className="text-action" onClick={()=>{setEventReminderAt(defaultReminderDateTime(eventStart,eventTimezone));setEventReminderAuto(true);}}>{editingEventReminder?"Set a new reminder 1 day before":"Reset to 1 day before"}</button>{editingEventReminder?.status==="pending"&&<button type="button" className="text-action" onClick={()=>setEventReminderAt("")}>Remove reminder</button>}</label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
-          <footer><span>{editingEvent?"Event and reminder changes are saved separately.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
+          <footer><span>{editingEvent?"Event and reminder changes are saved separately.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||!eventWorkspaceId||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
       </div>}
 
