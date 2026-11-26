@@ -1860,7 +1860,7 @@ export default function App() {
 
           {view === "calendar" && <Suspense fallback={<div className="loading-state">Loading calendar…</div>}>
             <CalendarView
-              events={events} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError} workspaces={workspaces}
+              events={events} reminders={eventReminders} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError} workspaces={workspaces}
               holidayFeedStatus={holidayFeedStatus} holidayState={holidayState} onHolidayStateChange={saveHolidayState}
               calendarMode={calendarMode} setCalendarMode={setCalendarMode} calendarCursor={calendarCursor}
               setCalendarCursor={setCalendarCursor} calendarHeading={calendarHeading} calendarDays={calendarDays}

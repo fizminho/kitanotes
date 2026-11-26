@@ -1161,3 +1161,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .calendar-workspace-color-picker:focus-visible{outline:2px solid #6558ce;outline-offset:2px}
 .workspace-picker-copy small,.workspace-picker-option-copy small,.notification-settings-note,.workspace-notification-row small,.sync-status{font-size:max(0.75rem,0.75em)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important}}
+
+.calendar-detail-card.reminder{border-style:dashed}.calendar-reminder-summary{margin-top:10px}

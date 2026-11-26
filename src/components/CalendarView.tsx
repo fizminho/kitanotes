@@ -9,10 +9,11 @@ type CalendarEvent = {
   updatedByName:string|null; createdAt:string; updatedAt:string; version:number;
 };
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
+type CalendarReminder = {id:string;workspaceId:string;eventId:string|null;noteId:string|null;title:string;dueAt:string;timezone:string;status:"pending"|"delivered"|"cancelled"};
 type HolidayFeedStatus = {holidayWise:boolean;kpm:boolean;publicHolidayCount:number;schoolHolidayCount:number;holidayWiseError:string|null};
 type WorkspaceSource = {id:string;name:string;role:"owner"|"editor"|"viewer";color?:string|null;icon?:string|null};
 type Props = {
-  events:CalendarEvent[]; holidays:CalendarItem[]; eventsLoading:boolean; eventsError:string; workspaces:WorkspaceSource[];
+  events:CalendarEvent[]; reminders:CalendarReminder[]; holidays:CalendarItem[]; eventsLoading:boolean; eventsError:string; workspaces:WorkspaceSource[];
   canManageEvent:(event:CalendarEvent)=>boolean;
   holidayFeedStatus:HolidayFeedStatus|null; holidayState:string; onHolidayStateChange:(value:string)=>void;
   calendarMode:"month"|"week"; setCalendarMode:Dispatch<SetStateAction<"month"|"week">>;
@@ -23,11 +24,16 @@ type Props = {
   onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; onOpenLinkedNote:(noteId:string,workspaceId:string)=>void; onRefresh:()=>void; calendarFocusDate?:string|null;
 };
 function contrastText(hex:string){const value=hex.replace("#","");if(!/^[0-9a-fA-F]{6}$/.test(value))return "#fff";const channels=[0,2,4].map(index=>parseInt(value.slice(index,index+2),16)/255).map(channel=>channel<=0.04045?channel/12.92:Math.pow((channel+0.055)/1.055,2.4));const luminance=0.2126*channels[0]+0.7152*channels[1]+0.0722*channels[2];return luminance>0.179?"#111827":"#fff";}
+function zonedDateKey(value:string,timeZone:string):string {
+  const date=new Date(value);if(Number.isNaN(date.getTime()))return "";
+  try{const parts=new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);const part=(type:string)=>parts.find(item=>item.type===type)?.value??"";return part("year")+"-"+part("month")+"-"+part("day");}
+  catch{return dateKey(date);}
+}
 function dateKey(value:Date):string {
   return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
 }
 export default function CalendarView(props:Props) {
-  const {events,holidays,eventsLoading,eventsError,workspaces,canManageEvent,holidayFeedStatus,holidayState,onHolidayStateChange,
+  const {events,reminders,holidays,eventsLoading,eventsError,workspaces,canManageEvent,holidayFeedStatus,holidayState,onHolidayStateChange,
     calendarMode,setCalendarMode,calendarCursor,setCalendarCursor,calendarHeading,calendarDays,
     calendarTransferBusy,calendarIcsInputRef,onImportCalendarIcs,onExportCalendarIcs,
     onMoveCalendar,onEditEvent,onDeleteEvent,onOpenLinkedNote,onRefresh,calendarFocusDate}=props;
@@ -60,6 +66,10 @@ export default function CalendarView(props:Props) {
   const monthEventCount=monthItems.filter(item=>!item.holiday).length;
   const monthPublicHolidayCount=monthItems.filter(item=>item.holiday&&item.holidayType!=="school").length;
   const monthSchoolHolidayCount=monthItems.filter(item=>item.holiday&&item.holidayType==="school").length;
+  const visibleReminders=reminders.filter(item=>item.status==="pending"&&!item.eventId&&(workspaceFilter==="all"||item.workspaceId===workspaceFilter));
+  const monthReminders=visibleReminders.filter(item=>{const key=zonedDateKey(item.dueAt,item.timezone);return key>=dateKey(periodStart)&&key<dateKey(periodEnd);});
+  const selectedDayReminders=selectedDate?visibleReminders.filter(item=>zonedDateKey(item.dueAt,item.timezone)===dateKey(selectedDate)):[];
+  function reminderWorkspaceName(item:CalendarReminder){return workspaceById.get(item.workspaceId)?.name??"Workspace";}
   function showMonthSummary(){setSelectedDate(null);}
   function movePeriod(amount:number){setSelectedDate(null);onMoveCalendar(amount);}
   function goToToday(){setSelectedDate(null);setCalendarCursor(new Date());}
@@ -82,16 +92,16 @@ export default function CalendarView(props:Props) {
     <section className="calendar-selected-agenda" aria-live="polite">
       {!selectedDate?<><div className="calendar-agenda-heading"><div><span className="calendar-agenda-eyebrow">MONTHLY SUMMARY</span><h3>{calendarHeading}</h3></div><span className="calendar-agenda-count">{monthItems.length} {monthItems.length===1?"item":"items"}</span></div>
         <div className="calendar-month-summary-stats" role="group" aria-label="Monthly calendar totals"><div><strong>{monthEventCount}</strong><span>Events</span></div><div><strong>{monthPublicHolidayCount}</strong><span>Public holidays</span></div><div><strong>{monthSchoolHolidayCount}</strong><span>School holidays</span></div></div>
-        {eventsLoading?<p className="calendar-selected-empty">Loading this month’s schedule…</p>:monthItems.length===0?<p className="calendar-selected-empty">Nothing scheduled for this month yet.</p>:<div className="calendar-month-summary-list">{monthItems.map(item=><article className={"calendar-detail-card"+(item.holiday?" holiday "+(item.holidayType||"public"):" personal-event")} key={(item.holiday?"holiday-":"event-")+item.id}>
+        {eventsLoading?<p className="calendar-selected-empty">Loading this month’s schedule…</p>:monthItems.length===0&&monthReminders.length===0?<p className="calendar-selected-empty">Nothing scheduled for this month yet.</p>:<>{monthItems.length>0&&<div className="calendar-month-summary-list">{monthItems.map(item=><article className={"calendar-detail-card"+(item.holiday?" holiday "+(item.holidayType||"public"):" personal-event")} key={(item.holiday?"holiday-":"event-")+item.id}>
           <span className={"calendar-detail-marker "+(item.holiday?(item.holidayType||"public"):"event")} style={!item.holiday?{backgroundColor:workspaceById.get(item.workspaceId)?.color}:undefined}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>{item.holiday?(item.holidayType==="school"?"SCHOOL HOLIDAY · KPM":"PUBLIC HOLIDAY · MALAYSIA"):(workspaceById.get(item.workspaceId)?.name??"WORKSPACE EVENT")}</span>{item.allDay&&<span>ALL DAY</span>}</div><h4>{item.title}</h4><p className="calendar-detail-date">{dateRange(item)}{!item.allDay?" · "+new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",timeZone:item.timezone}):""}</p>{item.description&&<p className="calendar-detail-description">{item.description}</p>}{item.linkedNoteId&&(item.linkedNoteTitle?<button type="button" className="calendar-linked-note" onClick={()=>onOpenLinkedNote(item.linkedNoteId!,item.workspaceId)} aria-label={"Open linked note "+item.linkedNoteTitle+" in "+(workspaceById.get(item.workspaceId)?.name??"workspace")}><Link2 size={14}/><span>{item.linkedNoteTitle}</span><small>{workspaceById.get(item.workspaceId)?.name??"Workspace"}</small></button>:<span className="calendar-linked-note unavailable"><Link2 size={14}/> Note unavailable</span>)}</div>
           {!item.holiday&&canManageEvent(item)&&<div className="calendar-detail-actions"><button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label={"Edit "+item.title}><Pencil size={15}/></button><button className="mini-icon" onClick={()=>onDeleteEvent(item)} aria-label={"Delete "+item.title}><Archive size={15}/></button></div>}
-        </article>)}</div>}
+        </article>)}</div>}{monthReminders.length>0&&<div className="calendar-month-summary-list calendar-reminder-summary">{monthReminders.map(item=><article className="calendar-detail-card reminder" key={"reminder-"+item.id}><span className="calendar-detail-marker event" style={{backgroundColor:workspaceById.get(item.workspaceId)?.color}}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>REMINDER · {reminderWorkspaceName(item)}</span></div><h4>{item.title}</h4><p className="calendar-detail-date">Due {new Date(item.dueAt).toLocaleString(undefined,{timeZone:item.timezone,dateStyle:"medium",timeStyle:"short"})} · {item.timezone}</p></div></article>)}</div>}</>}
       </>:<><div className="calendar-agenda-heading"><div><span className="calendar-agenda-eyebrow">DAY DETAILS</span><h3>{selectedDateLabel}</h3></div><div><button className="secondary-button" type="button" onClick={showMonthSummary}>Monthly summary</button><span className="calendar-agenda-count">{selectedDayItems.length} {selectedDayItems.length===1?"item":"items"}</span></div></div>
-        {selectedDayItems.length===0?<p className="calendar-selected-empty">No events or holidays on this date.</p>:selectedDayItems.map(item=><article className={"calendar-detail-card"+(item.holiday?" holiday "+(item.holidayType||"public"):" personal-event")} key={item.id}>
+        {selectedDayItems.length===0&&selectedDayReminders.length===0?<p className="calendar-selected-empty">No events, holidays or reminders on this date.</p>:<>{selectedDayItems.map(item=><article className={"calendar-detail-card"+(item.holiday?" holiday "+(item.holidayType||"public"):" personal-event")} key={item.id}>
           <span className={"calendar-detail-marker "+(item.holiday?(item.holidayType||"public"):"event")} style={!item.holiday?{backgroundColor:workspaceById.get(item.workspaceId)?.color}:undefined}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>{item.holiday?(item.holidayType==="school"?"SCHOOL HOLIDAY · KPM":"PUBLIC HOLIDAY · MALAYSIA"):(workspaceById.get(item.workspaceId)?.name??"WORKSPACE EVENT")}</span>{item.allDay&&<span>ALL DAY</span>}</div><h4>{item.title}</h4><p className="calendar-detail-date">{dateRange(item)}{!item.allDay?" · "+new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",timeZone:item.timezone})+" – "+new Date(item.endsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",timeZone:item.timezone}):""}</p>{item.description&&<p className="calendar-detail-description">{item.description}</p>}{item.linkedNoteId&&(item.linkedNoteTitle?<button type="button" className="calendar-linked-note" onClick={()=>onOpenLinkedNote(item.linkedNoteId!,item.workspaceId)} aria-label={"Open linked note "+item.linkedNoteTitle+" in "+(workspaceById.get(item.workspaceId)?.name??"workspace")}><Link2 size={14}/><span>{item.linkedNoteTitle}</span><small>{workspaceById.get(item.workspaceId)?.name??"Workspace"}</small></button>:<span className="calendar-linked-note unavailable"><Link2 size={14}/> Note unavailable</span>)}
             {item.holiday&&item.holidayType==="school"&&<p className="calendar-detail-source">Kalendar Akademik Kementerian Pendidikan Malaysia · {holidayState.replace(/-/g," ")}</p>}{item.holiday&&item.holidayType==="public"&&<p className="calendar-detail-source">Cuti umum persekutuan / negeri · {holidayState.replace(/-/g," ")}</p>}</div>
           {!item.holiday&&canManageEvent(item)&&<div className="calendar-detail-actions"><button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label={"Edit "+item.title}><Pencil size={15}/></button><button className="mini-icon" onClick={()=>onDeleteEvent(item)} aria-label={"Delete "+item.title}><Archive size={15}/></button></div>}
-        </article>)}</>}
+        </article>)}{selectedDayReminders.map(item=><article className="calendar-detail-card reminder" key={"reminder-"+item.id}><span className="calendar-detail-marker event" style={{backgroundColor:workspaceById.get(item.workspaceId)?.color}}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>REMINDER · {reminderWorkspaceName(item)}</span></div><h4>{item.title}</h4><p className="calendar-detail-date">Due {new Date(item.dueAt).toLocaleString(undefined,{timeZone:item.timezone,dateStyle:"medium",timeStyle:"short"})} · {item.timezone}</p></div></article>)}</>}
     </section>
 
 
