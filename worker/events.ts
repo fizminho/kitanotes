@@ -81,6 +81,9 @@ async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:Execu
   const allDay=body.allDay===undefined?false:body.allDay;
   if(!title||description===null||!starts||!ends||ends<=starts||!timezone||typeof allDay!=="boolean") return json({error:"INVALID_EVENT"},400);
   const db=env.DB!;
+  // Event creation must always target the workspace explicitly selected in the composer.
+  // Never silently fall back to the user's personal workspace when the client omits it.
+  if(typeof body.workspaceId!=="string"||!body.workspaceId.trim()) return json({error:"WORKSPACE_REQUIRED"},400);
   const workspaceId=await writeWorkspace(db,userId,body.workspaceId);
   if(!workspaceId) return json({error:"WORKSPACE_FORBIDDEN"},403);
   const linkedNoteId=body.linkedNoteId===undefined||body.linkedNoteId===null||body.linkedNoteId===""?null:(typeof body.linkedNoteId==="string"?cleanText(body.linkedNoteId,64):undefined);
