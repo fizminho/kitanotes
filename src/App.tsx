@@ -131,6 +131,7 @@ type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
 };
+function noteDraftStorageKey(userId:string,workspaceId:string,noteId:string|null){return "kitanotes-note-draft:"+userId+":"+workspaceId+":"+(noteId??"new");}
 type NoteConflict = {latest:Note;mine:{title:string;content:string;categoryId:string|null}};
 
 export default function App() {
@@ -441,6 +442,21 @@ export default function App() {
     return()=>{active=false;window.clearTimeout(timer);controller.abort();};
   },[globalSearchActive,user,view,query]);
 
+  useEffect(()=>{
+    if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote)return;
+    let active=true,inFlight=false,timer:number|undefined;let controller:AbortController|null=null;
+    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
+      try{const response=await fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to sync notes.");const result=await response.json() as {notes:Note[]};if(active)setNotes(current=>{const byId=new Map(current.map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return result.notes.map(note=>byId.get(note.id)!).sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});}
+      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotesError(error instanceof Error?error.message:"Notes sync paused.");}
+      finally{inFlight=false;controller=null;schedule();}
+    };
+    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
+    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
+    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+  },[view,user,activeWorkspaceId,composerOpen,editingNote?.id]);
+
   // Keep an open shared note fresh without a scheduled Worker cron or realtime infrastructure.
   useEffect(() => {
     if (!viewingNote?.id) return;
@@ -474,8 +490,29 @@ export default function App() {
     return () => { active = false; window.clearInterval(timer); };
   }, [viewingNote?.id, checklistSavingLine]);
 
+  useEffect(()=>{
+    if(!composerOpen||!user||!activeWorkspaceId)return;
+    try{localStorage.setItem(noteDraftStorageKey(user.id,editingNote?.workspaceId??activeWorkspaceId,editingNote?.id??null),JSON.stringify({title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null,updatedAt:Date.now()}));}catch{/* local drafts are best-effort */}
+  },[composerOpen,user,activeWorkspaceId,editingNote?.id,editingNote?.workspaceId,draftTitle,draftContent,selectedCategoryId]);
+
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
   useEffect(() => { setCategoryFilter("");if(activeWorkspaceId){try{localStorage.setItem("kitanotes-active-workspace",activeWorkspaceId);}catch{/* storage unavailable */}} }, [activeWorkspaceId]);
+
+  useEffect(()=>{
+    if(!user)return;
+    let active=true,timer:number|undefined,controller:AbortController|null=null;
+    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();
+      try{const response=await fetch("/api/workspaces",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)return;const result=await response.json() as {workspaces:Workspace[];starredWorkspaceId:string|null};if(!active)return;
+        setWorkspaces(result.workspaces);setStarredWorkspaceId(result.starredWorkspaceId);
+        if(!result.workspaces.some(item=>item.id===activeWorkspaceId)){const next=result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);if(activeWorkspaceId)pushToast("You no longer have access to a workspace. Your view has been switched.");}
+      }catch{/* retry on the next cycle */}finally{controller=null;schedule();}
+    };
+    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),60000);};
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
+    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
+    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+  },[user,activeWorkspaceId,pushToast]);
 
   useEffect(() => {
     if (!user) { setUnreadCount(0); return; }
@@ -727,19 +764,16 @@ export default function App() {
 
   function startNewNote() {
     setEditingNote(null);
-    setDraftTitle("");
-    setDraftContent("");
-    setSelectedCategoryId("");
+    setDraftTitle("");setDraftContent("");setSelectedCategoryId("");
+    if(user&&activeWorkspaceId){try{const raw=localStorage.getItem(noteDraftStorageKey(user.id,activeWorkspaceId,null));if(raw){const draft=JSON.parse(raw) as {title?:string;content?:string;categoryId?:string|null;updatedAt?:number};if(Date.now()-(draft.updatedAt??0)<7*24*60*60*1000){setDraftTitle(draft.title??"");setDraftContent(draft.content??"");setSelectedCategoryId(draft.categoryId??"");pushToast("Recovered your unsaved note draft.");}}}catch{/* ignore invalid or unavailable local draft */}}
     setComposerOpen(true);
   }
 
   const startEditNote = useCallback((note: Note) => {
-    setEditingNote(note);
-    setDraftTitle(note.title);
-    setDraftContent(note.content);
-    setSelectedCategoryId(note.categoryId ?? "");
+    setEditingNote(note);setDraftTitle(note.title);setDraftContent(note.content);setSelectedCategoryId(note.categoryId??"");
+    if(user){try{const raw=localStorage.getItem(noteDraftStorageKey(user.id,note.workspaceId,note.id));if(raw){const draft=JSON.parse(raw) as {title?:string;content?:string;categoryId?:string|null;updatedAt?:number};if(Date.now()-(draft.updatedAt??0)<7*24*60*60*1000){setDraftTitle(draft.title??note.title);setDraftContent(draft.content??note.content);setSelectedCategoryId(draft.categoryId??note.categoryId??"");pushToast("Recovered your unsaved changes.");}}}catch{/* ignore local draft errors */}}
     setComposerOpen(true);
-  }, []);
+  }, [user,pushToast]);
 
   async function enableNoteChecklist() {
     if (!viewingNote || !canWrite || checklistSavingLine !== null) return;
@@ -830,6 +864,7 @@ export default function App() {
       setNotes(current => editingNote
         ? current.map(note => note.id === result.note!.id ? result.note! : note)
         : [result.note!, ...current]);
+      try{localStorage.removeItem(noteDraftStorageKey(user!.id,editingNote?.workspaceId??activeWorkspaceId,editingNote?.id??null));}catch{/* ignore storage errors */}
       setComposerOpen(false);
       setEditingNote(null);
       pushToast(editingNote ? "Note updated" : "Note saved");
