@@ -507,8 +507,8 @@ export default function App() {
       if(!cursor)setWorkspaces(result.workspaces);
       else setWorkspaces(current=>{const removed=new Set(result.removedWorkspaceIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.workspaces)byId.set(item.id,item);return [...byId.values()];});
       setStarredWorkspaceId(result.starredWorkspaceId);cursor=result.nextCursor??new Date().toISOString();
-      const available=cursor&&result.removedWorkspaceIds?.includes(activeWorkspaceId);
-      if(available){const next=user.personalWorkspaceId;setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);pushToast("You no longer have access to a workspace. Your view has been switched.");}
+      const available=Boolean(cursor&&result.removedWorkspaceIds?.includes(activeWorkspaceId));
+      if(available){const next=user.personalWorkspaceId??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);pushToast("You no longer have access to a workspace. Your view has been switched.");}
     });
   },[user,activeWorkspaceId,pushToast]);
 
