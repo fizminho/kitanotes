@@ -514,13 +514,15 @@ export default function App() {
     return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
   },[user,activeWorkspaceId,pushToast]);
 
-  useEffect(() => {
-    if (!user) { setUnreadCount(0); return; }
-    let active = true;
-    fetch("/api/notifications?limit=1",{credentials:"same-origin"})
-      .then(async response=>{if(!response.ok)return;const result=await response.json() as {unreadCount:number};if(active)setUnreadCount(result.unreadCount);})
-      .catch(()=>undefined);
-    return ()=>{active=false;};
+  useEffect(()=>{
+    if(!user){setUnreadCount(0);return;}
+    let active=true,timer:number|undefined,controller:AbortController|null=null;
+    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();try{const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(response.ok){const result=await response.json() as {unreadCount:number};if(active)setUnreadCount(result.unreadCount);}}catch{/* retried next cycle */}finally{controller=null;schedule();}};
+    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
+    void sync();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
+    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
   },[user]);
 
   useEffect(() => {
@@ -618,19 +620,19 @@ export default function App() {
     return ()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
   },[view,user,calendarMode,calendarCursor,calendarRefresh]);
   
-  useEffect(() => {
-    if (!notificationsOpen || !user) return;
-    let active = true;
-    setNotificationsLoading(true);
-    fetch("/api/notifications?limit=50",{credentials:"same-origin"})
-      .then(async response=>{
-        if(!response.ok) throw new Error("Unable to load notifications.");
-        const result=await response.json() as {notifications:Notification[];unreadCount:number};
-        if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);}
-      })
-      .catch(error=>{if(active)setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");})
-      .finally(()=>{if(active)setNotificationsLoading(false);});
-    return ()=>{active=false;};
+  useEffect(()=>{
+    if(!notificationsOpen||!user)return;
+    let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
+    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();setNotificationsLoading(true);
+      try{const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to load notifications.");const result=await response.json() as {notifications:Notification[];unreadCount:number};if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);setNotificationError("");}}
+      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");}
+      finally{inFlight=false;controller=null;if(active)setNotificationsLoading(false);schedule();}
+    };
+    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
+    void sync();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
+    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
   },[notificationsOpen,user]);
 
   useEffect(()=>{
@@ -1445,6 +1447,20 @@ export default function App() {
     } catch (error) { setInviteCreateError(error instanceof Error ? error.message : "Unable to create a new invitation link."); }
     finally { setInviteSending(false); }
   }
+
+  useEffect(()=>{
+    if(!inviteOpen||manageTab!=="activity"||!activeWorkspaceId)return;
+    let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
+    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
+      try{const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter);const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)return;const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};if(active){setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);}}
+      catch{/* next poll retries */}finally{inFlight=false;controller=null;schedule();}
+    };
+    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),15000);};
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
+    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
+    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+  },[inviteOpen,manageTab,activeWorkspaceId,activityTypeFilter,activityPersonFilter]);
 
   async function loadMoreActivity(){
     if(!activeWorkspaceId||!activityNextCursor||activityLoadingMore)return;
