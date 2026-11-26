@@ -1,8 +1,9 @@
 type PollTask=(signal:AbortSignal)=>Promise<void>;
 type PollEntry={key:string;intervalMs:number;task:PollTask;refs:number;failures:number;timer:number|null;controller:AbortController|null;inFlight:boolean};
 const entries=new Map<string,PollEntry>();
+let lastSuccessfulSyncAt:string|null=null;
 type SyncStatus="up-to-date"|"syncing"|"paused";
-function emitStatus(){if(typeof window==="undefined")return;const status:SyncStatus=!canPoll()||[...entries.values()].some(entry=>entry.failures>=2)?"paused":[...entries.values()].some(entry=>entry.inFlight)?"syncing":"up-to-date";window.dispatchEvent(new CustomEvent("kitanotes:sync-status",{detail:{status,updatedAt:status==="up-to-date"?new Date().toISOString():null}}));}
+function emitStatus(){if(typeof window==="undefined")return;const status:SyncStatus=!canPoll()||[...entries.values()].some(entry=>entry.failures>=2)?"paused":[...entries.values()].some(entry=>entry.inFlight)?"syncing":"up-to-date";window.dispatchEvent(new CustomEvent("kitanotes:sync-status",{detail:{status,updatedAt:lastSuccessfulSyncAt}}));}
 let listenersInstalled=false;
 export function pollDelay(intervalMs:number,failures:number,random=Math.random()):number{
   const backedOff=Math.min(60000,intervalMs*Math.pow(2,Math.max(0,failures)));
@@ -20,7 +21,7 @@ function schedule(entry:PollEntry,immediate=false){
 async function execute(entry:PollEntry){
   if(entries.get(entry.key)!==entry||entry.inFlight||!canPoll())return;
   entry.inFlight=true;const controller=new AbortController();entry.controller=controller;emitStatus();
-  try{await entry.task(controller.signal);entry.failures=0;}
+  try{await entry.task(controller.signal);if(!controller.signal.aborted){entry.failures=0;lastSuccessfulSyncAt=new Date().toISOString();}}
   catch(error){if(!(error instanceof DOMException&&error.name==="AbortError"))entry.failures=Math.min(8,entry.failures+1);}
   finally{entry.inFlight=false;if(entry.controller===controller)entry.controller=null;emitStatus();schedule(entry);}
 }

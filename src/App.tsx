@@ -439,7 +439,7 @@ export default function App() {
     if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
   },[workspaces,pushToast]);
 
-  useEffect(()=>{setViewingNote(null);},[activeWorkspaceId]);
+  useEffect(()=>{setViewingNote(current=>current&&current.workspaceId!==activeWorkspaceId?null:current);},[activeWorkspaceId]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
