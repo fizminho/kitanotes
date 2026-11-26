@@ -26,7 +26,7 @@ function dateKey(value:Date):string {
 export default function CalendarView(props:Props) {
   const {events,holidays,eventsLoading,eventsError,holidayFeedStatus,holidayState,onHolidayStateChange,
     calendarMode,setCalendarMode,calendarCursor,setCalendarCursor,calendarHeading,calendarDays,
-    calendarAgendaItems,calendarTransferBusy,calendarIcsInputRef,onImportCalendarIcs,onExportCalendarIcs,
+    calendarTransferBusy,calendarIcsInputRef,onImportCalendarIcs,onExportCalendarIcs,
     onMoveCalendar,onEditEvent,onDeleteEvent}=props;
   const [selectedDate,setSelectedDate]=useState<Date|null>(null);
 
@@ -81,7 +81,6 @@ export default function CalendarView(props:Props) {
         </article>)}</>}
     </section>
 
-    {!eventsLoading&&calendarAgendaItems.length===0&&<div className="calendar-empty-note">Nothing scheduled in this period. Add an event to start filling the calendar.</div>}
-    {calendarAgendaItems.some(item=>!item.holiday)&&<div className="calendar-agenda"><h3>Upcoming in this view</h3>{calendarAgendaItems.filter(item=>!item.holiday).map(item=><article className="event-card" key={item.id}><div className="event-date-block"><strong>{new Date(item.startsAt).toLocaleDateString(undefined,{day:"2-digit",timeZone:item.timezone})}</strong><span>{new Date(item.startsAt).toLocaleDateString(undefined,{month:"short",timeZone:item.timezone})}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{item.allDay?(()=>{const startLabel=new Date(item.startsAt).toLocaleDateString(undefined,{dateStyle:"long",timeZone:item.timezone});const endLabel=new Date(new Date(item.endsAt).getTime()-1).toLocaleDateString(undefined,{dateStyle:"long",timeZone:item.timezone});return (startLabel===endLabel?startLabel:startLabel+" – "+endLabel)+" · All day";})():new Date(item.startsAt).toLocaleString(undefined,{timeZone:item.timezone})+" · "+item.timezone}</p>{item.description&&<small>{item.description}</small>}<small className="record-audit">Created by {item.createdByName||"Workspace member"} · {new Date(item.createdAt).toLocaleString()}<br/>Last updated by {item.updatedByName||item.createdByName||"Workspace member"} · {new Date(item.updatedAt).toLocaleString()}</small></div><><button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label="Edit event"><Pencil size={15}/></button><button className="mini-icon" onClick={()=>onDeleteEvent(item)} aria-label="Delete event"><Archive size={15}/></button></></article>)}</div>}
+
   </section>;
 }
