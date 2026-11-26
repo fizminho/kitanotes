@@ -259,6 +259,7 @@ export default function App() {
   const [eventLinkedNoteId, setEventLinkedNoteId] = useState("");
   const [eventWorkspaceId,setEventWorkspaceId]=useState("");
   const [eventWorkspaceNotes,setEventWorkspaceNotes]=useState<Note[]>([]);
+  const [eventWorkspaceNotesLoading,setEventWorkspaceNotesLoading]=useState(false);
   const [eventTimezone, setEventTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur");
   const [eventSaving, setEventSaving] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -457,6 +458,19 @@ export default function App() {
       .finally(() => { if (active) setNotesLoading(false); });
     return () => { active = false; };
   }, [user, activeWorkspaceId, showArchived,showTrash]);
+
+  useEffect(()=>{
+    if(!eventComposerOpen||!eventWorkspaceId){setEventWorkspaceNotes([]);setEventWorkspaceNotesLoading(false);return;}
+    if(eventWorkspaceId===activeWorkspaceId){setEventWorkspaceNotes(notes.filter(note=>note.workspaceId===eventWorkspaceId));setEventWorkspaceNotesLoading(false);return;}
+    const controller=new AbortController();
+    setEventWorkspaceNotes([]);
+    setEventWorkspaceNotesLoading(true);
+    fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(eventWorkspaceId),{credentials:"same-origin",cache:"no-store",signal:controller.signal})
+      .then(async response=>{if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};if(!controller.signal.aborted)setEventWorkspaceNotes(result.notes.filter(note=>note.workspaceId===eventWorkspaceId));})
+      .catch(error=>{if(!controller.signal.aborted){setEventWorkspaceNotes([]);setEventsError(error instanceof Error?error.message:"Unable to load workspace notes.");}})
+      .finally(()=>{if(!controller.signal.aborted)setEventWorkspaceNotesLoading(false);});
+    return()=>controller.abort();
+  },[eventComposerOpen,eventWorkspaceId,activeWorkspaceId,notes]);
 
   useEffect(()=>{
     if(!globalSearchActive||!user||view!=="notes"||!query.trim()){setGlobalSearchResults([]);setGlobalSearchError("");setGlobalSearchLoading(false);return;}
@@ -1186,13 +1200,12 @@ export default function App() {
     const target=writable.some(item=>item.id===activeWorkspaceId)?activeWorkspaceId:(writable[0]?.id??"");
     setEventWorkspaceId(target);
     setEventWorkspaceNotes(target===activeWorkspaceId?notes:[]);
-    if(target&&target!==activeWorkspaceId){void fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(target),{credentials:"same-origin"}).then(async response=>{if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}).catch(()=>setEventWorkspaceNotes([]));}
     setEventsError("");
     setEventComposerOpen(true);
   }
 
   function startEditEvent(item:CalendarEvent) {
-    setEditingEvent(item);setEventWorkspaceId(item.workspaceId);setEventWorkspaceNotes(item.workspaceId===activeWorkspaceId?notes:[]);if(item.workspaceId!==activeWorkspaceId){void fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(item.workspaceId),{credentials:"same-origin"}).then(async response=>{if(!response.ok)throw new Error("Unable to load linked notes.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}).catch(()=>setEventWorkspaceNotes([]));}setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
+    setEditingEvent(item);setEventWorkspaceId(item.workspaceId);setEventWorkspaceNotes(item.workspaceId===activeWorkspaceId?notes:[]);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
     setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
     const reminder=eventReminders.filter(value=>value.eventId===item.id).sort((a,b)=>b.dueAt.localeCompare(a.dueAt))[0]??null;
     setEditingEventReminder(reminder);setEventReminderAt(reminder&&reminder.status==="pending"?dateTimeInputFor(reminder.dueAt,reminder.timezone):"");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
@@ -1995,12 +2008,12 @@ export default function App() {
       {eventComposerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEventComposerOpen(false);}}>
         <section className="composer event-composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
           <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">{editingEvent?"Edit event":"New event"}</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
-          <label className="field-label">Workspace<select className="invite-input" value={eventWorkspaceId} disabled={!!editingEvent} onChange={async e=>{const id=e.target.value;setEventWorkspaceId(id);setEventLinkedNoteId("");if(id===activeWorkspaceId){setEventWorkspaceNotes(notes);return;}try{const response=await fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(id),{credentials:"same-origin"});if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}catch(error){setEventWorkspaceNotes([]);setEventsError(error instanceof Error?error.message:"Unable to load workspace notes.");}}}>{workspaces.filter(item=>item.role==="owner"||item.role==="editor").map(item=><option key={item.id} value={item.id}>{item.name} · {item.role==="owner"?"Owner":"Editor"}</option>)}</select>{editingEvent&&<small className="calendar-reminder-help">Events stay in their original workspace. Create a new event to use another workspace.</small>}</label>
+          <label className="field-label">Workspace<select className="invite-input" value={eventWorkspaceId} disabled={!!editingEvent} onChange={e=>{setEventWorkspaceId(e.target.value);setEventLinkedNoteId("");setEventWorkspaceNotes([]);setEventsError("");}}>{workspaces.filter(item=>item.role==="owner"||item.role==="editor").map(item=><option key={item.id} value={item.id}>{item.name} · {item.role==="owner"?"Owner":"Editor"}</option>)}</select>{editingEvent&&<small className="calendar-reminder-help">Events stay in their original workspace. Create a new event to use another workspace.</small>}</label>
           <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>{setEventStart(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(e.target.value,eventTimezone));}}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>{setEventTimezone(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(eventStart,e.target.value));}} placeholder="Asia/Kuala_Lumpur"/></label>
-          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{eventWorkspaceNotes.filter(note=>note.workspaceId===eventWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} disabled={eventWorkspaceNotesLoading} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">{eventWorkspaceNotesLoading?"Loading workspace notes…":"No linked note"}</option>{eventWorkspaceNotes.filter(note=>note.workspaceId===eventWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
           <label className="field-label">Event reminder{editingEventReminder&&<small className="calendar-reminder-help">{editingEventReminder.status==="pending"?"Current reminder":"Previous reminder"}: {new Date(editingEventReminder.dueAt).toLocaleString(undefined,{timeZone:editingEventReminder.timezone,dateStyle:"medium",timeStyle:"short"})} · {editingEventReminder.timezone} · {editingEventReminder.status}</small>}<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>{setEventReminderAt(e.target.value);setEventReminderAuto(false);}}/>{!editingEventReminder&&<small className="calendar-reminder-help">Automatically set to 1 day before. You can change the time or leave it empty.</small>}<button type="button" className="text-action" onClick={()=>{setEventReminderAt(defaultReminderDateTime(eventStart,eventTimezone));setEventReminderAuto(true);}}>{editingEventReminder?"Set a new reminder 1 day before":"Reset to 1 day before"}</button>{editingEventReminder?.status==="pending"&&<button type="button" className="text-action" onClick={()=>setEventReminderAt("")}>Remove reminder</button>}</label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
           <footer><span>{editingEvent?"Event and reminder changes are saved separately.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||!eventWorkspaceId||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
