@@ -1165,3 +1165,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .calendar-detail-card.reminder{border-style:dashed}.calendar-reminder-summary{margin-top:10px}
 
 .calendar-marker.reminder{outline:1px dashed currentColor;outline-offset:1px}
+
+/* Contrast and keyboard/touch accessibility refinements */
+.calendar-section :is(.calendar-sync-note,.calendar-filtered-note,.calendar-legend,.calendar-agenda-eyebrow,.calendar-agenda-count,.calendar-detail-meta,.calendar-detail-date,.calendar-detail-source,.calendar-selected-empty,.calendar-readonly-hint,.calendar-weekday){color:#565c6b}
+.calendar-section button:focus-visible,.calendar-section input:focus-visible{outline:2px solid #5146b8;outline-offset:2px}
+.calendar-day-select,.calendar-day-markers{min-height:44px}
+.workspace-picker-option,.notification-item{min-height:44px}
+.workspace-picker-copy small,.workspace-picker-option-copy small,.notification-settings-note,.workspace-notification-row small,.sync-status{color:#565c6b}
