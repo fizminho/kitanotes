@@ -33,6 +33,22 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
  const user=await getCurrentUser(request,env);
  if(!user)return json({error:"UNAUTHENTICATED"},401);
  const db=env.DB;
+ if(url.pathname==="/api/notifications/workspaces"&&request.method==="GET"){
+  const result=await db.prepare("SELECT w.id,w.name,wm.role,COALESCE(p.mode,'all') AS mode FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN workspace_notification_preferences p ON p.workspace_id=w.id AND p.user_id=wm.user_id WHERE wm.user_id=? ORDER BY w.name COLLATE NOCASE").bind(user.id).all<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>();
+  return json({workspaces:result.results});
+ }
+ const workspacePreferenceMatch=url.pathname.match(/^\\/api\\/notifications\\/workspaces\\/([^/]+)$/);
+ if(workspacePreferenceMatch&&request.method==="PUT"){
+  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const body=await readJsonBody(request),mode=body?.mode;
+  if(mode!=="all"&&mode!=="important"&&mode!=="mute")return json({error:"INVALID_WORKSPACE_NOTIFICATION_MODE"},400);
+  const workspaceId=decodeURIComponent(workspacePreferenceMatch[1]);
+  const membership=await db.prepare("SELECT workspace_id FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,user.id).first<{workspace_id:string}>();
+  if(!membership)return json({error:"NOT_FOUND"},404);
+  const now=new Date().toISOString();
+  await db.prepare("INSERT INTO workspace_notification_preferences (user_id,workspace_id,mode,updated_at) VALUES (?,?,?,?) ON CONFLICT(user_id,workspace_id) DO UPDATE SET mode=excluded.mode,updated_at=excluded.updated_at").bind(user.id,workspaceId,mode,now).run();
+  return json({ok:true,workspaceId,mode});
+ }
  if(url.pathname==="/api/notifications/preferences"&&request.method==="GET"){
   return json({preferences:await readPreferences(db,user.id)});
  }
