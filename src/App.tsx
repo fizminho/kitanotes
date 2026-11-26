@@ -5,7 +5,7 @@ import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, Lo
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
-import { subscribePoll } from "./poll-scheduler";
+import { refreshPolls, subscribePoll } from "./poll-scheduler";
 
 type ActivityItem = { id:string; type:string; actor:string; actorId:string|null; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
@@ -264,6 +264,8 @@ export default function App() {
   const [workspaceNotificationPreferences,setWorkspaceNotificationPreferences]=useState<Array<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>>([]);
   const [workspaceNotificationSaving,setWorkspaceNotificationSaving]=useState<string|null>(null);
   const [calendarFocusDate,setCalendarFocusDate]=useState<string|null>(null);
+  const [isOnline,setIsOnline]=useState(()=>typeof navigator==="undefined"?true:navigator.onLine);
+  const [syncStatus,setSyncStatus]=useState<"up-to-date"|"syncing"|"paused">("up-to-date");
   const deepLinkHandled=useRef(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
@@ -497,6 +499,13 @@ export default function App() {
 
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
   useEffect(() => { setCategoryFilter("");if(activeWorkspaceId){try{localStorage.setItem("kitanotes-active-workspace",activeWorkspaceId);}catch{/* storage unavailable */}} }, [activeWorkspaceId]);
+
+  useEffect(()=>{
+    const updateOnline=()=>setIsOnline(navigator.onLine);
+    const updateSync=(event:Event)=>{const detail=(event as CustomEvent<{status:"up-to-date"|"syncing"|"paused"}>).detail;if(detail?.status)setSyncStatus(detail.status);};
+    window.addEventListener("online",updateOnline);window.addEventListener("offline",updateOnline);window.addEventListener("kitanotes:sync-status",updateSync);
+    return()=>{window.removeEventListener("online",updateOnline);window.removeEventListener("offline",updateOnline);window.removeEventListener("kitanotes:sync-status",updateSync);};
+  },[]);
 
   useEffect(()=>{
     if(!user)return;
@@ -1677,6 +1686,9 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {!isOnline&&<div className="offline-banner" role="status"><strong>You're offline.</strong> Note edits are kept as local drafts on this device. They are not uploaded until you reconnect.</div>}
+      {isOnline&&syncStatus==="paused"&&<div className="offline-banner sync-paused" role="status">Sync is paused after repeated connection errors. KitaNotes will retry automatically.</div>}
+
       {authDialog&&<div className="auth-dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&authDialog!=="codes")setAuthDialog(null);}}>
         <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
           <header><h2 id="auth-dialog-title">{authDialog==="signup"?"Create your KitaNotes account":authDialog==="recovery"?"Recover your account":"Save your recovery codes"}</h2><button type="button" className="mini-icon" onClick={()=>setAuthDialog(null)} aria-label="Close"><X size={17}/></button></header>
@@ -1710,6 +1722,8 @@ export default function App() {
         </a>
         <div className="workspace-switch-row">
           <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} unreadByWorkspace={unreadByWorkspace} />
+          <div className="sync-status" role="status" aria-live="polite"><span className={"sync-status-dot "+(isOnline&&syncStatus==="up-to-date"?"good":isOnline?"waiting":"offline")}/>{!isOnline?"Offline":syncStatus==="syncing"?"Syncing":syncStatus==="paused"?"Sync paused":"Up to date"}</div>
+
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
@@ -1825,7 +1839,7 @@ export default function App() {
               calendarAgendaItems={calendarAgendaItems} calendarTransferBusy={calendarTransferBusy}
               calendarIcsInputRef={calendarIcsInputRef} onImportCalendarIcs={importCalendarIcs}
               onExportCalendarIcs={exportCalendarIcs} onMoveCalendar={moveCalendar}
-              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent} onOpenLinkedNote={openLinkedNote} calendarFocusDate={calendarFocusDate}
+              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent} onOpenLinkedNote={openLinkedNote} onRefresh={()=>refreshPolls("calendar:"+user?.id+":")} calendarFocusDate={calendarFocusDate}
             />
           </Suspense>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
