@@ -118,11 +118,11 @@ test("push test endpoint limits repeated sends per user",async()=>{
 
 test("push payload messages never include private note, event, reminder or workspace content",()=>{
   const cases=[
-    ["reminder","KitaNotes reminder","You have a reminder due. Open KitaNotes to view it."],
-    ["shared_note","New shared note","A member added a note to a workspace you belong to."],
-    ["shared_note_update","Shared note updated","A shared note was changed or deleted. Open KitaNotes for details."],
-    ["event","Calendar updated","A calendar event changed. Open KitaNotes for details."],
-    ["workspace","Workspace update","There is an update in one of your workspaces."],
+    ["reminder","Reminder due","A reminder is due. Open KitaNotes to review it."],
+    ["shared_note","New shared note","Someone added a note in a shared workspace. Open KitaNotes to view it."],
+    ["shared_note_update","Shared note changed","A shared note was updated or removed. Open KitaNotes to review it."],
+    ["event","Calendar activity","A calendar event was created, changed or cancelled. Open KitaNotes to review it."],
+    ["workspace","Workspace activity","Your workspace membership or permissions changed. Open KitaNotes to review it."],
     ["test","KitaNotes","Push notifications are connected on this device."]
   ];
   for(const [kind,title,body] of cases){
