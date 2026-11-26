@@ -29,7 +29,7 @@ export default function CalendarView(props:Props) {
   const {events,holidays,eventsLoading,eventsError,workspaces,canManageEvent,holidayFeedStatus,holidayState,onHolidayStateChange,
     calendarMode,setCalendarMode,calendarCursor,setCalendarCursor,calendarHeading,calendarDays,
     calendarTransferBusy,calendarIcsInputRef,onImportCalendarIcs,onExportCalendarIcs,
-    onMoveCalendar,onEditEvent,onDeleteEvent}=props;
+    onMoveCalendar,onEditEvent,onDeleteEvent,calendarFocusDate}=props;
   const [selectedDate,setSelectedDate]=useState<Date|null>(null);
   useEffect(()=>{if(calendarFocusDate){const date=new Date(calendarFocusDate+"T12:00:00");if(!Number.isNaN(date.getTime()))setSelectedDate(date);}},[calendarFocusDate]);
   const [workspaceFilter,setWorkspaceFilter]=useState<string>(()=>{try{return localStorage.getItem("kitanotes-calendar-workspace-filter")??"all";}catch{return "all";}});

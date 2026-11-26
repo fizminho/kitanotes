@@ -50,7 +50,7 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
           members=result.results.map(member=>member.user_id);
           workspaceMembers.set(reminder.workspace_id,members);
         }
-        await Promise.all(members.map(userId=>sendPushToUser(db,env,userId,{title:("Reminder: "+reminder.title).slice(0,80),body:"Due: "+dueLabel,url:"/",tag:"reminder-"+reminder.id},"reminder",{workspaceId:reminder.workspace_id,important:true})));
+        await Promise.all(members.map(userId=>sendPushToUser(db,env,userId,{title:("Reminder: "+reminder.title).slice(0,80),body:"Due: "+dueLabel,url:"/?workspaceId="+encodeURIComponent(reminder.workspace_id)+(reminder.event_id?"&eventId="+encodeURIComponent(reminder.event_id):reminder.note_id?"&noteId="+encodeURIComponent(reminder.note_id):""),tag:"reminder-"+reminder.id},"reminder",{workspaceId:reminder.workspace_id,important:true})));
       }
     }
   }

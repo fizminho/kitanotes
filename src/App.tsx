@@ -419,6 +419,18 @@ export default function App() {
     return()=>{active=false;};
   },[inviteToken]);
 
+  useEffect(()=>{
+    if(deepLinkHandled.current||workspaces.length===0)return;
+    const params=new URLSearchParams(window.location.search),workspaceId=params.get("workspaceId"),noteId=params.get("noteId"),eventId=params.get("eventId");
+    if(!workspaceId&&!noteId&&!eventId)return;
+    deepLinkHandled.current=true;
+    if(workspaceId&&!workspaces.some(item=>item.id===workspaceId)){window.history.replaceState({},"","/");pushToast("That workspace is no longer available.","error");return;}
+    if(workspaceId)setActiveWorkspaceId(workspaceId);
+    window.history.replaceState({},"","/");
+    if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
+    if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
+  },[workspaces,pushToast]);
+
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
     let active = true;
@@ -1278,11 +1290,17 @@ export default function App() {
   }
 
   function openNotification(notification:Notification) {
-    if(notification.resourceType==="workspace"&&notification.resourceId&&workspaces.some(item=>item.id===notification.resourceId)){setActiveWorkspaceId(notification.resourceId);setShowArchived(false);setView("notes");void markNotificationRead(notification);setNotificationsOpen(false);return;}
-    if(notification.resourceType==="event"||notification.type==="reminder")setView("calendar");
-    else if(notification.resourceType==="note"||notification.type==="shared_note")setView("notes");
-    void markNotificationRead(notification);
-    setNotificationsOpen(false);
+    const workspaceId=notification.workspaceId??(notification.resourceType==="workspace"?notification.resourceId:null);
+    if(workspaceId&&workspaces.some(item=>item.id===workspaceId))setActiveWorkspaceId(workspaceId);
+    if(notification.resourceType==="note"&&notification.resourceId){
+      setShowArchived(false);setShowTrash(false);setView("notes");
+      void fetch("/api/notes/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This note is no longer available.");const result=await response.json() as {note:Note};setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available in this workspace.","error"));
+    }else if(notification.resourceType==="event"&&notification.resourceId){
+      setView("calendar");
+      void fetch("/api/events/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This event is no longer available.");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available in this workspace.","error"));
+    }else if(notification.type==="reminder")setView("calendar");
+    else if(notification.type==="shared_note")setView("notes");
+    void markNotificationRead(notification);setNotificationsOpen(false);
   }
 
   async function acceptInvite() {
@@ -1823,7 +1841,7 @@ export default function App() {
               calendarAgendaItems={calendarAgendaItems} calendarTransferBusy={calendarTransferBusy}
               calendarIcsInputRef={calendarIcsInputRef} onImportCalendarIcs={importCalendarIcs}
               onExportCalendarIcs={exportCalendarIcs} onMoveCalendar={moveCalendar}
-              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent}
+              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent} calendarFocusDate={calendarFocusDate}
             />
           </Suspense>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}

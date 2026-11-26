@@ -153,7 +153,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
       .bind(id).first<NoteRow>();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("New note: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/",tag:"shared-note-"+id},"shared_note",{workspaceId:workspace.id,important:false})));
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("New note: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(workspace.id)+"&noteId="+encodeURIComponent(id),tag:"shared-note-"+id},"shared_note",{workspaceId:workspace.id,important:false})));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     return json({ note: row ? noteDto(row) : null }, 201);
   }
@@ -201,7 +201,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.updated','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Updated: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/",tag:"shared-note-update-"+noteId},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Updated: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&noteId="+encodeURIComponent(noteId),tag:"shared-note-update-"+noteId},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     const updated = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(noteId).first<NoteRow>();
@@ -217,7 +217,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
       await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.deleted','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
       const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
       const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-      const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Deleted: "+row.title).slice(0,80),body:((actor?.display_name??"A member")+" deleted this note · "+pushDescription(row.content)).slice(0,160),url:"/",tag:"shared-note-deleted-"+noteId},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
+      const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Deleted: "+row.title).slice(0,80),body:((actor?.display_name??"A member")+" deleted this note · "+pushDescription(row.content)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(row.workspace_id),tag:"shared-note-deleted-"+noteId},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
       if(ctx)ctx.waitUntil(pushTask);else await pushTask;
       return json({ok:true});
     }
