@@ -140,7 +140,7 @@ function notificationPresentation(notification:Notification):{kind:string;title:
       kind="Calendar";title="Calendar event cancelled";body=quote(notification.body)+" was cancelled"+(workspace?" in "+workspace:"")+".";
       break;
     case "reminder":
-      kind="Reminder";title="Reminder due";
+      kind="Reminder";title="Reminder due";body=quote(notification.title.replace(/^Reminder:\\s*/i,""))+" is due. "+notification.body;
       break;
     case "invitation_accepted":
       kind="Workspace";title="Invitation accepted";
@@ -164,9 +164,11 @@ function notificationPresentation(notification:Notification):{kind:string;title:
   if(!Number.isFinite(timestamp.getTime()))timeLabel="Recently";
   else if(ageSeconds<60)timeLabel="Just now";
   else{
-    const units:Array<[number,Intl.RelativeTimeFormatUnit]>=[[60,"minute"],[3600,"hour"],[86400,"day"],[604800,"week"]];
-    const [size,unit]=units.find(([limit])=>ageSeconds<limit*60)??[604800,"week"];
-    timeLabel=new Intl.RelativeTimeFormat("en",{numeric:"auto"}).format(-Math.floor(ageSeconds/size),unit);
+    const relative=new Intl.RelativeTimeFormat("en",{numeric:"auto"});
+    if(ageSeconds<3600)timeLabel=relative.format(-Math.floor(ageSeconds/60),"minute");
+    else if(ageSeconds<86400)timeLabel=relative.format(-Math.floor(ageSeconds/3600),"hour");
+    else if(ageSeconds<604800)timeLabel=relative.format(-Math.floor(ageSeconds/86400),"day");
+    else timeLabel=relative.format(-Math.floor(ageSeconds/604800),"week");
   }
   return{kind,title,body,time:timestamp.toLocaleString(),timeLabel};
 }
