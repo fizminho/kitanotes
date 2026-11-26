@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star, Trash2 } from "lucide-react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
@@ -129,7 +129,7 @@ type ExistingNoteProposal = {noteId:string;categoryName:string;reason:string;sel
 type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
-  categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
+  categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null; deletedAt?:string|null;
 };
 function noteDraftStorageKey(userId:string,workspaceId:string,noteId:string|null){return "kitanotes-note-draft:"+userId+":"+workspaceId+":"+(noteId??"new");}
 type NoteConflict = {latest:Note;mine:{title:string;content:string;categoryId:string|null}};
@@ -167,6 +167,7 @@ export default function App() {
   const [activityLoadingMore,setActivityLoadingMore]=useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("updated");
   const [showArchived, setShowArchived] = useState(false);
+  const [showTrash,setShowTrash]=useState(false);
   const [theme, setTheme] = useState<"light"|"dark">(() => { try { const saved = localStorage.getItem("kitanotes-theme"); if (saved === "dark" || saved === "light") return saved; } catch { /* ignore */ } return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"; });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -419,7 +420,7 @@ export default function App() {
     setNotes([]);
     setNotesLoading(true);
     setNotesError("");
-    fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
+    fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showTrash ? "&trash=1" : showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
       .then(async response => {
         if (!response.ok) throw new Error(response.status === 503 ? "Database setup is not complete yet." : "Unable to load notes.");
         const result = await response.json() as { notes: Note[] };
@@ -428,7 +429,7 @@ export default function App() {
       .catch(error => { if (active) setNotesError(error instanceof Error ? error.message : "Unable to load notes."); })
       .finally(() => { if (active) setNotesLoading(false); });
     return () => { active = false; };
-  }, [user, activeWorkspaceId, showArchived]);
+  }, [user, activeWorkspaceId, showArchived,showTrash]);
 
   useEffect(()=>{
     if(!globalSearchActive||!user||view!=="notes"||!query.trim()){setGlobalSearchResults([]);setGlobalSearchError("");setGlobalSearchLoading(false);return;}
@@ -444,9 +445,9 @@ export default function App() {
 
   useEffect(()=>{
     if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote)return;
-    let active=true,inFlight=false,timer:number|undefined;let controller:AbortController|null=null;
+    let active=true,inFlight=false,timer:number|undefined,cursor:string|null=null;let controller:AbortController|null=null;
     const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
-      try{const response=await fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to sync notes.");const result=await response.json() as {notes:Note[]};if(active)setNotes(current=>{const byId=new Map(current.map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return result.notes.map(note=>byId.get(note.id)!).sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});}
+      try{const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to sync notes.");const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};if(active){if(!cursor)setNotes(result.notes);else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});cursor=result.nextCursor??new Date().toISOString();}}
       catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotesError(error instanceof Error?error.message:"Notes sync paused.");}
       finally{inFlight=false;controller=null;schedule();}
     };
@@ -575,6 +576,7 @@ export default function App() {
     let timer: number | undefined;
     let controller: AbortController | null = null;
     let delay = 30000;
+    let eventCursor:string|null=null;
     const range = () => {
       const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
       const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
@@ -594,13 +596,14 @@ export default function App() {
       const {from,to}=range();
       try{
         const [response,reminderResponse]=await Promise.all([
-          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin",cache:"no-store",signal:controller.signal}),
+          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(eventCursor?"&updatedSince="+encodeURIComponent(eventCursor):""),{credentials:"same-origin",cache:"no-store",signal:controller.signal}),
           fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal:controller.signal})
         ]);
         if(!response.ok)throw new Error("Unable to load calendar events.");
-        const result=await response.json() as {events:CalendarEvent[]};
+        const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
         if(!active)return;
-        setEvents(result.events);
+        if(!eventCursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
+        eventCursor=result.nextCursor??new Date().toISOString();
         if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
         setEventsError("");
         delay=30000;
@@ -762,7 +765,7 @@ export default function App() {
   const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId);
   const canWrite = activeWorkspace ? activeWorkspace.role !== "viewer" : true;
 
-  function openGlobalNote(note:Note){setActiveWorkspaceId(note.workspaceId);setShowArchived(false);setViewingNote(note);setNotes(current=>current.some(item=>item.id===note.id)?current:[note,...current]);}
+  function openGlobalNote(note:Note){setActiveWorkspaceId(note.workspaceId);setShowArchived(false);setShowTrash(false);setViewingNote(note);setNotes(current=>current.some(item=>item.id===note.id)?current:[note,...current]);}
 
   function startNewNote() {
     setEditingNote(null);
@@ -892,16 +895,17 @@ export default function App() {
   }, [pushToast]);
 
   const restoreNote = useCallback((note: Note) => archiveNote(note, false), [archiveNote]);
+  const restoreFromTrash=useCallback(async(note:Note)=>{try{const response=await fetch("/api/notes/"+encodeURIComponent(note.id)+"/restore",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});const result=await response.json() as {note?:Note;error?:string};if(!response.ok||!result.note)throw new Error(result.error==="TRASH_RETENTION_EXPIRED"?"This note has passed the 30-day recovery period.":"Unable to restore this note.");setNotes(current=>current.filter(item=>item.id!==note.id));pushToast("Note restored from Trash");}catch(error){pushToast(error instanceof Error?error.message:"Unable to restore this note.","error");}},[pushToast]);
 
   const deleteNote = useCallback(async (note: Note) => {
-    if (!window.confirm("Delete \u201c" + note.title + "\u201d? This cannot be undone from the app.")) return;
+    if (!window.confirm("Move \\u201c" + note.title + "\\u201d to Trash? You can restore it for 30 days before permanent deletion.")) return;
     try {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
         method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: note.version })
       });
       if (!response.ok) throw new Error("Unable to delete this note.");
       setNotes(current => current.filter(item => item.id !== note.id));
-      pushToast("Note deleted");
+      pushToast("Note moved to Trash. Restore it within 30 days.");
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Unable to delete this note.", "error");
     }
@@ -1767,7 +1771,7 @@ export default function App() {
             <div className="toolbar">
               <label className="search-box"><Search size={17} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search notes  ( / )" />{query&&<button className="mini-icon" onClick={()=>setQuery("")} aria-label="Clear search"><X size={14}/></button>}</label><button type="button" className={globalSearchActive?"filter-button active-filter":"filter-button"} onClick={()=>{setGlobalSearchActive(value=>!value);setGlobalSearchResults([]);}}>Search all spaces</button>
               <label className="filter-button"><select className="sort-select" aria-label="Sort notes" value={sortMode} onChange={event=>setSortMode(event.target.value as SortMode)}><option value="updated">Recently updated</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select></label>
-              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>setShowArchived(value=>!value)}><Archive size={14}/> Arkib</button>
+              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>{setShowArchived(value=>!value);setShowTrash(false);}}><Archive size={14}/> Arkib</button><button className={showTrash?"filter-button active-filter":"filter-button"} onClick={()=>{setShowTrash(value=>!value);setShowArchived(false);setCategoryFilter("");}}><Trash2 size={14}/> Trash</button>
             </div>
             {!globalSearchActive&&user&&(categories.length>0)&&<div className="chip-row" role="tablist" aria-label="Tapis mengikut kategori"><button className={!categoryFilter?"chip active":"chip"} onClick={()=>setCategoryFilter("")}>All</button>{categories.filter(category=>!["uncategorised","uncategorized","unassigned"].includes(category.name.trim().toLowerCase())).map(category=><button key={category.id} className={categoryFilter===category.id?"chip active":"chip"} onClick={()=>setCategoryFilter(category.id)}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/>{category.name}</button>)}<button className={categoryFilter==="__none"?"chip active":"chip"} onClick={()=>setCategoryFilter("__none")}><Tag size={11}/> Uncategorised</button>
             </div>}
@@ -1775,12 +1779,12 @@ export default function App() {
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}{globalSearchError&&<div className="inline-error">{globalSearchError}</div>}
             {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="loading-state">Memuatkan nota…</div>:visibleNotes.length > 0 ? <div className="notes-grid">
-              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>) }
+              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived||showTrash} isTrash={showTrash} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={showTrash?restoreFromTrash:restoreNote} onDelete={deleteNote}/>) }
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
-              <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
-              <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google or a passkey to create and sync your notes."}</p>
-              {user&&canWrite&&!globalSearchActive&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
+              <h2>{query||categoryFilter ? "No notes found" : showTrash ? "Trash is empty" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
+              <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showTrash ? "Deleted notes stay here for 30 days. Restore them before they are permanently removed." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google or a passkey to create and sync your notes."}</p>
+              {user&&canWrite&&!globalSearchActive&&!showArchived&&!showTrash&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
             </div>}
           </>}
 
