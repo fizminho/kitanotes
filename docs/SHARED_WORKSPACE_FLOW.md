@@ -692,3 +692,78 @@ This document combines observed current behaviour, identified gaps and recommend
 - Items in the roadmap are recommendations and are not claims that implementation is complete.
 - API behaviour, authorization and database cascade rules should be revalidated against the latest source before implementation.
 - Each completed roadmap item should be accompanied by appropriate tests.
+
+
+## 18. Updated product decisions and implementation addendum (2026-11-27)
+
+This section supersedes any earlier wording in Sections 5.3, 5.4, 12, 13, 14, 15 and 16 that describes Calendar or Reminders as active-workspace-only.
+
+### 18.1 Confirmed scope
+
+| Resource | Scope | Behaviour |
+|---|---|---|
+| Notes | Active workspace | Only notes from the active workspace are shown. Global search is the explicit cross-workspace discovery path. |
+| Categories | Active workspace | Category lists remain workspace-specific. |
+| Calendar Events | Aggregate | One visible-range request returns events from every workspace the user has joined. Every event retains its workspaceId. |
+| Reminders | Aggregate | Reminders follow Calendar because they are associated with calendar events or notes. |
+| Holidays | Global | Public and school holiday data remain global reference data. |
+| Members, Activity, Invitations | Active workspace | These management views remain scoped to the selected workspace. |
+
+The aggregate Calendar is a personal view, not a shared cross-workspace data boundary. The backend returns only events from workspaces in which the authenticated user is currently a member. Event create, update and delete authorization is checked against the event's own workspace.
+
+### 18.2 Calendar source identity and linked notes
+
+- Workspaces have shared Owner-configurable icon and colour defaults. Each user may override a workspace colour locally in their own calendar.
+- Calendar filter chips persist per user and show the source workspace name. Event detail shows the workspace name and colour.
+- Event creation requires a writable workspace. The linked-note picker is restricted to notes in the selected event workspace.
+- Event detail shows a linked-note title and workspace. Selecting it switches the active Notes workspace and opens the note. A soft-deleted or inaccessible note is shown as unavailable.
+- Calendar polling uses the visible date range, one aggregate request, an updatedSince cursor and removed event IDs.
+
+### 18.3 Synchronization contract
+
+- Notes poll only for the active workspace. Notes, Events, Reminders and Workspace membership/list endpoints support incremental updatedSince requests.
+- Notes deltas include removed note IDs when notes are archived or deleted. Event deltas include removed event IDs when events are deleted or moved outside the visible range. Workspace deltas include removed workspace IDs when membership is revoked.
+- A keyed shared poll scheduler owns resource polling. It pauses when the document is hidden or the device is offline, refreshes immediately on resume/reconnect, applies jitter and bounded exponential backoff, and aborts requests when a resource key is released.
+- Open-note polling remains five seconds. Calendar is 30 seconds, workspace membership 60 seconds, Notes 30 seconds, Activity 15 seconds and notification badge/inbox 30 seconds. These are starting values to be tuned with measured traffic.
+- A lightweight presence heartbeat runs while the app is visible and a workspace is active. The member list shows online or last-seen status. This is polling-based presence, not a WebSocket session.
+- Local note drafts are retained for recovery. A full offline write queue is not implemented and must not be represented as supported.
+
+### 18.4 Trash retention
+
+Deleted notes enter Trash and can be restored by an Owner or Editor for 30 days. Expired notes are purged in bounded batches by the daily scheduled cleanup. Restoring a note increments its version and records an activity event. The backend enforces the retention window even if a stale client attempts a restore.
+
+### 18.5 Notifications and activity
+
+- In-app notifications and push notifications remain separate delivery mechanisms.
+- Both include the workspace name. Push delivery supports per-workspace All, Important only and Mute settings. Important alerts include reminders and workspace access/role changes; routine note and event changes are suppressed in Important only mode.
+- In-app inbox notifications remain available regardless of the push preference.
+- Notification links carry workspace and resource identifiers. Opening a notification switches workspace and opens the target note or event where it remains available.
+- Activity supports type/person filters and cursor pagination. Human-readable descriptions are preferred over raw event codes.
+
+### 18.6 Roadmap status and remaining work
+
+The following items are implemented on the current feature branch but are not considered released until CI, migration validation and CodeQL pass and the branch is merged to main:
+
+- Aggregate Calendar and Reminders with workspace identity and filters.
+- Shared workspace icon/colour defaults and personal calendar colour overrides.
+- Workspace-scoped Notes, global search, conflict recovery and local draft recovery.
+- Invitation preview, activity filters/pagination and consequence-aware workspace lifecycle confirmations.
+- 30-day Trash/Restore and scheduled purge.
+- Per-workspace push preferences, workspace unread counts, notification deep links and workspace-aware inbox text.
+- Incremental Notes, Events, Reminders and Workspace membership sync.
+- Keyed polling scheduler, pause/resume, jitter, backoff and request cancellation.
+- Polling-based member presence.
+
+Still requiring a separate UX/verification pass:
+
+- Inline updated-by banners while a user is editing, with explicit preservation of unsaved text when a remote delete occurs.
+- A single visible sync-status indicator for Up to date, Syncing and Paused/offline, plus an offline banner.
+- Pull-to-refresh on Notes and Calendar and explicit Updated just now feedback.
+- A complete offline write queue. Current local drafts are recovery only.
+- Skeleton loaders and dynamic text-size review across all workspace/calendar states.
+- Full screen-reader announcement and contrast audit, including event title plus workspace name.
+- Traffic/conflict measurement before any decision to adopt SSE or WebSocket.
+
+### 18.7 Core design principle (supersedes Section 16)
+
+Notes are workspace-scoped; Calendar is a personal view over all joined workspaces. Every Event and Reminder still belongs to exactly one workspace. Workspace membership and role checks remain the backend security boundary.
