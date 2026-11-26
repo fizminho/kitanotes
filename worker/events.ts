@@ -52,21 +52,21 @@ function dto(row:EventRow) {
   return {id:row.id,workspaceId:row.workspace_id,title:row.title,description:row.description,startsAt:row.starts_at_utc,endsAt:row.ends_at_utc,timezone:row.timezone,allDay:Boolean(row.all_day),linkedNoteId:row.linked_note_id,createdBy:row.created_by_user_id,createdByName:row.created_by_name??null,updatedBy:row.updated_by_user_id??null,updatedByName:row.updated_by_name??null,version:row.version,createdAt:row.created_at,updatedAt:row.updated_at,deletedAt:row.deleted_at};
 }
 async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Response> {
-  const db=env.DB!;
-  const url=new URL(request.url);
-  const workspaceId=url.searchParams.get("workspaceId");
-  const now=Date.now();
-  const fromValue=url.searchParams.get("from");
-  const toValue=url.searchParams.get("to");
-  const from=fromValue?toUtc(fromValue):new Date(now-30*86400000).toISOString();
-  const to=toValue?toUtc(toValue):new Date(now+90*86400000).toISOString();
-  if(!from||!to||to<=from||new Date(to).getTime()-new Date(from).getTime()>366*86400000) return json({error:"INVALID_DATE_RANGE"},400);
-  if(workspaceId&&!(await roleFor(db,workspaceId,userId))) return json({error:"NOT_FOUND"},404);
-  const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit"))||100));
-  const result=workspaceId
-    ? await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.workspace_id=? AND deleted_at IS NULL AND starts_at_utc<? AND ends_at_utc>=? ORDER BY starts_at_utc LIMIT ?").bind(workspaceId,to,from,limit).all<EventRow>()
-    : await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e JOIN workspace_members wm ON wm.workspace_id=e.workspace_id LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE wm.user_id=? AND e.deleted_at IS NULL AND e.starts_at_utc<? AND e.ends_at_utc>=? ORDER BY e.starts_at_utc LIMIT ?").bind(userId,to,from,limit).all<EventRow>();
-  return json({events:result.results.map(dto),from,to});
+  const db=env.DB!;const url=new URL(request.url);const workspaceId=url.searchParams.get("workspaceId");const now=Date.now();
+  const fromValue=url.searchParams.get("from"),toValue=url.searchParams.get("to");
+  const from=fromValue?toUtc(fromValue):new Date(now-30*86400000).toISOString(),to=toValue?toUtc(toValue):new Date(now+90*86400000).toISOString();
+  if(!from||!to||to<=from||new Date(to).getTime()-new Date(from).getTime()>366*86400000)return json({error:"INVALID_DATE_RANGE"},400);
+  if(workspaceId&&!(await roleFor(db,workspaceId,userId)))return json({error:"NOT_FOUND"},404);
+  const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit"))||100)),sinceValue=url.searchParams.get("updatedSince"),since=sinceValue?toUtc(sinceValue):null;
+  if(sinceValue&&!since)return json({error:"INVALID_SYNC_CURSOR"},400);
+  const syncNow=new Date().toISOString(),scope=workspaceId?"e.workspace_id=?":"EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=e.workspace_id AND wm.user_id=?)",scopeValue=workspaceId??userId;
+  const range="e.starts_at_utc<? AND e.ends_at_utc>=?";
+  const sql="SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE "+scope+" AND e.deleted_at IS NULL AND "+range+(since?" AND e.updated_at>? AND e.updated_at<=?":"")+" ORDER BY e.starts_at_utc,e.id LIMIT ?";
+  const result=await db.prepare(sql).bind(...[scopeValue,to,from,...(since?[since,syncNow]:[]),limit]).all<EventRow>();
+  if(!since)return json({events:result.results.map(dto),removedEventIds:[],from,to,nextCursor:syncNow});
+  const removedSql="SELECT e.id FROM calendar_events e WHERE "+scope+" AND ((e.deleted_at>? AND e.deleted_at<=?) OR (e.deleted_at IS NULL AND e.updated_at>? AND e.updated_at<=? AND NOT ("+range+")))";
+  const removed=await db.prepare(removedSql).bind(scopeValue,since,syncNow,since,syncNow,to,from).all<{id:string}>();
+  return json({events:result.results.map(dto),removedEventIds:removed.results.map(row=>row.id),from,to,nextCursor:syncNow});
 }
 async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:ExecutionContext):Promise<Response> {
   if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
