@@ -1112,3 +1112,21 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   [data-theme=dark] .mobile-workspace-control .workspace-picker-option{color:#e6e7f0}
   [data-theme=dark] .mobile-workspace-control .workspace-picker-option-avatar{background:#302c50;color:#c6c0ff}
 }
+
+
+/* Calendar monthly overview */
+.calendar-month-summary-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:4px 0 14px}
+.calendar-month-summary-stats>div{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line,#e9eaf0);border-radius:12px;background:var(--surface-soft,#fafaff)}
+.calendar-month-summary-stats strong{font-size:22px;line-height:1.15;color:var(--text,#303348)}
+.calendar-month-summary-stats span{font-size:12px;color:var(--muted,#85899a)}
+.calendar-month-summary-list{display:grid;gap:8px}
+.calendar-agenda-heading>div:last-child{display:flex;align-items:center;gap:8px}
+@media(max-width:520px){
+  .calendar-month-summary-stats{gap:6px}
+  .calendar-month-summary-stats>div{padding:9px 8px}
+  .calendar-month-summary-stats strong{font-size:19px}
+  .calendar-month-summary-stats span{font-size:10px}
+  .calendar-agenda-heading>div:last-child{align-items:flex-end;flex-direction:column}
+}
+[data-theme=dark] .calendar-month-summary-stats>div{background:#1b1d2b;border-color:#34364a}
+[data-theme=dark] .calendar-month-summary-stats strong{color:#f1f2fa}
