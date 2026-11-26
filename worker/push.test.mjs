@@ -149,7 +149,7 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
 
 test("workspace important-only preference suppresses ordinary shared updates",async()=>{
  const queries=[];
- const db={prepare(sql){queries.push(sql);return{bind(){return{first:async()=>sql.includes("notification_preferences")?{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"}:sql.includes("workspace_notification_preferences")?{mode:"important"}:null,all:async()=>({results:[]})};}};}};
+ const db={prepare(sql){queries.push(sql);return{bind(){return{first:async()=>sql.includes("workspace_notification_preferences")?{mode:"important"}:sql.includes("notification_preferences")?{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"}:null,all:async()=>({results:[]})};}};}};
  await sendPushToUser(db,{VAPID_PUBLIC_KEY:"public",VAPID_PRIVATE_KEY:"private",VAPID_SUBJECT:"mailto:test@example.com"},"user-1",{title:"Note updated",body:"Private",url:"/"}, "shared_note_update",{workspaceId:"workspace-1",important:false});
  assert.equal(queries.some(sql=>sql.includes("push_subscriptions")),false);
 });
