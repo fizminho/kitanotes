@@ -4,8 +4,8 @@ AFTER UPDATE OF title,content,archived_at,deleted_at ON notes
 WHEN NEW.version>OLD.version AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=NEW.workspace_id AND wm.user_id<>NEW.updated_by_user_id)
 BEGIN
   UPDATE notifications
-  SET body=NEW.title,created_at=NEW.updated_at,read_at=NULL
-  WHERE NEW.deleted_at IS NULL AND notification_type='note.updated' AND workspace_id=NEW.workspace_id
+  SET body=NEW.title,resource_id=NEW.id,created_at=NEW.updated_at,read_at=NULL
+  WHERE NEW.deleted_at IS NULL AND notification_type='note.updated' AND workspace_id=NEW.workspace_id AND resource_id=NEW.id
     AND user_id IN (SELECT wm.user_id FROM workspace_members wm WHERE wm.workspace_id=NEW.workspace_id AND wm.user_id<>NEW.updated_by_user_id)
     AND julianday(created_at)>=julianday(NEW.updated_at)-0.0020833333;
 
@@ -28,8 +28,8 @@ AFTER UPDATE OF title,description,starts_at_utc,ends_at_utc,deleted_at ON calend
 WHEN NEW.version>OLD.version AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=NEW.workspace_id AND wm.user_id<>NEW.updated_by_user_id)
 BEGIN
   UPDATE notifications
-  SET body=NEW.title,created_at=NEW.updated_at,read_at=NULL
-  WHERE NEW.deleted_at IS NULL AND notification_type='event.updated' AND workspace_id=NEW.workspace_id
+  SET body=NEW.title,resource_id=NEW.id,created_at=NEW.updated_at,read_at=NULL
+  WHERE NEW.deleted_at IS NULL AND notification_type='event.updated' AND workspace_id=NEW.workspace_id AND resource_id=NEW.id
     AND user_id IN (SELECT wm.user_id FROM workspace_members wm WHERE wm.workspace_id=NEW.workspace_id AND wm.user_id<>NEW.updated_by_user_id)
     AND julianday(created_at)>=julianday(NEW.updated_at)-0.0020833333;
 
