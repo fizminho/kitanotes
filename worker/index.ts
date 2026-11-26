@@ -5,6 +5,7 @@ import { handleRemindersRequest } from "./reminders";
 import { handleNotificationsRequest } from "./notifications";
 import { handlePushRequest } from "./push";
 import { deliverDueReminders } from "./reminder-cron";
+import { purgeExpiredTrash } from "./trash-cron";
 import { handleInvitationsRequest } from "./invitations";
 import { handleNotesRequest } from "./notes";
 import { handleAuthRequest } from "./auth";
@@ -64,6 +65,8 @@ export default {
   async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void> {
     if(!env.DB)return;
     if(controller.cron==="*/5 * * * *")ctx.waitUntil(deliverDueReminders(env.DB,env));
+    const scheduledAt=new Date(controller.scheduledTime);
+    if(controller.cron==="*/5 * * * *"&&scheduledAt.getUTCHours()===3&&scheduledAt.getUTCMinutes()===15)ctx.waitUntil(purgeExpiredTrash(env.DB));
     // Keep annual holiday refresh on the same trigger to stay within the Free account limit.
     if(isAnnualHolidaySyncTime(controller.scheduledTime))ctx.waitUntil(syncCalendarHolidayData(env.DB));
   }
