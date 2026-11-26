@@ -29,13 +29,13 @@ function WorkspacePicker({workspaces,activeWorkspaceId,onChange,unreadByWorkspac
   },[open]);
   return <div className="workspace-picker" ref={rootRef}>
     <button type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
-      <span className="workspace-avatar">K</span>{(unreadByWorkspace[activeWorkspaceId]??0)>0&&<span className="workspace-unread-dot" aria-label="Unread workspace activity"/>}
+      <span className="workspace-avatar" style={{backgroundColor:active?.color??undefined}}>{active?.icon??"📁"}</span>{(unreadByWorkspace[activeWorkspaceId]??0)>0&&<span className="workspace-unread-dot" aria-label="Unread workspace activity"/>}
       <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
       <ChevronDown size={16} className={open?"workspace-picker-chevron open":"workspace-picker-chevron"}/>
     </button>
     {open&&<div className="workspace-picker-menu" role="listbox" aria-label="Workspaces">
       {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
-        <span className="workspace-picker-option-avatar">{workspace.name.trim().slice(0,1).toUpperCase()||"K"}</span>
+        <span className="workspace-picker-option-avatar" style={{backgroundColor:workspace.color??undefined}}>{(workspace.icon??workspace.name.trim().slice(0,1).toUpperCase())||"K"}</span>
         <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
         {(unreadByWorkspace[workspace.id]??0)>0&&<span className="workspace-unread-count" aria-label={(unreadByWorkspace[workspace.id]??0)+" unread notifications"}>{(unreadByWorkspace[workspace.id]??0)>99?"99+":unreadByWorkspace[workspace.id]}</span>}{workspace.id===activeWorkspaceId&&<Check size={16}/>}
       </button>)}
@@ -108,7 +108,7 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null; googleLinked?:boolean };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
 type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
-type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"};
+type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer";color?:string|null;icon?:string|null};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type Reminder = {id:string;workspaceId:string;eventId:string|null;noteId:string|null;title:string;dueAt:string;timezone:string;status:"pending"|"delivered"|"cancelled"};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; createdAt:string; updatedAt:string; version:number };
@@ -1472,6 +1472,14 @@ export default function App() {
     }
   }
 
+  async function saveWorkspaceAppearance(color:string,icon:string){
+    if(!activeWorkspace||activeWorkspace.role!=="owner"||workspaceActionBusy)return;
+    setWorkspaceActionBusy(true);
+    try{const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspace.id)+"/appearance",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({color,icon})});if(!response.ok)throw new Error("Unable to save workspace appearance.");setWorkspaces(current=>current.map(item=>item.id===activeWorkspace.id?{...item,color,icon}:item));pushToast("Workspace appearance updated.");}
+    catch(error){pushToast(error instanceof Error?error.message:"Unable to save workspace appearance.","error");}
+    finally{setWorkspaceActionBusy(false);}
+  }
+
   async function renameWorkspace() {
     if (!activeWorkspace || workspaceActionBusy) return;
     const name = window.prompt("Rename this space", activeWorkspace.name)?.trim();
@@ -1887,7 +1895,9 @@ export default function App() {
           </div>}
 
           {manageTab==="settings"&&activeWorkspace.role==="owner"&&<div className="invite-list">
-            <strong>Space settings</strong><p className="invite-list-note">Rename this space or change who can access it. Deleting a shared space permanently removes its notes and events.</p>
+            <strong>Space settings</strong><p className="invite-list-note">Rename this space, choose its shared colour and icon, or change who can access it. Deleting a shared space permanently removes its notes and events.</p>
+            <label className="field-label">Workspace colour<input type="color" className="workspace-appearance-color" value={activeWorkspace.color??"#7565d8"} disabled={workspaceActionBusy} onChange={event=>void saveWorkspaceAppearance(event.target.value,activeWorkspace.icon??"📁")}/></label>
+            <label className="field-label">Workspace icon<select className="invite-input" value={activeWorkspace.icon??"📁"} disabled={workspaceActionBusy} onChange={event=>void saveWorkspaceAppearance(activeWorkspace.color??"#7565d8",event.target.value)}>{["📁","👥","💼","🏠","❤️","📚","📅","⭐","🎓","🛒"].map(icon=><option key={icon} value={icon}>{icon}</option>)}</select></label>
             <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button>{activeWorkspace.visibility==="shared"?<button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Make private</button>:<button className="secondary-button" onClick={makeWorkspaceShared} disabled={workspaceActionBusy}>Make shared</button>}{activeWorkspace.visibility==="shared"&&<button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button>}</div>
           </div>}
 

@@ -10,7 +10,7 @@ type CalendarEvent = {
 };
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
 type HolidayFeedStatus = {holidayWise:boolean;kpm:boolean;publicHolidayCount:number;schoolHolidayCount:number;holidayWiseError:string|null};
-type WorkspaceSource = {id:string;name:string;role:"owner"|"editor"|"viewer"};
+type WorkspaceSource = {id:string;name:string;role:"owner"|"editor"|"viewer";color?:string|null;icon?:string|null};
 type Props = {
   events:CalendarEvent[]; holidays:CalendarItem[]; eventsLoading:boolean; eventsError:string; workspaces:WorkspaceSource[];
   canManageEvent:(event:CalendarEvent)=>boolean;
@@ -35,7 +35,7 @@ export default function CalendarView(props:Props) {
   const [workspaceFilter,setWorkspaceFilter]=useState<string>(()=>{try{return localStorage.getItem("kitanotes-calendar-workspace-filter")??"all";}catch{return "all";}});
   const [workspaceColorOverrides,setWorkspaceColorOverrides]=useState<Record<string,string>>(()=>{try{const value=JSON.parse(localStorage.getItem("kitanotes-calendar-workspace-colors")??"{}");return value&&typeof value==="object"?value as Record<string,string>:{ };}catch{return {};}});
   const workspaceColors=["#6477d8","#159b83","#d18a36","#b36ac8","#d46d78","#4389b7","#82933c","#98765b"];
-  const workspaceById=useMemo(()=>new Map(workspaces.map(workspace=>{const hash=Array.from(workspace.id).reduce((value,char)=>((value*31)+char.charCodeAt(0))>>>0,7);return [workspace.id,{...workspace,color:workspaceColorOverrides[workspace.id]??workspaceColors[hash%workspaceColors.length]}] as const;})),[workspaces,workspaceColorOverrides]);
+  const workspaceById=useMemo(()=>new Map(workspaces.map(workspace=>{const hash=Array.from(workspace.id).reduce((value,char)=>((value*31)+char.charCodeAt(0))>>>0,7);return [workspace.id,{...workspace,color:workspaceColorOverrides[workspace.id]??workspace.color??workspaceColors[hash%workspaceColors.length]}] as const;})),[workspaces,workspaceColorOverrides]);
   function setWorkspaceColor(workspaceId:string,color:string){const next={...workspaceColorOverrides,[workspaceId]:color};setWorkspaceColorOverrides(next);try{localStorage.setItem("kitanotes-calendar-workspace-colors",JSON.stringify(next));}catch{/* local override is best-effort */}}
   const visibleEvents=workspaceFilter==="all"?events:events.filter(event=>event.workspaceId===workspaceFilter);
   function setWorkspaceFilterValue(value:string){setWorkspaceFilter(value);try{localStorage.setItem("kitanotes-calendar-workspace-filter",value);}catch{/* storage may be unavailable */}}
