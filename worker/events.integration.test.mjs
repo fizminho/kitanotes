@@ -173,3 +173,15 @@ test("aggregate event delta removes workspaces after membership revocation", asy
     assert.deepEqual(body.removedWorkspaceIds,["w1"]);
   } finally { db.close(); }
 });
+
+test("event creation requires an explicit workspace and never falls back to personal",async()=>{
+  const {db,env,tokens}=seed();
+  try{
+    const response=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{
+      title:"Missing workspace selection",startsAt:"2026-11-24T10:00:00Z",endsAt:"2026-11-24T11:00:00Z"
+    }),env);
+    assert.equal(response.status,400);
+    assert.equal((await response.json()).error,"WORKSPACE_REQUIRED");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM calendar_events WHERE title='Missing workspace selection'").get().total,0);
+  }finally{db.close();}
+});
