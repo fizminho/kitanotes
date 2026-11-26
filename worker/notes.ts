@@ -166,7 +166,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const now = new Date().toISOString();
     const result = await db.prepare("UPDATE notes SET title=?,content=?,category_id=?,archived_at=?,updated_by_user_id=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=? AND version=? AND deleted_at IS NULL")
       .bind(title, content, categoryId, archivedAt, userId, now, noteId, row.workspace_id, version).run();
-    if (changes(result) !== 1) return json({ error: "VERSION_CONFLICT" }, 409);
+    if (changes(result) !== 1) { const latest=await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=? AND n.deleted_at IS NULL").bind(noteId).first<NoteRow>();return json({error:"VERSION_CONFLICT",latestNote:latest?noteDto(latest):null},409); }
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.updated','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();

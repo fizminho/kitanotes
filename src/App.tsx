@@ -215,6 +215,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get("token"));
   const [inviteStatus, setInviteStatus] = useState<"idle" | "accepting" | "accepted" | "error">("idle");
+  const [invitePreview,setInvitePreview]=useState<{valid:boolean;workspaceName?:string;inviterName?:string;role?:"editor"|"viewer";memberCount?:number;expiresAt?:string;error?:string}|null>(null);
   const [inviteError, setInviteError] = useState("");
   const [inviteNotice, setInviteNotice] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -401,6 +402,15 @@ export default function App() {
     }).catch(()=>{if(active)setWorkspaces([]);});
     return()=>{active=false;};
   },[user]);
+
+  useEffect(()=>{
+    if(!inviteToken){setInvitePreview(null);return;}
+    let active=true;
+    fetch("/api/invitations/preview?token="+encodeURIComponent(inviteToken),{credentials:"same-origin",cache:"no-store"})
+      .then(async response=>{const result=await response.json() as {valid:boolean;workspaceName?:string;inviterName?:string;role?:"editor"|"viewer";memberCount?:number;expiresAt?:string;error?:string};if(active)setInvitePreview(result);})
+      .catch(()=>{if(active)setInvitePreview({valid:false,error:"INVITATION_PREVIEW_UNAVAILABLE"});});
+    return()=>{active=false;};
+  },[inviteToken]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
@@ -1687,11 +1697,11 @@ export default function App() {
             </details>}
           </section>}
           {inviteToken && <section className="invite-panel">
-            <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>You've been invited.</h2>
-              <p>Anyone with this invitation link can join after signing in with Google or an existing passkey.</p></div>
-            {user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
+            <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>{invitePreview?.valid?invitePreview.workspaceName:"You've been invited."}</h2>
+              {invitePreview?.valid?<p>{invitePreview.inviterName} invited you as <strong>{invitePreview.role==="editor"?"Editor":"Viewer"}</strong>. {invitePreview.memberCount} people are already in this workspace. Events from this workspace will appear in your calendar after you join. Expires {new Date(invitePreview.expiresAt!).toLocaleDateString()}.</p>:invitePreview?.error?<p className="invite-error">{invitePreview.error==="INVITATION_EXPIRED"?"This invitation has expired. Ask the owner for a new link.":invitePreview.error==="INVITATION_REVOKED"?"This invitation was revoked. Ask the owner for a new link.":"This invitation is invalid or no longer available."}</p>:<p>Checking invitation details…</p>}</div>
+            {invitePreview?.valid&&(user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
               : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div>
-              : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>}
+              : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>)}
             {inviteError && <p className="invite-error">{inviteError}</p>}
             {inviteError.includes("different Google email") && user && <button className="text-action" onClick={signOut}>Sign out</button>}
           </section>}
