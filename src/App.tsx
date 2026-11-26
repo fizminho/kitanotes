@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star, Trash2 } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star, Trash2, RefreshCw } from "lucide-react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
@@ -1686,7 +1686,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      {!isOnline&&<div className="offline-banner" role="status"><strong>You're offline.</strong> Note edits are kept as local drafts on this device. They are not uploaded until you reconnect.</div>}
+      {!isOnline&&<div className="offline-banner" role="status"><strong>You're offline.</strong> If you edit a note, a local recovery draft is saved when browser storage is available. Drafts are not uploaded until you reconnect.</div>}
       {isOnline&&syncStatus==="paused"&&<div className="offline-banner sync-paused" role="status">Sync is paused after repeated connection errors. KitaNotes will retry automatically.</div>}
 
       {authDialog&&<div className="auth-dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&authDialog!=="codes")setAuthDialog(null);}}>
@@ -1806,7 +1806,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">NOTES · CALENDAR · SHARED WORKSPACES</div><h1>{view === "notes" ? "My Notes" : view === "calendar" ? "Calendar" : "Shared with Me"}</h1><p>{view === "notes" ? "Save notes, organise them into categories, and find them when you need them." : view === "calendar" ? "View your saved events and reminders." : "Notes and workspaces shared with you."}</p></div>
-            {view === "calendar" && user && workspaces.some(item=>item.role==="owner"||item.role==="editor") && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "calendar" && user && !workspaces.some(item=>item.role==="owner"||item.role==="editor") && <span className="calendar-readonly-hint">You have view-only access to your joined workspaces.</span>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
+            {view === "calendar" && user && workspaces.some(item=>item.role==="owner"||item.role==="editor") && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "calendar" && user && !workspaces.some(item=>item.role==="owner"||item.role==="editor") && <span className="calendar-readonly-hint">You have view-only access to your joined workspaces.</span>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>refreshPolls("notes:"+user.id+":"+activeWorkspaceId)} aria-label="Refresh notes"><RefreshCw size={14}/> Refresh</button><button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
