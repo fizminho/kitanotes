@@ -29,7 +29,6 @@ function cleanText(value:unknown,max:number,allowEmpty=false):string|null {
   const result=value.trim();
   return !allowEmpty && !result?null:result;
 }
-function pushDescription(value:string):string { return value.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,140) || "No description was added."; }
 function changes(result:unknown):number { return Number((result as {meta?:{changes?:number}})?.meta?.changes??0); }
 async function roleFor(db:Db,workspaceId:string,userId:string):Promise<Role|null> {
   const row=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,userId).first<{role:Role}>();
