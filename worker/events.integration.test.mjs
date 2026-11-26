@@ -12,7 +12,7 @@ const migrations = [
   "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
   "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
   "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
-  "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql"
+  "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0025_workspace_membership_delta.sql"
 ];
 
 class D1TestDatabase {
@@ -156,5 +156,20 @@ test("event create and update reject linked notes from another workspace", async
     assert.equal((await update.json()).error,"INVALID_OR_STALE_EVENT");
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM calendar_events WHERE title='Cross-workspace linked note'").get().total,0);
     assert.equal(db.sqlite.prepare("SELECT linked_note_id,version FROM calendar_events WHERE id='e1'").get().linked_note_id,null);
+  } finally { db.close(); }
+});
+
+test("aggregate event delta removes workspaces after membership revocation", async () => {
+  const {db,env,tokens}=seed();
+  try {
+    const since=new Date(Date.now()-60000).toISOString();
+    const before=await handleEventsRequest(request("/api/events?from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z",tokens.u2),env);
+    assert.equal(before.status,200);
+    assert.deepEqual((await before.json()).events.map(event=>event.id),["e1"]);
+    db.sqlite.prepare("DELETE FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").run();
+    const delta=await handleEventsRequest(request("/api/events?from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z&updatedSince="+encodeURIComponent(since),tokens.u2),env);
+    assert.equal(delta.status,200);
+    const body=await delta.json();
+    assert.deepEqual(body.removedWorkspaceIds,["w1"]);
   } finally { db.close(); }
 });

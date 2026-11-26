@@ -63,10 +63,11 @@ async function listEvents(request:Request,env:AuthEnv,userId:string):Promise<Res
   const range="e.starts_at_utc<? AND e.ends_at_utc>=?";
   const sql="SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name,ln.title AS linked_note_title FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id LEFT JOIN notes ln ON ln.id=e.linked_note_id AND ln.workspace_id=e.workspace_id AND ln.deleted_at IS NULL WHERE "+scope+" AND e.deleted_at IS NULL AND "+range+(since?" AND e.updated_at>=? AND e.updated_at<=?":"")+" ORDER BY e.starts_at_utc,e.id LIMIT ?";
   const result=await db.prepare(sql).bind(...[scopeValue,to,from,...(since?[since,syncNow]:[]),limit]).all<EventRow>();
-  if(!since)return json({events:result.results.map(dto),removedEventIds:[],from,to,nextCursor:syncNow});
+  if(!since)return json({events:result.results.map(dto),removedEventIds:[],removedWorkspaceIds:[],from,to,nextCursor:syncNow});
   const removedSql="SELECT e.id FROM calendar_events e WHERE "+scope+" AND ((e.deleted_at>=? AND e.deleted_at<=?) OR (e.deleted_at IS NULL AND e.updated_at>=? AND e.updated_at<=? AND NOT ("+range+")))";
   const removed=await db.prepare(removedSql).bind(scopeValue,since,syncNow,since,syncNow,to,from).all<{id:string}>();
-  return json({events:result.results.map(dto),removedEventIds:removed.results.map(row=>row.id),from,to,nextCursor:syncNow});
+  const removedWorkspaces=await db.prepare("SELECT DISTINCT c.workspace_id FROM workspace_membership_changes c WHERE c.user_id=? AND c.active=0 AND c.changed_at>? AND c.changed_at<=? AND NOT EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=c.workspace_id AND wm.user_id=c.user_id)").bind(userId,since,syncNow).all<{workspace_id:string}>();
+  return json({events:result.results.map(dto),removedEventIds:removed.results.map(row=>row.id),removedWorkspaceIds:removedWorkspaces.results.map(row=>row.workspace_id),from,to,nextCursor:syncNow});
 }
 async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:ExecutionContext):Promise<Response> {
   if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);

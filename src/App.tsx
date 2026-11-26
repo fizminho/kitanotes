@@ -617,14 +617,16 @@ export default function App() {
           fetch("/api/reminders?limit=100"+(reminderCursor?"&updatedSince="+encodeURIComponent(reminderCursor):""),{credentials:"same-origin",cache:"no-store",signal})
         ]);
         if(!response.ok)throw new Error("Unable to load calendar events.");
-        const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
+        const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];removedWorkspaceIds?:string[];nextCursor?:string};
         if(signal.aborted)return;
         if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
         cursor=result.nextCursor??new Date().toISOString();
         if(!reminderResponse.ok)throw new Error("Unable to load reminders.");
-        const reminderResult=await reminderResponse.json() as {reminders:Reminder[];nextCursor?:string};
+        const reminderResult=await reminderResponse.json() as {reminders:Reminder[];removedWorkspaceIds?:string[];nextCursor?:string};
         if(signal.aborted)return;
-        if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
+        const removedWorkspaceIds=new Set([...(result.removedWorkspaceIds??[]),...(reminderResult.removedWorkspaceIds??[])]);
+        if(removedWorkspaceIds.size){setEvents(current=>current.filter(item=>!removedWorkspaceIds.has(item.workspaceId)));setEventReminders(current=>current.filter(item=>!removedWorkspaceIds.has(item.workspaceId)));}
+        if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.filter(item=>!removedWorkspaceIds.has(item.workspaceId)).map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
         reminderCursor=reminderResult.nextCursor??new Date().toISOString();setEventsError("");
       }catch(error){if(!signal.aborted)setEventsError(error instanceof Error?error.message:"Unable to refresh calendar.");throw error;}
       finally{setEventsLoading(false);}

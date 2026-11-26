@@ -52,7 +52,8 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     const result=workspaceId
       ? await db.prepare("SELECT * FROM reminders WHERE workspace_id=? "+(since?"AND updated_at>=? AND updated_at<=? ":"")+"ORDER BY updated_at,due_at_utc DESC LIMIT ?").bind(...[workspaceId,...(since?[since.toISOString(),syncNow]:[]),limit]).all<ReminderRow>()
       : await db.prepare("SELECT r.* FROM reminders r JOIN workspace_members wm ON wm.workspace_id=r.workspace_id WHERE wm.user_id=? "+(since?"AND r.updated_at>=? AND r.updated_at<=? ":"")+"ORDER BY r.updated_at,r.due_at_utc DESC LIMIT ?").bind(...[user.id,...(since?[since.toISOString(),syncNow]:[]),limit]).all<ReminderRow>();
-    return json({reminders:result.results.map(dto),nextCursor:syncNow});
+    const removedWorkspaces=since&&!workspaceId?await db.prepare("SELECT DISTINCT c.workspace_id FROM workspace_membership_changes c WHERE c.user_id=? AND c.active=0 AND c.changed_at>? AND c.changed_at<=? AND NOT EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=c.workspace_id AND wm.user_id=c.user_id)").bind(user.id,since.toISOString(),syncNow).all<{workspace_id:string}>():{results:[] as {workspace_id:string}[]};
+    return json({reminders:result.results.map(dto),removedWorkspaceIds:removedWorkspaces.results.map(row=>row.workspace_id),nextCursor:syncNow});
   }
   if(url.pathname==="/api/reminders"&&request.method==="POST"){
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
