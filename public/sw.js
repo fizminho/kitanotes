@@ -33,8 +33,10 @@ self.addEventListener("push", event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data?.text() || "" }; }
   const v2 = data && data.v === 2;
-  const title = typeof data.title === "string" && data.title.trim() ? data.title.slice(0, 60) : "KitaNotes";
-  const body = typeof data.body === "string" ? data.body.slice(0, 120) : "You have a new notification.";
+  const titleLimit = v2 ? 60 : 80;
+  const bodyLimit = v2 ? 120 : 160;
+  const title = typeof data.title === "string" && data.title.trim() ? data.title.slice(0, titleLimit) : "KitaNotes";
+  const body = typeof data.body === "string" ? data.body.slice(0, bodyLimit) : "You have a new notification.";
   let target = "/";
   if (typeof data.url === "string" && data.url.startsWith("/") && !data.url.startsWith("//")) {
     try { const parsed = new URL(data.url, self.location.origin); if (parsed.origin === self.location.origin) target = parsed.pathname + parsed.search + parsed.hash; } catch {}
