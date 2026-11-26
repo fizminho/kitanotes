@@ -1138,3 +1138,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .calendar-workspace-dot{display:inline-block;width:9px;height:9px;flex:0 0 9px;border-radius:50%}
 .calendar-filtered-note{margin:4px 0 10px;color:var(--muted,#777);font-size:12px}
 .calendar-readonly-hint{color:var(--muted,#777);font-size:13px}
+
+.global-search-results{display:flex;flex-direction:column;gap:22px}.global-search-group h3{margin:0 0 10px;font-size:14px;color:var(--muted,#777)}.conflict-composer{max-width:560px}.conflict-composer>p{color:var(--muted,#777);line-height:1.55}.conflict-preview{padding:12px;border:1px solid var(--border,#ddd);border-radius:12px;margin:14px 0}.conflict-preview p{white-space:pre-wrap;max-height:150px;overflow:auto;color:var(--muted,#777);font-size:13px}.conflict-composer footer{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+
+.activity-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.activity-filters label{display:grid;gap:5px;font-size:12px;color:var(--muted,#777)}@media(max-width:520px){.activity-filters{grid-template-columns:1fr}}

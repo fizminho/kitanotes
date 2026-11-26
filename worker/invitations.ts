@@ -252,17 +252,36 @@ async function deleteWorkspace(request: Request, env: InvitationEnv, userId: str
   return json({deleted:true});
 }
 
-async function listActivity(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
+async function workspaceSummary(env:InvitationEnv,userId:string,workspaceId:string):Promise<Response>{
+  const db=env.DB!;
+  if(!(await memberRole(db,workspaceId,userId)))return json({error:"NOT_FOUND"},404);
+  const [notes,events,members,pending]=await Promise.all([
+    db.prepare("SELECT COUNT(*) AS total FROM notes WHERE workspace_id=? AND deleted_at IS NULL").bind(workspaceId).first<{total:number}>(),
+    db.prepare("SELECT COUNT(*) AS total FROM calendar_events WHERE workspace_id=? AND deleted_at IS NULL").bind(workspaceId).first<{total:number}>(),
+    db.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id=?").bind(workspaceId).first<{total:number}>(),
+    db.prepare("SELECT COUNT(*) AS total FROM invitations WHERE workspace_id=? AND status='pending' AND expires_at>?").bind(workspaceId,new Date().toISOString()).first<{total:number}>()
+  ]);
+  return json({notes:notes?.total??0,events:events?.total??0,members:members?.total??0,pendingInvitations:pending?.total??0});
+}
+
+async function listActivity(request:Request,env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
-  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,t.display_name AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id WHERE a.workspace_id=? ORDER BY a.created_at DESC LIMIT 50")
-    .bind(workspaceId).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
-  return json({ activity: result.results.map(row => {
-    let metadata: Record<string, unknown> = {};
-    try { metadata = JSON.parse(row.metadata_json); } catch { /* ignore malformed metadata */ }
+  const url=new URL(request.url);
+  const type=(url.searchParams.get("type")??"").slice(0,64);
+  const actor=(url.searchParams.get("actor")??"").slice(0,64);
+  const before=(url.searchParams.get("before")??"").slice(0,120);
+  const [beforeDate,beforeId]=before.split("|");
+  const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit"))||50));
+  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,COALESCE(t.display_name,n.title,e.title) AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id LEFT JOIN notes n ON a.target_type='note' AND n.id=a.target_id LEFT JOIN calendar_events e ON a.target_type='event' AND e.id=a.target_id WHERE a.workspace_id=? AND (?='' OR a.event_type=?) AND (?='' OR a.actor_user_id=?) AND (?='' OR a.created_at<? OR (a.created_at=? AND a.id<?)) ORDER BY a.created_at DESC,a.id DESC LIMIT ?")
+    .bind(workspaceId,type,type,actor,actor,beforeDate??"",beforeDate??"",beforeDate??"",beforeId??"",limit+1).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
+  const hasMore=result.results.length>limit;
+  const rows=result.results.slice(0,limit);
+  return json({activity:rows.map(row=>{
+    let metadata:Record<string,unknown>={};try{metadata=JSON.parse(row.metadata_json);}catch{/* ignore malformed metadata */}
     delete metadata.email;
-    return { id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",target:row.target_name||null,metadata,createdAt:row.created_at };
-  }) });
+    return{id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",actorId:row.actor_user_id,target:row.target_name||null,metadata,createdAt:row.created_at};
+  }),nextCursor:hasMore?(rows[rows.length-1]?.created_at??"")+"|"+(rows[rows.length-1]?.id??""):null});
 }
 
 async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
@@ -297,10 +316,24 @@ async function updateStarredWorkspace(request: Request, env: InvitationEnv, user
   return json({starredWorkspaceId:workspaceId});
 }
 
+async function invitationPreview(request:Request,env:InvitationEnv):Promise<Response>{
+  const token=new URL(request.url).searchParams.get("token")??"";
+  if(token.length<32||token.length>256)return json({valid:false,error:"INVALID_INVITATION_TOKEN"},400);
+  const hash=await tokenHash(token);
+  const row=await env.DB!.prepare("SELECT i.workspace_id,i.role,i.status,i.expires_at,w.name AS workspace_name,u.display_name AS inviter_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id LEFT JOIN users u ON u.id=i.invited_by_user_id WHERE i.token_hash=?")
+    .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";status:string;expires_at:string;workspace_name:string;inviter_name:string|null}>();
+  if(!row)return json({valid:false,error:"INVITATION_INVALID"});
+  if(row.status!=="pending")return json({valid:false,error:row.status==="revoked"?"INVITATION_REVOKED":"INVITATION_ALREADY_USED"});
+  if(row.expires_at<=new Date().toISOString())return json({valid:false,error:"INVITATION_EXPIRED"},410);
+  const count=await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id=?").bind(row.workspace_id).first<{total:number}>();
+  return json({valid:true,workspaceName:row.workspace_name,inviterName:row.inviter_name||"A workspace member",role:row.role,memberCount:count?.total??0,expiresAt:row.expires_at});
+}
+
 export async function handleInvitationsRequest(request: Request, env: InvitationEnv): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== "/api/workspaces" && !url.pathname.startsWith("/api/workspaces/") && !url.pathname.startsWith("/api/invitations")) return null;
   if (!env.DB) return json({ error: "DATABASE_NOT_CONFIGURED" },503);
+  if(url.pathname==="/api/invitations/preview"&&request.method==="GET")return invitationPreview(request,env);
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
   if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(env,user.id);
@@ -318,17 +351,18 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
     await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
     return json({ workspace: { id,name,type:"shared",visibility:"shared",role:"owner" } },201);
   }
-  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity))?$/);
+  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity|summary))?$/);
   if (workspaceMatch) {
     const id=decodeURIComponent(workspaceMatch[1]);
     if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
+    if(request.method==="GET" && url.pathname.endsWith("/summary")) return workspaceSummary(env,user.id,id);
     if(request.method==="PATCH" && url.pathname.includes("/members/")) return updateMemberRole(request,env,user.id,id,decodeURIComponent(url.pathname.split("/").pop()??""));
     if(request.method==="DELETE" && url.pathname.includes("/members/")) {
       const memberId=decodeURIComponent(url.pathname.split("/").pop()??"");
       if(memberId===user.id) return leaveWorkspace(request,env,user.id,id);
       return removeMember(request,env,user.id,id,memberId);
     }
-    if(request.method==="GET" && url.pathname.endsWith("/activity")) return listActivity(env,user.id,id);
+    if(request.method==="GET" && url.pathname.endsWith("/activity")) return listActivity(request,env,user.id,id);
     if(request.method==="DELETE" && !url.pathname.includes("/members")) return deleteWorkspace(request,env,user.id,id);
     if(request.method==="PATCH") {
       if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);
