@@ -33,8 +33,8 @@ function WorkspacePicker({workspaces,activeWorkspaceId,onChange,unreadByWorkspac
       <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
       <ChevronDown size={16} className={open?"workspace-picker-chevron open":"workspace-picker-chevron"}/>
     </button>
-    {open&&<div className="workspace-picker-menu" role="listbox" aria-label="Workspaces">
-      {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
+    {open&&<div className="workspace-picker-menu" role="group" aria-label="Workspaces">
+      {workspaces.map(workspace=><button type="button" aria-current={workspace.id===activeWorkspaceId?"true":undefined} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
         <span className="workspace-picker-option-avatar" style={{backgroundColor:workspace.color??undefined}}>{(workspace.icon??workspace.name.trim().slice(0,1).toUpperCase())||"K"}</span>
         <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
         {(unreadByWorkspace[workspace.id]??0)>0&&<span className="workspace-unread-count" aria-label={(unreadByWorkspace[workspace.id]??0)+" unread notifications"}>{(unreadByWorkspace[workspace.id]??0)>99?"99+":unreadByWorkspace[workspace.id]}</span>}{workspace.id===activeWorkspaceId&&<Check size={16}/>}
