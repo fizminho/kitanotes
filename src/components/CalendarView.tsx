@@ -4,7 +4,7 @@ import { Archive, Download, Pencil, Upload } from "lucide-react";
 
 type CalendarEvent = {
   id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string;
-  timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string;
+  timezone:string; allDay:boolean; linkedNoteId:string|null; linkedNoteTitle?:string|null; linkedNoteUnavailable?:boolean; createdBy:string;
   createdByName:string|null; updatedBy:string|null;
   updatedByName:string|null; createdAt:string; updatedAt:string; version:number;
 };
@@ -20,7 +20,7 @@ type Props = {
   calendarDays:Date[]; calendarAgendaItems:CalendarItem[]; calendarTransferBusy:boolean;
   calendarIcsInputRef:RefObject<HTMLInputElement>;
   onImportCalendarIcs:(file:File)=>void; onExportCalendarIcs:()=>void; onMoveCalendar:(amount:number)=>void;
-  onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; calendarFocusDate?:string|null;
+  onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; onOpenLinkedNote:(noteId:string,workspaceId:string)=>void; calendarFocusDate?:string|null;
 };
 function dateKey(value:Date):string {
   return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
@@ -29,7 +29,7 @@ export default function CalendarView(props:Props) {
   const {events,holidays,eventsLoading,eventsError,workspaces,canManageEvent,holidayFeedStatus,holidayState,onHolidayStateChange,
     calendarMode,setCalendarMode,calendarCursor,setCalendarCursor,calendarHeading,calendarDays,
     calendarTransferBusy,calendarIcsInputRef,onImportCalendarIcs,onExportCalendarIcs,
-    onMoveCalendar,onEditEvent,onDeleteEvent,calendarFocusDate}=props;
+    onMoveCalendar,onEditEvent,onDeleteEvent,onOpenLinkedNote,calendarFocusDate}=props;
   const [selectedDate,setSelectedDate]=useState<Date|null>(null);
   useEffect(()=>{if(calendarFocusDate){const date=new Date(calendarFocusDate+"T12:00:00");if(!Number.isNaN(date.getTime()))setSelectedDate(date);}},[calendarFocusDate]);
   const [workspaceFilter,setWorkspaceFilter]=useState<string>(()=>{try{return localStorage.getItem("kitanotes-calendar-workspace-filter")??"all";}catch{return "all";}});
@@ -82,7 +82,7 @@ export default function CalendarView(props:Props) {
       {!selectedDate?<><div className="calendar-agenda-heading"><div><span className="calendar-agenda-eyebrow">MONTHLY SUMMARY</span><h3>{calendarHeading}</h3></div><span className="calendar-agenda-count">{monthItems.length} {monthItems.length===1?"item":"items"}</span></div>
         <div className="calendar-month-summary-stats"><div><strong>{monthEventCount}</strong><span>Events</span></div><div><strong>{monthPublicHolidayCount}</strong><span>Public holidays</span></div><div><strong>{monthSchoolHolidayCount}</strong><span>School holidays</span></div></div>
         {eventsLoading?<p className="calendar-selected-empty">Loading this month’s schedule…</p>:monthItems.length===0?<p className="calendar-selected-empty">Nothing scheduled for this month yet.</p>:<div className="calendar-month-summary-list">{monthItems.map(item=><article className={"calendar-detail-card"+(item.holiday?" holiday "+(item.holidayType||"public"):" personal-event")} key={(item.holiday?"holiday-":"event-")+item.id}>
-          <span className={"calendar-detail-marker "+(item.holiday?(item.holidayType||"public"):"event")} style={!item.holiday?{backgroundColor:workspaceById.get(item.workspaceId)?.color}:undefined}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>{item.holiday?(item.holidayType==="school"?"SCHOOL HOLIDAY · KPM":"PUBLIC HOLIDAY · MALAYSIA"):(workspaceById.get(item.workspaceId)?.name??"WORKSPACE EVENT")}</span>{item.allDay&&<span>ALL DAY</span>}</div><h4>{item.title}</h4><p className="calendar-detail-date">{dateRange(item)}{!item.allDay?" · "+new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",timeZone:item.timezone}):""}</p>{item.description&&<p className="calendar-detail-description">{item.description}</p>}</div>
+          <span className={"calendar-detail-marker "+(item.holiday?(item.holidayType||"public"):"event")} style={!item.holiday?{backgroundColor:workspaceById.get(item.workspaceId)?.color}:undefined}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>{item.holiday?(item.holidayType==="school"?"SCHOOL HOLIDAY · KPM":"PUBLIC HOLIDAY · MALAYSIA"):(workspaceById.get(item.workspaceId)?.name??"WORKSPACE EVENT")}</span>{item.allDay&&<span>ALL DAY</span>}</div><h4>{item.title}</h4><p className="calendar-detail-date">{dateRange(item)}{!item.allDay?" · "+new Date(item.startsAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",timeZone:item.timezone}):""}</p>{item.description&&<p className="calendar-detail-description">{item.description}</p>}{item.linkedNoteId&&(item.linkedNoteTitle?<button type="button" className="calendar-linked-note" onClick={()=>onOpenLinkedNote(item.linkedNoteId!,item.workspaceId)} aria-label={"Open linked note "+item.linkedNoteTitle+" in "+(workspaceById.get(item.workspaceId)?.name??"workspace")}><Link2 size={14}/><span>{item.linkedNoteTitle}</span><small>{workspaceById.get(item.workspaceId)?.name??"Workspace"}</small></button>:<span className="calendar-linked-note unavailable"><Link2 size={14}/> Note unavailable</span>)}</div>
           {!item.holiday&&canManageEvent(item)&&<div className="calendar-detail-actions"><button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label={"Edit "+item.title}><Pencil size={15}/></button><button className="mini-icon" onClick={()=>onDeleteEvent(item)} aria-label={"Delete "+item.title}><Archive size={15}/></button></div>}
         </article>)}</div>}
       </>:<><div className="calendar-agenda-heading"><div><span className="calendar-agenda-eyebrow">DAY DETAILS</span><h3>{selectedDateLabel}</h3></div><div><button className="secondary-button" type="button" onClick={showMonthSummary}>Monthly summary</button><span className="calendar-agenda-count">{selectedDayItems.length} {selectedDayItems.length===1?"item":"items"}</span></div></div>

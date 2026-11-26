@@ -1251,6 +1251,15 @@ export default function App() {
     }
   }
 
+  async function openLinkedNote(noteId:string,workspaceId:string){
+    const workspace=workspaces.find(item=>item.id===workspaceId);
+    if(!workspace){pushToast("This note is no longer available in your workspaces.","error");return;}
+    if(activeWorkspaceId!==workspaceId){setActiveWorkspaceId(workspaceId);pushToast("Switched to "+workspace.name);}
+    setShowArchived(false);setShowTrash(false);setView("notes");
+    try{const response=await fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};setViewingNote(result.note);}
+    catch{pushToast("Note unavailable. It may have been deleted or access may have changed.","error");}
+  }
+
   function openNotification(notification:Notification) {
     const workspaceId=notification.workspaceId??(notification.resourceType==="workspace"?notification.resourceId:null);
     if(workspaceId&&workspaces.some(item=>item.id===workspaceId))setActiveWorkspaceId(workspaceId);
@@ -1816,7 +1825,7 @@ export default function App() {
               calendarAgendaItems={calendarAgendaItems} calendarTransferBusy={calendarTransferBusy}
               calendarIcsInputRef={calendarIcsInputRef} onImportCalendarIcs={importCalendarIcs}
               onExportCalendarIcs={exportCalendarIcs} onMoveCalendar={moveCalendar}
-              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent} calendarFocusDate={calendarFocusDate}
+              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent} onOpenLinkedNote={openLinkedNote} calendarFocusDate={calendarFocusDate}
             />
           </Suspense>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
