@@ -1229,6 +1229,7 @@ export default function App() {
       const readAt=new Date().toISOString();
       setNotifications(current=>current.map(item=>item.id===notification.id?{...item,readAt}:item));
       setUnreadCount(count=>Math.max(0,count-1));
+      if(notification.workspaceId)setUnreadByWorkspace(current=>({...current,[notification.workspaceId!]:Math.max(0,(current[notification.workspaceId!]??0)-1)}));
     }
   }
 
@@ -1238,13 +1239,15 @@ export default function App() {
       const readAt=new Date().toISOString();
       setNotifications(current=>current.map(item=>({...item,readAt:item.readAt??readAt})));
       setUnreadCount(0);
+      setUnreadByWorkspace({});
     }
   }
 
   function openNotification(notification:Notification) {
     const workspaceId=notification.workspaceId??(notification.resourceType==="workspace"?notification.resourceId:null);
     if(workspaceId&&workspaces.some(item=>item.id===workspaceId))setActiveWorkspaceId(workspaceId);
-    if(notification.resourceType==="note"&&notification.resourceId){
+    if(notification.resourceType==="workspace"){setShowArchived(false);setShowTrash(false);setView("notes");}
+    else if(notification.resourceType==="note"&&notification.resourceId){
       setShowArchived(false);setShowTrash(false);setView("notes");
       void fetch("/api/notes/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This note is no longer available.");const result=await response.json() as {note:Note};setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available in this workspace.","error"));
     }else if(notification.resourceType==="event"&&notification.resourceId){
@@ -1467,6 +1470,7 @@ export default function App() {
       case "invitation.created": return item.actor + " invited " + (item.target ?? "someone") + (role ? " as " + role : "");
       case "invitation.revoked": return item.actor + " revoked an invitation";
       case "note.created": return item.actor + " created the note " + (item.target ? "“"+item.target+"”" : "");
+      case "note.restored": return item.actor + " restored " + (item.target ? "“"+item.target+"”" : "a note");
       case "note.updated": return item.actor + " updated the note " + (item.target ? "“"+item.target+"”" : "");
       case "note.deleted": return item.actor + " deleted a note";
       case "event.created": return item.actor + " created the event " + (item.target ? "“"+item.target+"”" : "");
