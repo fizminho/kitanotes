@@ -5,6 +5,7 @@ import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, Lo
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
+import { subscribePoll } from "./poll-scheduler";
 
 type ActivityItem = { id:string; type:string; actor:string; actorId:string|null; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
@@ -462,51 +463,30 @@ export default function App() {
 
   useEffect(()=>{
     if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote||showArchived||showTrash)return;
-    let active=true,inFlight=false,timer:number|undefined,cursor:string|null=null;let controller:AbortController|null=null;
-    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
-      try{const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to sync notes.");const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};if(active){if(!cursor)setNotes(result.notes);else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});cursor=result.nextCursor??new Date().toISOString();}}
-      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotesError(error instanceof Error?error.message:"Notes sync paused.");}
-      finally{inFlight=false;controller=null;schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    let cursor:string|null=null;
+    return subscribePoll("notes:"+user.id+":"+activeWorkspaceId,30000,async signal=>{
+      const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");
+      const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to sync notes.");
+      const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};
+      if(!cursor)setNotes(result.notes);
+      else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});
+      cursor=result.nextCursor??new Date().toISOString();
+    });
   },[view,user,activeWorkspaceId,composerOpen,editingNote?.id,showArchived,showTrash]);
 
-  // Keep an open shared note fresh without a scheduled Worker cron or realtime infrastructure.
-  useEffect(() => {
-    if (!viewingNote?.id) return;
-    let active = true;
-    let inFlight = false;
-    const syncOpenNote = async () => {
-      if (!active || document.visibilityState !== "visible" || inFlight || checklistSavingLine !== null) return;
-      inFlight = true;
-      try {
-        const response = await fetch("/api/notes/" + encodeURIComponent(viewingNote.id), {
-          credentials: "same-origin",
-          cache: "no-store"
-        });
-        if (!response.ok) return;
-        const result = await response.json() as { note?: Note };
-        if (!active || !result.note || result.note.id !== viewingNote.id) return;
-        setViewingNote(current => {
-          if (!current || current.id !== result.note!.id || current.version >= result.note!.version) return current;
-          return result.note!;
-        });
-        setNotes(current => current.map(note =>
-          note.id === result.note!.id && note.version < result.note!.version ? result.note! : note
-        ));
-      } catch {
-        // A transient network failure is retried on the next polling cycle.
-      } finally {
-        inFlight = false;
-      }
-    };
-    const timer = window.setInterval(() => { void syncOpenNote(); }, 5000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [viewingNote?.id, checklistSavingLine]);
+  // One keyed poller per open note. The scheduler pauses it while hidden/offline.
+  useEffect(()=>{
+    if(!viewingNote?.id)return;
+    return subscribePoll("note:"+viewingNote.id,5000,async signal=>{
+      if(checklistSavingLine!==null)return;
+      const response=await fetch("/api/notes/"+encodeURIComponent(viewingNote.id),{credentials:"same-origin",cache:"no-store",signal});
+      if(!response.ok)throw new Error("Unable to refresh this note.");
+      const result=await response.json() as {note?:Note};
+      if(!result.note||result.note.id!==viewingNote.id)return;
+      setViewingNote(current=>!current||current.id!==result.note!.id||current.version>=result.note!.version?current:result.note!);
+      setNotes(current=>current.map(note=>note.id===result.note!.id&&note.version<result.note!.version?result.note!:note));
+    });
+  },[viewingNote?.id,checklistSavingLine]);
 
   useEffect(()=>{
     if(!composerOpen||!user||!activeWorkspaceId)return;
@@ -518,29 +498,25 @@ export default function App() {
 
   useEffect(()=>{
     if(!user)return;
-    let active=true,timer:number|undefined,controller:AbortController|null=null;
-    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();
-      try{const response=await fetch("/api/workspaces",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)return;const result=await response.json() as {workspaces:Workspace[];starredWorkspaceId:string|null};if(!active)return;
-        setWorkspaces(result.workspaces);setStarredWorkspaceId(result.starredWorkspaceId);
-        if(!result.workspaces.some(item=>item.id===activeWorkspaceId)){const next=result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);if(activeWorkspaceId)pushToast("You no longer have access to a workspace. Your view has been switched.");}
-      }catch{/* retry on the next cycle */}finally{controller=null;schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),60000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    return subscribePoll("workspaces:"+user.id,60000,async signal=>{
+      const response=await fetch("/api/workspaces",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspaces.");
+      const result=await response.json() as {workspaces:Workspace[];starredWorkspaceId:string|null};
+      setWorkspaces(result.workspaces);setStarredWorkspaceId(result.starredWorkspaceId);
+      if(!result.workspaces.some(item=>item.id===activeWorkspaceId)){
+        const next=result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??"";
+        setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);
+        if(activeWorkspaceId)pushToast("You no longer have access to a workspace. Your view has been switched.");
+      }
+    });
   },[user,activeWorkspaceId,pushToast]);
 
   useEffect(()=>{
-    if(!user){setUnreadCount(0);return;}
-    let active=true,timer:number|undefined,controller:AbortController|null=null;
-    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();try{const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(response.ok){const result=await response.json() as {unreadCount:number;unreadByWorkspace?:Record<string,number>};if(active){setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});}}}catch{/* retried next cycle */}finally{controller=null;schedule();}};
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    void sync();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    if(!user){setUnreadCount(0);setUnreadByWorkspace({});return;}
+    return subscribePoll("notifications:unread:"+user.id,30000,async signal=>{
+      const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh notification count.");
+      const result=await response.json() as {unreadCount:number;unreadByWorkspace?:Record<string,number>};
+      setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});
+    });
   },[user]);
 
   useEffect(() => {
@@ -586,60 +562,31 @@ export default function App() {
     return () => { active = false; };
   }, [inviteOpen, activeWorkspaceId, inviteRefresh, workspaces, activityTypeFilter, activityPersonFilter]);
 
-  useEffect(() => {
-    if (view !== "calendar" || !user) return;
-    let active = true;
-    let inFlight = false;
-    let timer: number | undefined;
-    let controller: AbortController | null = null;
-    let delay = 30000;
-    let eventCursor:string|null=null;
-    const range = () => {
-      const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
-      const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
+  useEffect(()=>{
+    if(view!=="calendar"||!user)return;
+    const range=()=>{
+      const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1),rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
       if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
       else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
-      return {from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
+      return{from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
     };
-    const schedule = () => {
-      if(!active || document.visibilityState!=="visible" || !navigator.onLine)return;
-      const jitter=0.9+Math.random()*0.2;
-      timer=window.setTimeout(()=>void sync(),Math.round(delay*jitter));
-    };
-    const sync = async () => {
-      if(!active || inFlight || document.visibilityState!=="visible" || !navigator.onLine)return;
-      inFlight=true;
-      controller=new AbortController();
+    let cursor:string|null=null;
+    setEventsLoading(true);setEventsError("");
+    return subscribePoll("calendar:"+user.id+":"+calendarMode+":"+calendarCursor.getFullYear()+"-"+calendarCursor.getMonth()+"-"+calendarCursor.getDate(),30000,async signal=>{
       const {from,to}=range();
-      try{
-        const [response,reminderResponse]=await Promise.all([
-          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(eventCursor?"&updatedSince="+encodeURIComponent(eventCursor):""),{credentials:"same-origin",cache:"no-store",signal:controller.signal}),
-          fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal:controller.signal})
-        ]);
-        if(!response.ok)throw new Error("Unable to load calendar events.");
-        const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
-        if(!active)return;
-        if(!eventCursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
-        eventCursor=result.nextCursor??new Date().toISOString();
-        if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
-        setEventsError("");
-        delay=30000;
-      }catch(error){
-        if(active && !(error instanceof DOMException && error.name==="AbortError")){setEventsError(error instanceof Error?error.message:"Calendar sync is paused.");delay=Math.min(60000,Math.max(10000,delay*2));}
-      }finally{inFlight=false;controller=null;schedule();}
-    };
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);delay=30000;void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>{delay=30000;void sync();};
-    const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    setEventsLoading(true);
-    setEventsError("");
-    void sync().finally(()=>{if(active)setEventsLoading(false);});
-    document.addEventListener("visibilitychange",onVisibility);
-    window.addEventListener("online",onOnline);
-    window.addEventListener("offline",onOffline);
-    return ()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+      const [response,reminderResponse]=await Promise.all([
+        fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(cursor?"&updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal}),
+        fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal})
+      ]);
+      if(!response.ok)throw new Error("Unable to load calendar events.");
+      const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
+      if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
+      cursor=result.nextCursor??new Date().toISOString();
+      if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};setEventReminders(reminderResult.reminders);}
+      setEventsError("");setEventsLoading(false);
+    });
   },[view,user,calendarMode,calendarCursor,calendarRefresh]);
-  
+
   useEffect(()=>{
     if(!notificationsOpen||!user)return;
     let active=true;
@@ -649,17 +596,13 @@ export default function App() {
 
   useEffect(()=>{
     if(!notificationsOpen||!user)return;
-    let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
-    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();setNotificationsLoading(true);
-      try{const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to load notifications.");const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");}}
-      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");}
-      finally{inFlight=false;controller=null;if(active)setNotificationsLoading(false);schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    void sync();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    let first=true;
+    setNotificationsLoading(true);
+    return subscribePoll("notifications:inbox:"+user.id,30000,async signal=>{
+      const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to load notifications.");
+      const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};
+      setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");setNotificationsLoading(false);first=false;
+    });
   },[notificationsOpen,user]);
 
   useEffect(()=>{
@@ -1491,16 +1434,11 @@ export default function App() {
 
   useEffect(()=>{
     if(!inviteOpen||manageTab!=="activity"||!activeWorkspaceId)return;
-    let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
-    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
-      try{const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter);const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)return;const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};if(active){setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);}}
-      catch{/* next poll retries */}finally{inFlight=false;controller=null;schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),15000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    return subscribePoll("activity:"+activeWorkspaceId+":"+activityTypeFilter+":"+activityPersonFilter,15000,async signal=>{
+      const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter);
+      const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh activity.");
+      const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);
+    });
   },[inviteOpen,manageTab,activeWorkspaceId,activityTypeFilter,activityPersonFilter]);
 
   async function loadMoreActivity(){
