@@ -444,7 +444,7 @@ export default function App() {
   },[globalSearchActive,user,view,query]);
 
   useEffect(()=>{
-    if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote)return;
+    if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote||showArchived||showTrash)return;
     let active=true,inFlight=false,timer:number|undefined,cursor:string|null=null;let controller:AbortController|null=null;
     const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
       try{const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to sync notes.");const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};if(active){if(!cursor)setNotes(result.notes);else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});cursor=result.nextCursor??new Date().toISOString();}}
@@ -456,7 +456,7 @@ export default function App() {
     const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
     schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
     return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
-  },[view,user,activeWorkspaceId,composerOpen,editingNote?.id]);
+  },[view,user,activeWorkspaceId,composerOpen,editingNote?.id,showArchived,showTrash]);
 
   // Keep an open shared note fresh without a scheduled Worker cron or realtime infrastructure.
   useEffect(() => {
@@ -898,7 +898,7 @@ export default function App() {
   const restoreFromTrash=useCallback(async(note:Note)=>{try{const response=await fetch("/api/notes/"+encodeURIComponent(note.id)+"/restore",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});const result=await response.json() as {note?:Note;error?:string};if(!response.ok||!result.note)throw new Error(result.error==="TRASH_RETENTION_EXPIRED"?"This note has passed the 30-day recovery period.":"Unable to restore this note.");setNotes(current=>current.filter(item=>item.id!==note.id));pushToast("Note restored from Trash");}catch(error){pushToast(error instanceof Error?error.message:"Unable to restore this note.","error");}},[pushToast]);
 
   const deleteNote = useCallback(async (note: Note) => {
-    if (!window.confirm("Move \\u201c" + note.title + "\\u201d to Trash? You can restore it for 30 days before permanent deletion.")) return;
+    if (!window.confirm("Move \"" + note.title + "\" to Trash? You can restore it for 30 days before permanent deletion.")) return;
     try {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
         method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: note.version })
