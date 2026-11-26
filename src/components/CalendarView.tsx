@@ -102,6 +102,7 @@ export default function CalendarView(props:Props) {
             {item.holiday&&item.holidayType==="school"&&<p className="calendar-detail-source">Kalendar Akademik Kementerian Pendidikan Malaysia · {holidayState.replace(/-/g," ")}</p>}{item.holiday&&item.holidayType==="public"&&<p className="calendar-detail-source">Cuti umum persekutuan / negeri · {holidayState.replace(/-/g," ")}</p>}</div>
           {!item.holiday&&canManageEvent(item)&&<div className="calendar-detail-actions"><button className="mini-icon" onClick={()=>onEditEvent(item)} aria-label={"Edit "+item.title}><Pencil size={15}/></button><button className="mini-icon" onClick={()=>onDeleteEvent(item)} aria-label={"Delete "+item.title}><Archive size={15}/></button></div>}
         </article>)}{selectedDayReminders.map(item=><article className="calendar-detail-card reminder" key={"reminder-"+item.id}><span className="calendar-detail-marker event" style={{backgroundColor:workspaceById.get(item.workspaceId)?.color}}/><div className="calendar-detail-copy"><div className="calendar-detail-meta"><span>REMINDER · {reminderWorkspaceName(item)}</span></div><h4>{item.title}</h4><p className="calendar-detail-date">Due {new Date(item.dueAt).toLocaleString(undefined,{timeZone:item.timezone,dateStyle:"medium",timeStyle:"short"})} · {item.timezone}</p></div></article>)}</>}
+      </>}
     </section>
 
 
