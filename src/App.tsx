@@ -185,6 +185,8 @@ export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
+  const activeWorkspaceIdRef=useRef("");
+  useEffect(()=>{activeWorkspaceIdRef.current=activeWorkspaceId;},[activeWorkspaceId]);
   const [starredWorkspaceId,setStarredWorkspaceId]=useState<string|null>(null);
   const [starredWorkspaceSaving,setStarredWorkspaceSaving]=useState(false);
   const [workspaceModalOpen,setWorkspaceModalOpen]=useState(false);
@@ -433,7 +435,7 @@ export default function App() {
     if(workspaceId&&!workspaces.some(item=>item.id===workspaceId)){window.history.replaceState({},"","/");pushToast("That workspace is no longer available.","error");return;}
     if(workspaceId)setActiveWorkspaceId(workspaceId);
     window.history.replaceState({},"","/");
-    if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
+    if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId)return;setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
     if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
   },[workspaces,pushToast]);
 
@@ -509,7 +511,7 @@ export default function App() {
       setViewingNote(current=>!current||current.id!==result.note!.id||current.version>=result.note!.version?current:result.note!);
       setNotes(current=>current.map(note=>note.id===result.note!.id&&note.version<result.note!.version?result.note!:note));
     });
-  },[viewingNote?.id,checklistSavingLine]);
+  },[viewingNote?.id,checklistSavingLine,pushToast]);
 
   useEffect(()=>{
     if(!composerOpen||!user||!activeWorkspaceId)return;
@@ -1291,7 +1293,7 @@ export default function App() {
     if(!workspace){pushToast("This note is no longer available in your workspaces.","error");return;}
     if(activeWorkspaceId!==workspaceId){setActiveWorkspaceId(workspaceId);pushToast("Switched to "+workspace.name);}
     setShowArchived(false);setShowTrash(false);setView("notes");
-    try{const response=await fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};setViewingNote(result.note);}
+    try{const response=await fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId)return;setViewingNote(result.note);}
     catch{pushToast("Note unavailable. It may have been deleted or access may have changed.","error");}
   }
 
@@ -1301,7 +1303,7 @@ export default function App() {
     if(notification.resourceType==="workspace"){setShowArchived(false);setShowTrash(false);setView("notes");}
     else if(notification.resourceType==="note"&&notification.resourceId){
       setShowArchived(false);setShowTrash(false);setView("notes");
-      void fetch("/api/notes/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This note is no longer available.");const result=await response.json() as {note:Note};setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available in this workspace.","error"));
+      void fetch("/api/notes/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This note is no longer available.");const result=await response.json() as {note:Note};if(workspaceId&&result.note.workspaceId!==workspaceId)return;if(workspaceId&&activeWorkspaceIdRef.current!==workspaceId)return;if(!workspaceId&&workspaces.some(item=>item.id===result.note.workspaceId))setActiveWorkspaceId(result.note.workspaceId);setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available in this workspace.","error"));
     }else if(notification.resourceType==="event"&&notification.resourceId){
       setView("calendar");
       void fetch("/api/events/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This event is no longer available.");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available in this workspace.","error"));
