@@ -415,7 +415,7 @@ test("pending invitation cannot grant membership after workspace becomes private
   const created=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"invitee@example.com",role:"editor"}),env);
   assert.equal(created.status,201);
   const body=await created.json();
-  const token=new URL(body.invitation.url).searchParams.get("token");
+  const token=new URL(body.invitationUrl).searchParams.get("token");
   db.sqlite.prepare("UPDATE workspaces SET visibility='private' WHERE id='w1'").run();
   const preview=await handleInvitationsRequest(request("/api/invitations/preview?token="+encodeURIComponent(token),tokens.u2),env);
   assert.equal((await preview.json()).error,"WORKSPACE_NOT_SHARED");
