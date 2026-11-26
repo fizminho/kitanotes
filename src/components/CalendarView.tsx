@@ -33,7 +33,7 @@ export default function CalendarView(props:Props) {
   const [selectedDate,setSelectedDate]=useState<Date|null>(null);
   const [workspaceFilter,setWorkspaceFilter]=useState<string>(()=>{try{return localStorage.getItem("kitanotes-calendar-workspace-filter")??"all";}catch{return "all";}});
   const workspaceColors=["#6477d8","#159b83","#d18a36","#b36ac8","#d46d78","#4389b7","#82933c","#98765b"];
-  const workspaceById=useMemo(()=>new Map(workspaces.map((workspace,index)=>[workspace.id,{...workspace,color:workspaceColors[index%workspaceColors.length]}])),[workspaces]);
+  const workspaceById=useMemo(()=>new Map(workspaces.map(workspace=>{const hash=Array.from(workspace.id).reduce((value,char)=>((value*31)+char.charCodeAt(0))>>>0,7);return [workspace.id,{...workspace,color:workspaceColors[hash%workspaceColors.length]}] as const;})),[workspaces]);
   const visibleEvents=workspaceFilter==="all"?events:events.filter(event=>event.workspaceId===workspaceFilter);
   function setWorkspaceFilterValue(value:string){setWorkspaceFilter(value);try{localStorage.setItem("kitanotes-calendar-workspace-filter",value);}catch{/* storage may be unavailable */}}
 

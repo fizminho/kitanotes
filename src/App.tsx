@@ -386,7 +386,8 @@ export default function App() {
       if(!active)return;
       setWorkspaces(result.workspaces);
       setStarredWorkspaceId(result.starredWorkspaceId);
-      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
+      let savedWorkspaceId="";try{savedWorkspaceId=localStorage.getItem("kitanotes-active-workspace")??"";}catch{/* storage unavailable */}
+      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===savedWorkspaceId)?.id??result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
     }).catch(()=>{if(active)setWorkspaces([]);});
     return()=>{active=false;};
   },[user]);
@@ -394,6 +395,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
     let active = true;
+    setNotes([]);
     setNotesLoading(true);
     setNotesError("");
     fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
@@ -441,7 +443,7 @@ export default function App() {
   }, [viewingNote?.id, checklistSavingLine]);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
-  useEffect(() => { setCategoryFilter(""); }, [activeWorkspaceId]);
+  useEffect(() => { setCategoryFilter("");if(activeWorkspaceId){try{localStorage.setItem("kitanotes-active-workspace",activeWorkspaceId);}catch{/* storage unavailable */}} }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!user) { setUnreadCount(0); return; }
@@ -1066,6 +1068,7 @@ export default function App() {
     const target=writable.some(item=>item.id===activeWorkspaceId)?activeWorkspaceId:(writable[0]?.id??"");
     setEventWorkspaceId(target);
     setEventWorkspaceNotes(target===activeWorkspaceId?notes:[]);
+    if(target&&target!==activeWorkspaceId){void fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(target),{credentials:"same-origin"}).then(async response=>{if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}).catch(()=>setEventWorkspaceNotes([]));}
     setEventsError("");
     setEventComposerOpen(true);
   }
@@ -1562,7 +1565,7 @@ export default function App() {
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <div className="workspace-switch-row">
-          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
+          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
