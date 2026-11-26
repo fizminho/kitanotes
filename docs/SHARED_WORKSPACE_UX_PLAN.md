@@ -28,10 +28,10 @@
 ## Rollout phases
 
 - Phase 0: align SHARED_WORKSPACE_FLOW.md with aggregate Calendar.
-- Phase 1: aggregate Calendar source identity, filters, writable event workspace selection and per-event role controls.
+- Phase 1: aggregate Calendar source identity, filters, writable event workspace selection and per-event role controls. (Implemented in PR #52.)
 - Phase 2: persistent Notes workspace context, skeleton switching, stale-response protection, global search and unread workspace indicators.
 - Phase 3: same-workspace linked-note picker and conflict resolution with draft preservation.
-- Phase 4: invite preview/management, safe Leave/Make Private/Delete confirmations and recoverable note deletion.
+- Phase 4: invite preview/management, safe Leave/Make Private/Delete confirmations and recoverable note deletion. (Typed-name confirmation added for Make Private; other lifecycle items remain.)
 - Phase 5: activity filtering/pagination and workspace-aware notification preferences/deep links.
 - Phase 6: centralized visibility-aware polling, deltas, backoff, stale-request protection, offline drafts and accessibility.
 

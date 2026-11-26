@@ -498,26 +498,55 @@ export default function App() {
   useEffect(() => {
     if (view !== "calendar" || !user) return;
     let active = true;
+    let inFlight = false;
+    let timer: number | undefined;
+    let controller: AbortController | null = null;
+    let delay = 30000;
+    const range = () => {
+      const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
+      const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
+      if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
+      else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
+      return {from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
+    };
+    const schedule = () => {
+      if(!active || document.visibilityState!=="visible" || !navigator.onLine)return;
+      const jitter=0.9+Math.random()*0.2;
+      timer=window.setTimeout(()=>void sync(),Math.round(delay*jitter));
+    };
+    const sync = async () => {
+      if(!active || inFlight || document.visibilityState!=="visible" || !navigator.onLine)return;
+      inFlight=true;
+      controller=new AbortController();
+      const {from,to}=range();
+      try{
+        const [response,reminderResponse]=await Promise.all([
+          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin",cache:"no-store",signal:controller.signal}),
+          fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal:controller.signal})
+        ]);
+        if(!response.ok)throw new Error("Unable to load calendar events.");
+        const result=await response.json() as {events:CalendarEvent[]};
+        if(!active)return;
+        setEvents(result.events);
+        if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
+        setEventsError("");
+        delay=30000;
+      }catch(error){
+        if(active && !(error instanceof DOMException && error.name==="AbortError")){setEventsError(error instanceof Error?error.message:"Calendar sync is paused.");delay=Math.min(60000,Math.max(10000,delay*2));}
+      }finally{inFlight=false;controller=null;schedule();}
+    };
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);delay=30000;void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>{delay=30000;void sync();};
+    const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
     setEventsLoading(true);
     setEventsError("");
-    const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
-    const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
-    if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
-    else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
-    const from = new Date(rangeStart.getTime()-86400000).toISOString();
-    const to = new Date(rangeEnd.getTime()+86400000).toISOString();
-    Promise.all([fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"}),activeWorkspaceId?fetch("/api/reminders?workspaceId="+encodeURIComponent(activeWorkspaceId)+"&limit=100",{credentials:"same-origin"}):Promise.resolve(null)])
-      .then(async ([response,reminderResponse]) => {
-        if(!response.ok) throw new Error("Unable to load calendar events.");
-        const result = await response.json() as {events:CalendarEvent[]};
-        if(active) setEvents(result.events);
-        if(reminderResponse?.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
-      })
-      .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
-      .finally(()=>{if(active)setEventsLoading(false);});
-    return ()=>{active=false;};
-  },[view,user,activeWorkspaceId,calendarMode,calendarCursor,calendarRefresh]);
-
+    void sync().finally(()=>{if(active)setEventsLoading(false);});
+    document.addEventListener("visibilitychange",onVisibility);
+    window.addEventListener("online",onOnline);
+    window.addEventListener("offline",onOffline);
+    return ()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+  },[view,user,calendarMode,calendarCursor,calendarRefresh]);
+  
   useEffect(() => {
     if (!notificationsOpen || !user) return;
     let active = true;
@@ -1042,7 +1071,7 @@ export default function App() {
   }
 
   function startEditEvent(item:CalendarEvent) {
-    setEditingEvent(item);setEventWorkspaceId(item.workspaceId);setEventWorkspaceNotes(item.workspaceId===activeWorkspaceId?notes:[]);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
+    setEditingEvent(item);setEventWorkspaceId(item.workspaceId);setEventWorkspaceNotes(item.workspaceId===activeWorkspaceId?notes:[]);if(item.workspaceId!==activeWorkspaceId){void fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(item.workspaceId),{credentials:"same-origin"}).then(async response=>{if(!response.ok)throw new Error("Unable to load linked notes.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}).catch(()=>setEventWorkspaceNotes([]));}setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
     setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
     const reminder=eventReminders.filter(value=>value.eventId===item.id).sort((a,b)=>b.dueAt.localeCompare(a.dueAt))[0]??null;
     setEditingEventReminder(reminder);setEventReminderAt(reminder&&reminder.status==="pending"?dateTimeInputFor(reminder.dueAt,reminder.timezone):"");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
@@ -1256,7 +1285,11 @@ export default function App() {
 
   async function makeWorkspacePrivate() {
     if(!activeWorkspaceId||workspaceActionBusy)return;
-    if(!window.confirm("Remove all other members? They will immediately lose access. Pending invitations will be revoked. Notes and categories will be kept."))return;
+    const memberCount=workspaceMembers.filter(member=>member.role!=="owner").length;
+    const pendingCount=invitations.filter(invitation=>invitation.status==="pending").length;
+    const expectedName=activeWorkspace?.name??"";
+    const typed=window.prompt("Make this workspace private? "+memberCount+" members will lose access and "+pendingCount+" pending invitations will be revoked. Notes, events and reminders will be kept. Members will not regain access automatically.\n\nType the workspace name to continue:", "");
+    if(typed!==expectedName)return;
     setWorkspaceActionBusy(true);setInviteCreateError("");
     try{
       const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({action:"make_private"})});
