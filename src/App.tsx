@@ -498,15 +498,15 @@ export default function App() {
 
   useEffect(()=>{
     if(!user)return;
+    let cursor:string|null=null;
     return subscribePoll("workspaces:"+user.id,60000,async signal=>{
-      const response=await fetch("/api/workspaces",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspaces.");
-      const result=await response.json() as {workspaces:Workspace[];starredWorkspaceId:string|null};
-      setWorkspaces(result.workspaces);setStarredWorkspaceId(result.starredWorkspaceId);
-      if(!result.workspaces.some(item=>item.id===activeWorkspaceId)){
-        const next=result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??"";
-        setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);
-        if(activeWorkspaceId)pushToast("You no longer have access to a workspace. Your view has been switched.");
-      }
+      const response=await fetch("/api/workspaces"+(cursor?"?updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspaces.");
+      const result=await response.json() as {workspaces:Workspace[];removedWorkspaceIds?:string[];starredWorkspaceId:string|null;nextCursor?:string};
+      if(!cursor)setWorkspaces(result.workspaces);
+      else setWorkspaces(current=>{const removed=new Set(result.removedWorkspaceIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.workspaces)byId.set(item.id,item);return [...byId.values()];});
+      setStarredWorkspaceId(result.starredWorkspaceId);cursor=result.nextCursor??new Date().toISOString();
+      const available=cursor&&result.removedWorkspaceIds?.includes(activeWorkspaceId);
+      if(available){const next=result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);pushToast("You no longer have access to a workspace. Your view has been switched.");}
     });
   },[user,activeWorkspaceId,pushToast]);
 

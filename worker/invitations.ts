@@ -284,19 +284,20 @@ async function listActivity(request:Request,env: InvitationEnv, userId: string, 
   }),nextCursor:hasMore?(rows[rows.length-1]?.created_at??"")+"|"+(rows[rows.length-1]?.id??""):null});
 }
 
-async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
-  const [result, preference] = await Promise.all([
-    env.DB!.prepare(
-      "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id LEFT JOIN user_workspace_preferences p ON p.user_id=wm.user_id WHERE wm.user_id=? ORDER BY CASE WHEN w.id=p.starred_workspace_id THEN 0 ELSE 1 END,CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
-    ).bind(userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>(),
-    env.DB!.prepare("SELECT p.starred_workspace_id FROM user_workspace_preferences p JOIN workspace_members wm ON wm.workspace_id=p.starred_workspace_id AND wm.user_id=p.user_id WHERE p.user_id=?").bind(userId).first<{starred_workspace_id:string|null}>()
-  ]);
-  return json({
-    workspaces: result.results.map(row => ({
-      id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role
-    })),
-    starredWorkspaceId: preference?.starred_workspace_id ?? null
-  });
+async function listWorkspaces(request:Request,env:InvitationEnv,userId:string):Promise<Response>{
+  const url=new URL(request.url),sinceValue=url.searchParams.get("updatedSince");
+  const syncNow=new Date().toISOString();
+  const preference=await env.DB!.prepare("SELECT p.starred_workspace_id FROM user_workspace_preferences p JOIN workspace_members wm ON wm.workspace_id=p.starred_workspace_id AND wm.user_id=p.user_id WHERE p.user_id=?").bind(userId).first<{starred_workspace_id:string|null}>();
+  const baseSql="SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=?";
+  if(sinceValue){
+    const parsed=new Date(sinceValue);if(Number.isNaN(parsed.getTime()))return json({error:"INVALID_SYNC_CURSOR"},400);
+    const since=parsed.toISOString();
+    const result=await env.DB!.prepare(baseSql+" AND (w.updated_at>? OR w.id IN (SELECT workspace_id FROM workspace_membership_changes WHERE user_id=? AND changed_at>? AND changed_at<=?)) ORDER BY w.name COLLATE NOCASE").bind(userId,since,userId,since,syncNow).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
+    const removed=await env.DB!.prepare("SELECT DISTINCT c.workspace_id FROM workspace_membership_changes c WHERE c.user_id=? AND c.active=0 AND c.changed_at>? AND c.changed_at<=? AND NOT EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=c.workspace_id AND wm.user_id=c.user_id)").bind(userId,since,syncNow).all<{workspace_id:string}>();
+    return json({workspaces:result.results.map(row=>({id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role})),removedWorkspaceIds:removed.results.map(row=>row.workspace_id),starredWorkspaceId:preference?.starred_workspace_id??null,nextCursor:syncNow});
+  }
+  const result=await env.DB!.prepare(baseSql+" ORDER BY CASE WHEN w.id=(SELECT starred_workspace_id FROM user_workspace_preferences WHERE user_id=?) THEN 0 ELSE 1 END,CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE").bind(userId,userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>();
+  return json({workspaces:result.results.map(row=>({id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role})),starredWorkspaceId:preference?.starred_workspace_id??null,nextCursor:syncNow});
 }
 
 async function updateStarredWorkspace(request: Request, env: InvitationEnv, userId: string): Promise<Response> {
@@ -336,7 +337,7 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
   if(url.pathname==="/api/invitations/preview"&&request.method==="GET")return invitationPreview(request,env);
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
-  if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(env,user.id);
+  if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(request,env,user.id);
   if (url.pathname === "/api/workspaces/star" && request.method === "PUT") return updateStarredWorkspace(request,env,user.id);
   if (url.pathname === "/api/workspaces" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
