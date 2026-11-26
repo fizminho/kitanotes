@@ -17,7 +17,7 @@ export function safePushMessage(kind:PushKind):{title:string;body:string}{
  }
 }
 function clean(value:string):string{
- return value.replace(/<[^>]*>/g," ").replace(/[\\r\\n\\t]+/g," ").replace(/[\\u0000-\\u001f\\u007f-\\u009f]/g," ").replace(/[*_~`>#]/g,"").replace(/\\s+/g," ").trim();
+ return value.replace(/<[^>]*>/g," ").replace(/[\\r\\n\\t]+/g," ").replace(/[\\u0000-\\u001f\\u007f-\\u009f]/g," ").replace(/!\[([^\]]*)\]\([^)]*\)/g,"$1").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/[*_~`>#\[\]]/g,"").replace(/\\s+/g," ").trim();
 }
 export function truncatePushText(value:string,max:number):string{
  const chars=Array.from(clean(value));
@@ -82,7 +82,7 @@ export function buildPushContent(message:PushMessageInput,previewMode:"detailed"
  return{title:truncatePushText(value.title,60)||fallback.title,body:truncatePushText(value.body,120)||fallback.body};
 }
 export function validPushUrl(value:unknown):value is string{
- return typeof value==="string"&&value.startsWith("/")&&!value.startsWith("//")&&!/[\\r\\n\\u0000-\\u001f]/.test(value);
+ return typeof value==="string"&&value.startsWith("/")&&!value.startsWith("//")&&!value.includes("\\\\")&&!/[\\r\\n\\u0000-\\u001f]/.test(value);
 }
 export function validPushTag(value:unknown):value is string{
  return typeof value==="string"&&value.length>0&&value.length<=64&&/^[a-z0-9:_-]+$/.test(value);
