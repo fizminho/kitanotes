@@ -174,7 +174,7 @@ function notificationPresentation(notification:Notification):{kind:string;title:
 }
 
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
-type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
+type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string;pushPreviewMode:"detailed"|"generic"};
 type AiDraft = {
   summary:string; timezone:string;
   note:{title:string;content:string};
@@ -342,7 +342,7 @@ export default function App() {
   const [pushSubscribed,setPushSubscribed]=useState(false);
   const [pushBusy,setPushBusy]=useState(false);
   const [pushError,setPushError]=useState("");
-  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});
   const [notificationPrefsLoading,setNotificationPrefsLoading]=useState(false);
   const [notificationPrefsSaving,setNotificationPrefsSaving]=useState(false);
   const [notificationPrefsError,setNotificationPrefsError]=useState("");
@@ -1882,6 +1882,8 @@ export default function App() {
               <div className="notification-settings-content">
                 {notificationPrefsLoading?<p>Loading preferences…</p>:<>
                   <p className="notification-settings-note">Your in-app inbox always keeps notifications. These settings only control push alerts.</p>
+                  <label className="timezone-setting">Notification details<select value={notificationPrefs.pushPreviewMode} onChange={event=>{setNotificationPrefs(value=>({...value,pushPreviewMode:event.target.value as "detailed"|"generic"}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}><option value="detailed">Show note titles, event names and who made changes</option><option value="generic">Hide details (shows generic text on your lock screen)</option></select></label>
+                  <p className="notification-settings-note">Detailed notification text may be visible to anyone who can see your locked screen.</p>
                   <label><input type="checkbox" checked={notificationPrefs.pushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,pushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}}/> Enable push delivery</label>
                   <label><input type="checkbox" checked={notificationPrefs.reminderPushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,reminderPushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Event and reminder alerts</label>
                   <label><input type="checkbox" checked={notificationPrefs.sharedNotePushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,sharedNotePushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> New shared-note alerts</label>
