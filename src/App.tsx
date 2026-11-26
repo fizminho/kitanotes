@@ -1206,6 +1206,7 @@ export default function App() {
       const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:eventWorkspaceId})});
       const result=await response.json() as {event?:CalendarEvent};
       if(!response.ok||!result.event)throw new Error(response.status===409?"This event changed elsewhere. Close and reopen it before saving.":"Unable to save this event.");
+      if(!editingEvent&&result.event.workspaceId!==eventWorkspaceId)throw new Error("Workspace mismatch: the event was not saved in the selected workspace. Refresh the calendar before continuing.");
       setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
       if(editingEventReminder?.status==="pending"){
         if(eventReminderAt){
