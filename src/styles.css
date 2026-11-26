@@ -1130,3 +1130,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 [data-theme=dark] .calendar-month-summary-stats>div{background:#1b1d2b;border-color:#34364a}
 [data-theme=dark] .calendar-month-summary-stats strong{color:#f1f2fa}
+
+
+/* Shared workspace aggregate calendar */
+.calendar-workspace-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.calendar-workspace-filters .chip{display:inline-flex;align-items:center;gap:7px;min-height:36px}
+.calendar-workspace-dot{display:inline-block;width:9px;height:9px;flex:0 0 9px;border-radius:50%}
+.calendar-filtered-note{margin:4px 0 10px;color:var(--muted,#777);font-size:12px}
+.calendar-readonly-hint{color:var(--muted,#777);font-size:13px}

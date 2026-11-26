@@ -239,6 +239,8 @@ export default function App() {
   const [eventReminderAt, setEventReminderAt] = useState("");
   const [eventReminderAuto,setEventReminderAuto]=useState(true);
   const [eventLinkedNoteId, setEventLinkedNoteId] = useState("");
+  const [eventWorkspaceId,setEventWorkspaceId]=useState("");
+  const [eventWorkspaceNotes,setEventWorkspaceNotes]=useState<Note[]>([]);
   const [eventTimezone, setEventTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur");
   const [eventSaving, setEventSaving] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -384,7 +386,8 @@ export default function App() {
       if(!active)return;
       setWorkspaces(result.workspaces);
       setStarredWorkspaceId(result.starredWorkspaceId);
-      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
+      let savedWorkspaceId="";try{savedWorkspaceId=localStorage.getItem("kitanotes-active-workspace")??"";}catch{/* storage unavailable */}
+      setActiveWorkspaceId(current=>result.workspaces.some(item=>item.id===current)?current:(result.workspaces.find(item=>item.id===savedWorkspaceId)?.id??result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??""));
     }).catch(()=>{if(active)setWorkspaces([]);});
     return()=>{active=false;};
   },[user]);
@@ -392,6 +395,7 @@ export default function App() {
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
     let active = true;
+    setNotes([]);
     setNotesLoading(true);
     setNotesError("");
     fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
@@ -439,7 +443,7 @@ export default function App() {
   }, [viewingNote?.id, checklistSavingLine]);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
-  useEffect(() => { setCategoryFilter(""); }, [activeWorkspaceId]);
+  useEffect(() => { setCategoryFilter("");if(activeWorkspaceId){try{localStorage.setItem("kitanotes-active-workspace",activeWorkspaceId);}catch{/* storage unavailable */}} }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!user) { setUnreadCount(0); return; }
@@ -496,26 +500,55 @@ export default function App() {
   useEffect(() => {
     if (view !== "calendar" || !user) return;
     let active = true;
+    let inFlight = false;
+    let timer: number | undefined;
+    let controller: AbortController | null = null;
+    let delay = 30000;
+    const range = () => {
+      const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
+      const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
+      if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
+      else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
+      return {from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
+    };
+    const schedule = () => {
+      if(!active || document.visibilityState!=="visible" || !navigator.onLine)return;
+      const jitter=0.9+Math.random()*0.2;
+      timer=window.setTimeout(()=>void sync(),Math.round(delay*jitter));
+    };
+    const sync = async () => {
+      if(!active || inFlight || document.visibilityState!=="visible" || !navigator.onLine)return;
+      inFlight=true;
+      controller=new AbortController();
+      const {from,to}=range();
+      try{
+        const [response,reminderResponse]=await Promise.all([
+          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin",cache:"no-store",signal:controller.signal}),
+          fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal:controller.signal})
+        ]);
+        if(!response.ok)throw new Error("Unable to load calendar events.");
+        const result=await response.json() as {events:CalendarEvent[]};
+        if(!active)return;
+        setEvents(result.events);
+        if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
+        setEventsError("");
+        delay=30000;
+      }catch(error){
+        if(active && !(error instanceof DOMException && error.name==="AbortError")){setEventsError(error instanceof Error?error.message:"Calendar sync is paused.");delay=Math.min(60000,Math.max(10000,delay*2));}
+      }finally{inFlight=false;controller=null;schedule();}
+    };
+    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);delay=30000;void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
+    const onOnline=()=>{delay=30000;void sync();};
+    const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
     setEventsLoading(true);
     setEventsError("");
-    const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
-    const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
-    if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
-    else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
-    const from = new Date(rangeStart.getTime()-86400000).toISOString();
-    const to = new Date(rangeEnd.getTime()+86400000).toISOString();
-    Promise.all([fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin"}),activeWorkspaceId?fetch("/api/reminders?workspaceId="+encodeURIComponent(activeWorkspaceId)+"&limit=100",{credentials:"same-origin"}):Promise.resolve(null)])
-      .then(async ([response,reminderResponse]) => {
-        if(!response.ok) throw new Error("Unable to load calendar events.");
-        const result = await response.json() as {events:CalendarEvent[]};
-        if(active) setEvents(result.events);
-        if(reminderResponse?.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
-      })
-      .catch(error => {if(active)setEventsError(error instanceof Error?error.message:"Unable to load calendar events.");})
-      .finally(()=>{if(active)setEventsLoading(false);});
-    return ()=>{active=false;};
-  },[view,user,activeWorkspaceId,calendarMode,calendarCursor,calendarRefresh]);
-
+    void sync().finally(()=>{if(active)setEventsLoading(false);});
+    document.addEventListener("visibilitychange",onVisibility);
+    window.addEventListener("online",onOnline);
+    window.addEventListener("offline",onOffline);
+    return ()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+  },[view,user,calendarMode,calendarCursor,calendarRefresh]);
+  
   useEffect(() => {
     if (!notificationsOpen || !user) return;
     let active = true;
@@ -1031,23 +1064,28 @@ export default function App() {
     setEventReminderAt(defaultReminderDateTime(start,eventTimezone));
     setEventReminderAuto(true);
     setEventLinkedNoteId("");
+    const writable=workspaces.filter(item=>item.role==="owner"||item.role==="editor");
+    const target=writable.some(item=>item.id===activeWorkspaceId)?activeWorkspaceId:(writable[0]?.id??"");
+    setEventWorkspaceId(target);
+    setEventWorkspaceNotes(target===activeWorkspaceId?notes:[]);
+    if(target&&target!==activeWorkspaceId){void fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(target),{credentials:"same-origin"}).then(async response=>{if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}).catch(()=>setEventWorkspaceNotes([]));}
     setEventsError("");
     setEventComposerOpen(true);
   }
 
   function startEditEvent(item:CalendarEvent) {
-    setEditingEvent(item);setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
+    setEditingEvent(item);setEventWorkspaceId(item.workspaceId);setEventWorkspaceNotes(item.workspaceId===activeWorkspaceId?notes:[]);if(item.workspaceId!==activeWorkspaceId){void fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(item.workspaceId),{credentials:"same-origin"}).then(async response=>{if(!response.ok)throw new Error("Unable to load linked notes.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}).catch(()=>setEventWorkspaceNotes([]));}setEventTitle(item.title);setEventDescription(item.description??"");setEventTimezone(item.timezone);
     setEventStart(dateTimeInputFor(item.startsAt,item.timezone));setEventEnd(dateTimeInputFor(item.endsAt,item.timezone));
     const reminder=eventReminders.filter(value=>value.eventId===item.id).sort((a,b)=>b.dueAt.localeCompare(a.dueAt))[0]??null;
     setEditingEventReminder(reminder);setEventReminderAt(reminder&&reminder.status==="pending"?dateTimeInputFor(reminder.dueAt,reminder.timezone):"");setEventReminderAuto(false);setEventLinkedNoteId(item.linkedNoteId??"");setEventsError("");setEventComposerOpen(true);
   }
 
   async function saveEvent() {
-    if(!activeWorkspaceId||!eventTitle.trim()||eventSaving)return;
+    if(!(workspaces.some(item=>item.id===eventWorkspaceId&&(item.role==="owner"||item.role==="editor")))||!eventTitle.trim()||eventSaving)return;
     setEventSaving(true);setEventsError("");
     try {
       const payload={title:eventTitle,description:eventDescription,startsAt:zonedDateTimeToIso(eventStart,eventTimezone),endsAt:zonedDateTimeToIso(eventEnd,eventTimezone),timezone:eventTimezone,linkedNoteId:eventLinkedNoteId||null};
-      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:activeWorkspaceId})});
+      const response=await fetch(editingEvent?"/api/events/"+encodeURIComponent(editingEvent.id):"/api/events",{method:editingEvent?"PATCH":"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(editingEvent?{...payload,version:editingEvent.version}:{...payload,workspaceId:eventWorkspaceId})});
       const result=await response.json() as {event?:CalendarEvent};
       if(!response.ok||!result.event)throw new Error(response.status===409?"This event changed elsewhere. Close and reopen it before saving.":"Unable to save this event.");
       setEvents(current=>editingEvent?current.map(item=>item.id===result.event!.id?result.event!:item).sort((a,b)=>a.startsAt.localeCompare(b.startsAt)):[...current,result.event!].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)));
@@ -1061,7 +1099,7 @@ export default function App() {
         }
       }else if(eventReminderAt){
         const reminderResponse=await fetch("/api/reminders",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({
-          workspaceId:activeWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone
+          workspaceId:eventWorkspaceId,eventId:result.event.id,title:eventTitle,dueAt:zonedDateTimeToIso(eventReminderAt,eventTimezone),timezone:eventTimezone
         })});
         if(!reminderResponse.ok)throw new Error("Event saved, but its reminder could not be created.");
       }
@@ -1250,7 +1288,11 @@ export default function App() {
 
   async function makeWorkspacePrivate() {
     if(!activeWorkspaceId||workspaceActionBusy)return;
-    if(!window.confirm("Remove all other members? They will immediately lose access. Pending invitations will be revoked. Notes and categories will be kept."))return;
+    const memberCount=workspaceMembers.filter(member=>member.role!=="owner").length;
+    const pendingCount=invitations.filter(invitation=>invitation.status==="pending").length;
+    const expectedName=activeWorkspace?.name??"";
+    const typed=window.prompt("Make this workspace private? "+memberCount+" members will lose access and "+pendingCount+" pending invitations will be revoked. Notes, events and reminders will be kept. Members will not regain access automatically.\n\nType the workspace name to continue:", "");
+    if(typed!==expectedName)return;
     setWorkspaceActionBusy(true);setInviteCreateError("");
     try{
       const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({action:"make_private"})});
@@ -1523,7 +1565,7 @@ export default function App() {
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <div className="workspace-switch-row">
-          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
+          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
@@ -1599,7 +1641,7 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">NOTES · CALENDAR · SHARED WORKSPACES</div><h1>{view === "notes" ? "My Notes" : view === "calendar" ? "Calendar" : "Shared with Me"}</h1><p>{view === "notes" ? "Save notes, organise them into categories, and find them when you need them." : view === "calendar" ? "View your saved events and reminders." : "Notes and workspaces shared with you."}</p></div>
-            {view === "calendar" && user && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
+            {view === "calendar" && user && workspaces.some(item=>item.role==="owner"||item.role==="editor") && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "calendar" && user && !workspaces.some(item=>item.role==="owner"||item.role==="editor") && <span className="calendar-readonly-hint">You have view-only access to your joined workspaces.</span>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
@@ -1625,14 +1667,14 @@ export default function App() {
 
           {view === "calendar" && <Suspense fallback={<div className="loading-state">Loading calendar…</div>}>
             <CalendarView
-              events={events} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError}
+              events={events} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError} workspaces={workspaces}
               holidayFeedStatus={holidayFeedStatus} holidayState={holidayState} onHolidayStateChange={saveHolidayState}
               calendarMode={calendarMode} setCalendarMode={setCalendarMode} calendarCursor={calendarCursor}
               setCalendarCursor={setCalendarCursor} calendarHeading={calendarHeading} calendarDays={calendarDays}
               calendarAgendaItems={calendarAgendaItems} calendarTransferBusy={calendarTransferBusy}
               calendarIcsInputRef={calendarIcsInputRef} onImportCalendarIcs={importCalendarIcs}
               onExportCalendarIcs={exportCalendarIcs} onMoveCalendar={moveCalendar}
-              onEditEvent={startEditEvent} onDeleteEvent={deleteEvent}
+              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent}
             />
           </Suspense>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
@@ -1753,14 +1795,15 @@ export default function App() {
       {eventComposerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setEventComposerOpen(false);}}>
         <section className="composer event-composer" role="dialog" aria-modal="true" aria-labelledby="event-title">
           <header><div><span className="eyebrow">INTERNAL CALENDAR</span><h2 id="event-title">{editingEvent?"Edit event":"New event"}</h2></div><button className="icon-button" onClick={()=>setEventComposerOpen(false)} aria-label="Close"><X size={19}/></button></header>
+          <label className="field-label">Workspace<select className="invite-input" value={eventWorkspaceId} disabled={!!editingEvent} onChange={async e=>{const id=e.target.value;setEventWorkspaceId(id);setEventLinkedNoteId("");if(id===activeWorkspaceId){setEventWorkspaceNotes(notes);return;}try{const response=await fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(id),{credentials:"same-origin"});if(!response.ok)throw new Error("Unable to load notes for this workspace.");const result=await response.json() as {notes:Note[]};setEventWorkspaceNotes(result.notes);}catch(error){setEventWorkspaceNotes([]);setEventsError(error instanceof Error?error.message:"Unable to load workspace notes.");}}}>{workspaces.filter(item=>item.role==="owner"||item.role==="editor").map(item=><option key={item.id} value={item.id}>{item.name} · {item.role==="owner"?"Owner":"Editor"}</option>)}</select>{editingEvent&&<small className="calendar-reminder-help">Events stay in their original workspace. Create a new event to use another workspace.</small>}</label>
           <label className="field-label">Event title<input className="invite-input" value={eventTitle} onChange={e=>setEventTitle(e.target.value)} maxLength={200} placeholder="What is happening?"/></label>
           <label className="field-label">Details<textarea className="invite-input event-description" value={eventDescription} onChange={e=>setEventDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Optional details"/></label>
           <div className="event-datetime-grid"><label className="field-label">Starts<input className="invite-input" type="datetime-local" value={eventStart} onChange={e=>{setEventStart(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(e.target.value,eventTimezone));}}/></label><label className="field-label">Ends<input className="invite-input" type="datetime-local" value={eventEnd} onChange={e=>setEventEnd(e.target.value)}/></label></div>
           <label className="field-label">Timezone<input className="invite-input" value={eventTimezone} onChange={e=>{setEventTimezone(e.target.value);if(eventReminderAuto)setEventReminderAt(defaultReminderDateTime(eventStart,e.target.value));}} placeholder="Asia/Kuala_Lumpur"/></label>
-          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{notes.filter(note=>note.workspaceId===activeWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
+          <label className="field-label">Link to note (optional)<select className="invite-input" value={eventLinkedNoteId} onChange={e=>setEventLinkedNoteId(e.target.value)}><option value="">No linked note</option>{eventWorkspaceNotes.filter(note=>note.workspaceId===eventWorkspaceId).map(note=><option key={note.id} value={note.id}>{note.title}</option>)}</select></label>
           <label className="field-label">Event reminder{editingEventReminder&&<small className="calendar-reminder-help">{editingEventReminder.status==="pending"?"Current reminder":"Previous reminder"}: {new Date(editingEventReminder.dueAt).toLocaleString(undefined,{timeZone:editingEventReminder.timezone,dateStyle:"medium",timeStyle:"short"})} · {editingEventReminder.timezone} · {editingEventReminder.status}</small>}<input className="invite-input" type="datetime-local" value={eventReminderAt} onChange={e=>{setEventReminderAt(e.target.value);setEventReminderAuto(false);}}/>{!editingEventReminder&&<small className="calendar-reminder-help">Automatically set to 1 day before. You can change the time or leave it empty.</small>}<button type="button" className="text-action" onClick={()=>{setEventReminderAt(defaultReminderDateTime(eventStart,eventTimezone));setEventReminderAuto(true);}}>{editingEventReminder?"Set a new reminder 1 day before":"Reset to 1 day before"}</button>{editingEventReminder?.status==="pending"&&<button type="button" className="text-action" onClick={()=>setEventReminderAt("")}>Remove reminder</button>}</label>
           {eventsError&&<p className="invite-error">{eventsError}</p>}
-          <footer><span>{editingEvent?"Event and reminder changes are saved separately.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
+          <footer><span>{editingEvent?"Event and reminder changes are saved separately.":"Reminder delivery appears in the in-app inbox, checked every five minutes."}</span><button className="primary-button" onClick={saveEvent} disabled={!eventTitle.trim()||!eventWorkspaceId||eventSaving}>{eventSaving?"Saving…":editingEvent?"Save changes":"Save event"}</button></footer>
         </section>
       </div>}
 

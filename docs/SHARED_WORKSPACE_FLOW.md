@@ -243,17 +243,17 @@ The current frontend requests reminders using the active workspace:
 GET /api/reminders?workspaceId={workspaceId}&limit=100
 ```
 
-Current scope comparison:
+Target scope comparison:
 
-| Data | Observed behaviour |
+| Data | Target behaviour |
 |---|---|
-| Notes | Active workspace |
-| Calendar Events | Can aggregate across joined workspaces when no workspace ID is supplied |
-| Reminders | Active workspace |
+| Notes | Active workspace only |
+| Calendar Events | Aggregate across all joined workspaces, filtered in the client |
+| Reminders | Aggregate across joined workspaces when tied to calendar events |
 
 ### 5.5 Calendar permissions
 
-The Calendar UI should reflect the user's role.
+The Calendar UI must reflect the role in each event's own workspace. Calendar is an aggregate personal view across all joined workspaces, so the active workspace role must never be reused for every event.
 
 | Action | Owner | Editor | Viewer |
 |---|---:|---:|---:|
@@ -506,8 +506,8 @@ Recommended data scope:
 |---|---|
 | Notes | Active Workspace |
 | Categories | Active Workspace |
-| Calendar Events | Active Workspace |
-| Reminders | Active Workspace |
+| Calendar Events | All joined workspaces (personal aggregate view) |
+| Reminders | Aggregate when event-linked; otherwise explicitly labelled by workspace |
 | Members | Active Workspace |
 | Activity Logs | Active Workspace |
 | Invitations | Active Workspace |
@@ -634,7 +634,7 @@ Trade-offs:
 - Permission handling must be evaluated per workspace.
 - UI and filtering become more complex.
 
-**Recommendation: Option A, Active Workspace Calendar**, to keep the current workspace model consistent.
+**Decision: Option B, Aggregate Calendar.** Calendar is a personal view across all joined workspaces. Every event remains owned by exactly one workspace, is visible only to its members, and carries a source-workspace indicator.
 
 ### Decision B: Synchronization strategy
 
