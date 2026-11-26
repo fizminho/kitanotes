@@ -153,17 +153,20 @@ async function acceptInvitation(request: Request, env: InvitationEnv, userId: st
     const ws=await db.prepare("SELECT visibility,owner_user_id FROM workspaces WHERE id=?").bind(openLink.workspace_id).first<{visibility:string;owner_user_id:string}>();
     if(!ws||ws.visibility!=="shared")return json({error:"WORKSPACE_NOT_SHARED"},410);
     const existingMember=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(openLink.workspace_id,userId).first<{role:string}>();
-    if(!existingMember)await db.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)").bind(openLink.workspace_id,userId,openLink.role,now).run();
+    if(!existingMember)await db.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM workspaces WHERE id=? AND visibility='shared')").bind(openLink.workspace_id,userId,openLink.role,now,openLink.workspace_id).run();
+    const currentMember=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(openLink.workspace_id,userId).first<{role:string}>();
+    if(!currentMember)return json({error:"WORKSPACE_NOT_SHARED"},410);
     await logActivity(db,openLink.workspace_id,userId,"member.joined","user",userId,{role:openLink.role,via:"invite_link"});
     if(ws.owner_user_id!==userId)await notifyUser(db,ws.owner_user_id,openLink.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".","workspace",openLink.workspace_id,"invite-link-join:"+openLink.workspace_id+":"+userId);
     if(ws.owner_user_id!==userId)await sendPushToUser(db,env,ws.owner_user_id,{title:"New workspace member",body:(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".",url:"/?workspaceId="+encodeURIComponent(openLink.workspace_id),tag:"workspace-join-"+openLink.workspace_id+"-"+userId},"workspace",{workspaceId:openLink.workspace_id,important:true});
-    return json({accepted:true,workspaceId:openLink.workspace_id,role:existingMember?.role??openLink.role,alreadyMember:Boolean(existingMember)});
+    return json({accepted:true,workspaceId:openLink.workspace_id,role:currentMember.role,alreadyMember:Boolean(existingMember)});
   }
-  const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? RETURNING workspace_id,role")
+  const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id=invitations.workspace_id AND w.visibility='shared') RETURNING workspace_id,role")
     .bind(userId,now,hash,user.email_normalized,now).first<{workspace_id:string;role:"editor"|"viewer"}>();
   if (!accepted) {
-    const existing = await db.prepare("SELECT status,expires_at,invited_email_normalized FROM invitations WHERE token_hash=?")
-      .bind(hash).first<{status:string;expires_at:string;invited_email_normalized:string}>();
+    const existing = await db.prepare("SELECT i.status,i.expires_at,i.invited_email_normalized,w.visibility FROM invitations i LEFT JOIN workspaces w ON w.id=i.workspace_id WHERE i.token_hash=?")
+      .bind(hash).first<{status:string;expires_at:string;invited_email_normalized:string;visibility:string|null}>();
+    if(existing&&existing.visibility!=="shared")return json({error:"WORKSPACE_NOT_SHARED"},410);
     if (existing?.status === "pending" && existing.expires_at <= now) {
       await db.prepare("UPDATE invitations SET status='expired' WHERE token_hash=? AND status='pending'").bind(hash).run();
       return json({ error: "INVITATION_EXPIRED" },410);
@@ -322,9 +325,10 @@ async function invitationPreview(request:Request,env:InvitationEnv):Promise<Resp
   const token=new URL(request.url).searchParams.get("token")??"";
   if(token.length<32||token.length>256)return json({valid:false,error:"INVALID_INVITATION_TOKEN"},400);
   const hash=await tokenHash(token);
-  const row=await env.DB!.prepare("SELECT i.workspace_id,i.role,i.status,i.expires_at,w.name AS workspace_name,u.display_name AS inviter_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id LEFT JOIN users u ON u.id=i.invited_by_user_id WHERE i.token_hash=?")
-    .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";status:string;expires_at:string;workspace_name:string;inviter_name:string|null}>();
+  const row=await env.DB!.prepare("SELECT i.workspace_id,i.role,i.status,i.expires_at,w.name AS workspace_name,w.visibility,u.display_name AS inviter_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id LEFT JOIN users u ON u.id=i.invited_by_user_id WHERE i.token_hash=?")
+    .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";status:string;expires_at:string;workspace_name:string;visibility:string;inviter_name:string|null}>();
   if(!row)return json({valid:false,error:"INVITATION_INVALID"});
+  if(row.visibility!=="shared")return json({valid:false,error:"WORKSPACE_NOT_SHARED"});
   if(row.status!=="pending")return json({valid:false,error:row.status==="revoked"?"INVITATION_REVOKED":"INVITATION_ALREADY_USED",workspaceName:row.workspace_name,inviterName:row.inviter_name||"the workspace owner"});
   if(row.expires_at<=new Date().toISOString())return json({valid:false,error:"INVITATION_EXPIRED",workspaceName:row.workspace_name,inviterName:row.inviter_name||"the workspace owner"},410);
   const count=await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id=?").bind(row.workspace_id).first<{total:number}>();
