@@ -50,8 +50,8 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     const since=sinceValue?new Date(sinceValue):null;if(sinceValue&&(!since||Number.isNaN(since.getTime())))return json({error:"INVALID_SYNC_CURSOR"},400);
     const syncNow=new Date().toISOString();
     const result=workspaceId
-      ? await db.prepare("SELECT * FROM reminders WHERE workspace_id=? "+(since?"AND updated_at>? AND updated_at<=? ":"")+"ORDER BY updated_at,due_at_utc DESC LIMIT ?").bind(...[workspaceId,...(since?[since.toISOString(),syncNow]:[]),limit]).all<ReminderRow>()
-      : await db.prepare("SELECT r.* FROM reminders r JOIN workspace_members wm ON wm.workspace_id=r.workspace_id WHERE wm.user_id=? "+(since?"AND r.updated_at>? AND r.updated_at<=? ":"")+"ORDER BY r.updated_at,r.due_at_utc DESC LIMIT ?").bind(...[user.id,...(since?[since.toISOString(),syncNow]:[]),limit]).all<ReminderRow>();
+      ? await db.prepare("SELECT * FROM reminders WHERE workspace_id=? "+(since?"AND updated_at>=? AND updated_at<=? ":"")+"ORDER BY updated_at,due_at_utc DESC LIMIT ?").bind(...[workspaceId,...(since?[since.toISOString(),syncNow]:[]),limit]).all<ReminderRow>()
+      : await db.prepare("SELECT r.* FROM reminders r JOIN workspace_members wm ON wm.workspace_id=r.workspace_id WHERE wm.user_id=? "+(since?"AND r.updated_at>=? AND r.updated_at<=? ":"")+"ORDER BY r.updated_at,r.due_at_utc DESC LIMIT ?").bind(...[user.id,...(since?[since.toISOString(),syncNow]:[]),limit]).all<ReminderRow>();
     return json({reminders:result.results.map(dto),nextCursor:syncNow});
   }
   if(url.pathname==="/api/reminders"&&request.method==="POST"){
