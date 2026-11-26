@@ -1172,3 +1172,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .calendar-day-select,.calendar-day-markers{min-height:44px}
 .workspace-picker-option,.notification-item{min-height:44px}
 .workspace-picker-copy small,.workspace-picker-option-copy small,.notification-settings-note,.workspace-notification-row small,.sync-status{color:#565c6b}
+
+
+/* Workspace identity in calendar day markers: colour plus readable initial. */
+.calendar-marker.event,.calendar-marker.reminder{width:13px;height:13px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;font-size:8px;font-weight:750;line-height:1;}
+.calendar-marker.reminder{outline:1px dashed currentColor;outline-offset:1px;}
+@media(max-width:600px){.calendar-marker.event,.calendar-marker.reminder{width:11px;height:11px;font-size:7px;}}
