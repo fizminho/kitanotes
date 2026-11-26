@@ -1,8 +1,7 @@
 import { buildPushPayload, type PushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
-import { buildPushContent, defaultPushUrl, validPushTag, validPushUrl, type PushMessageInput, type PushKind } from "./push-content.ts";
-export { safePushMessage } from "./push-content.ts";
+import { buildPushContent, defaultPushTag, defaultPushUrl, validPushTag, validPushUrl, type PushMessageInput, type PushKind } from "./push-content.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
@@ -69,12 +68,11 @@ function validSubscription(value:unknown):value is PushSubscription {
 
 type PushScope={workspaceId?:string|null;important?:boolean};
 type LegacyPushData={title:string;body:string;url?:string;tag?:string};
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,message:PushMessageInput|LegacyPushData,kindOrScope?:PushKind|PushScope,legacyScope?:PushScope):Promise<void> {
- const legacy=!("kind" in message);
- const kind:PushKind=legacy?(typeof kindOrScope==="string"?kindOrScope:"test"):message.kind;
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,input:PushMessageInput|LegacyPushData,kindOrScope?:PushKind|PushScope,legacyScope?:PushScope):Promise<void> {
+ const legacy=!("kind" in input);
+ const kind:PushKind=legacy?(typeof kindOrScope==="string"?kindOrScope:"test" ):input.kind;
  const scope=legacy?(typeof kindOrScope==="object"?kindOrScope:legacyScope):kindOrScope as PushScope|undefined;
- const typed:PushMessageInput=legacy?{kind,subtype:"legacy",url:message.url,tag:message.tag}:message;
- message=typed;
+ const message:PushMessageInput=legacy?{kind,subtype:"legacy",url:input.url,tag:input.tag}:input;
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
