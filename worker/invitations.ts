@@ -195,9 +195,10 @@ async function revokeInvitation(request: Request, env: InvitationEnv, userId: st
 async function listMembers(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
-  const result = await db.prepare("SELECT wm.user_id,wm.role,wm.joined_at,u.email,u.display_name FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? ORDER BY CASE WHEN wm.role='owner' THEN 0 ELSE 1 END,u.email_normalized")
-    .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null}>();
-  return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at})) });
+  const now=new Date().getTime();
+  const result = await db.prepare("SELECT wm.user_id,wm.role,wm.joined_at,u.email,u.display_name,p.last_seen_at FROM workspace_members wm JOIN users u ON u.id=wm.user_id LEFT JOIN workspace_presence p ON p.workspace_id=wm.workspace_id AND p.user_id=wm.user_id WHERE wm.workspace_id=? ORDER BY CASE WHEN wm.role='owner' THEN 0 ELSE 1 END,u.email_normalized")
+    .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null;last_seen_at:string|null}>();
+  return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at,lastSeenAt:row.last_seen_at,isOnline:Boolean(row.last_seen_at&&now-new Date(row.last_seen_at).getTime()<90000)})) });
 }
 async function updateMemberRole(request: Request, env: InvitationEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
@@ -352,7 +353,7 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
     await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
     return json({ workspace: { id,name,type:"shared",visibility:"shared",role:"owner" } },201);
   }
-  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity|summary|appearance))?$/);
+  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity|summary|appearance|presence))?$/);
   if (workspaceMatch) {
     const id=decodeURIComponent(workspaceMatch[1]);
     if(request.method==="PUT"&&url.pathname.endsWith("/appearance")){
@@ -366,6 +367,14 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
       await env.DB!.prepare("UPDATE workspaces SET color=?,icon=?,updated_at=? WHERE id=?").bind(color,icon,now,id).run();
       await logActivity(env.DB!,id,user.id,"workspace.appearance_updated","workspace",id);
       return json({ok:true,color,icon,updatedAt:now});
+    }
+    if(request.method==="POST"&&url.pathname.endsWith("/presence")){
+      if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+      const member=await env.DB!.prepare("SELECT workspace_id FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(id,user.id).first<{workspace_id:string}>();
+      if(!member)return json({error:"NOT_FOUND"},404);
+      const now=new Date().toISOString();
+      await env.DB!.prepare("INSERT INTO workspace_presence(workspace_id,user_id,last_seen_at) VALUES(?,?,?) ON CONFLICT(workspace_id,user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at").bind(id,user.id,now).run();
+      return json({ok:true,lastSeenAt:now});
     }
     if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
     if(request.method==="GET" && url.pathname.endsWith("/summary")) return workspaceSummary(env,user.id,id);

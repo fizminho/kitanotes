@@ -1,4 +1,1 @@
-.workspace-appearance-color{width:64px;height:38px;padding:2px;border:1px solid var(--border);border-radius:10px;background:transparent;cursor:pointer}
-
-/* Keyboard focus and touch-target baseline for the workspace/calendar surfaces. */
-:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:2px solid var(--accent,#7565d8);outline-offset:3px} .workspace-picker-option,.calendar-day-select,.calendar-day-markers{min-height:44px}.workspace-picker-option{width:100%}.workspace-picker-trigger{min-height:44px}.workspace-notification-row select{min-height:40px}
+.presence-online{color:#16834a;font-weight:650}.presence-offline{color:var(--muted)}

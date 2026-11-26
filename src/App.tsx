@@ -107,7 +107,7 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
 }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null; googleLinked?:boolean };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
-type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
+type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string;lastSeenAt:string|null;isOnline:boolean};
 type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer";color?:string|null;icon?:string|null};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type Reminder = {id:string;workspaceId:string;eventId:string|null;noteId:string|null;title:string;dueAt:string;timezone:string;status:"pending"|"delivered"|"cancelled"};
@@ -511,6 +511,14 @@ export default function App() {
       if(available){const next=user.personalWorkspaceId??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);pushToast("You no longer have access to a workspace. Your view has been switched.");}
     });
   },[user,activeWorkspaceId,pushToast]);
+
+  useEffect(()=>{
+    if(!user||!activeWorkspaceId||!workspaces.some(item=>item.id===activeWorkspaceId))return;
+    return subscribePoll("presence:"+user.id+":"+activeWorkspaceId,60000,async signal=>{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/presence",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}",signal});
+      if(!response.ok)throw new Error("Presence heartbeat failed.");
+    });
+  },[user,activeWorkspaceId,workspaces]);
 
   useEffect(()=>{
     if(!user){setUnreadCount(0);setUnreadByWorkspace({});return;}
@@ -1875,7 +1883,7 @@ export default function App() {
 
           {manageTab==="people"&&<div className="invite-list">
             {invitationsLoading?<p>Loading members…</p>:workspaceMembers.map(member=><div className="invite-list-row" key={member.userId}>
-              <div><strong>{member.displayName||member.email}{member.userId===user?.id?" (you)":""}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()}</small></div>
+              <div><strong>{member.displayName||member.email}{member.userId===user?.id?" (you)":""}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()} · <span className={member.isOnline?"presence-online":"presence-offline"}>{member.isOnline?"Online":member.lastSeenAt?"Last seen "+new Date(member.lastSeenAt).toLocaleString():"Not active yet"}</span></small></div>
               {activeWorkspace.role==="owner"&&member.role!=="owner"&&<div className="invite-member-actions"><select className="invite-input" aria-label={"Permission for "+member.email} value={member.role} onChange={event=>updateWorkspaceMemberRole(member,event.target.value as "editor"|"viewer")} disabled={workspaceActionBusy}><option value="viewer">Viewer</option><option value="editor">Editor</option></select><button className="text-action" onClick={()=>transferOwnership(member)} disabled={workspaceActionBusy}>Make owner</button><button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button></div>}
             </div>)}
             <p className="invite-list-note">Owners manage people and settings. Editors can change notes, events and categories. Viewers can read only.</p>
