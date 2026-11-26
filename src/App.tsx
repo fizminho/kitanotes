@@ -159,6 +159,8 @@ export default function App() {
   const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
   const [globalSearchError,setGlobalSearchError]=useState("");
   const [noteConflict,setNoteConflict]=useState<NoteConflict|null>(null);
+  const [remoteNoteUpdate,setRemoteNoteUpdate]=useState<Note|null>(null);
+  const [remoteNoteDeleted,setRemoteNoteDeleted]=useState(false);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [manageTab, setManageTab] = useState<ManageTab>("people");
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -478,6 +480,18 @@ export default function App() {
     });
   },[view,user,activeWorkspaceId,composerOpen,editingNote?.id,showArchived,showTrash]);
 
+  useEffect(()=>{
+    if(!composerOpen||!editingNote||noteConflict)return;
+    return subscribePoll("note-editor:"+editingNote.id,5000,async signal=>{
+      const response=await fetch("/api/notes/"+encodeURIComponent(editingNote.id),{credentials:"same-origin",cache:"no-store",signal});
+      if(response.status===404){setRemoteNoteDeleted(true);return;}
+      if(!response.ok)throw new Error("Unable to check for note updates.");
+      const result=await response.json() as {note?:Note};
+      if(signal.aborted||!result.note)return;
+      if(result.note.version>editingNote.version)setRemoteNoteUpdate(current=>!current||result.note!.version>current.version?result.note!:current);
+    });
+  },[composerOpen,editingNote?.id,editingNote?.version,noteConflict]);
+
   // One keyed poller per open note. The scheduler pauses it while hidden/offline.
   useEffect(()=>{
     if(!viewingNote?.id||viewingNote.deletedAt)return;
@@ -775,7 +789,7 @@ export default function App() {
   }
 
   const startEditNote = useCallback((note: Note) => {
-    setEditingNote(note);setDraftTitle(note.title);setDraftContent(note.content);setSelectedCategoryId(note.categoryId??"");
+    setEditingNote(note);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);setDraftTitle(note.title);setDraftContent(note.content);setSelectedCategoryId(note.categoryId??"");
     if(user){try{const raw=localStorage.getItem(noteDraftStorageKey(user.id,note.workspaceId,note.id));if(raw){const draft=JSON.parse(raw) as {title?:string;content?:string;categoryId?:string|null;updatedAt?:number};if(Date.now()-(draft.updatedAt??0)<7*24*60*60*1000){setDraftTitle(draft.title??note.title);setDraftContent(draft.content??note.content);setSelectedCategoryId(draft.categoryId??note.categoryId??"");pushToast("Recovered your unsaved changes.");}}}catch{/* ignore local draft errors */}}
     setComposerOpen(true);
   }, [user,pushToast]);
@@ -839,13 +853,13 @@ export default function App() {
     }
   }
 
-  function useLatestNoteConflict(){if(!noteConflict)return;setDraftTitle(noteConflict.latest.title);setDraftContent(noteConflict.latest.content);setSelectedCategoryId(noteConflict.latest.categoryId??"");setEditingNote(noteConflict.latest);setNoteConflict(null);}
+  function useLatestNoteConflict(){if(!noteConflict)return;setDraftTitle(noteConflict.latest.title);setDraftContent(noteConflict.latest.content);setSelectedCategoryId(noteConflict.latest.categoryId??"");setEditingNote(noteConflict.latest);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);setNoteConflict(null);}
   async function keepMineAfterConflict(){
     if(!noteConflict||saving)return;const conflict=noteConflict;setSaving(true);
     try{const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({...conflict.mine,version:conflict.latest.version})});const result=await response.json() as {note?:Note;latestNote?:Note};
       if(response.status===409&&result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});return;}
       if(!response.ok||!result.note)throw new Error("Unable to save your version of this note.");
-      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));setViewingNote(current=>current?.id===result.note!.id?result.note!:current);setEditingNote(null);setComposerOpen(false);setNoteConflict(null);pushToast("Your version was saved.");
+      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));setViewingNote(current=>current?.id===result.note!.id?result.note!:current);setEditingNote(null);setComposerOpen(false);setNoteConflict(null);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);pushToast("Your version was saved.");
     }catch(error){setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict.");}finally{setSaving(false);}
   }
   async function copyMineAndUseLatest(){if(!noteConflict)return;try{await navigator.clipboard.writeText(noteConflict.mine.content);pushToast("Your unsaved text was copied.");}catch{pushToast("Clipboard unavailable. Copy your text before choosing Use theirs.","error");return;}useLatestNoteConflict();}
@@ -1980,10 +1994,12 @@ export default function App() {
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
+          {remoteNoteDeleted&&<div className="remote-note-banner deleted" role="alert"><span>This note was deleted or you lost access. Your unsaved text remains in a local recovery draft.</span><div><button type="button" className="text-action" onClick={()=>void navigator.clipboard?.writeText(draftContent)}>Copy my draft</button><button type="button" className="text-action" onClick={()=>{setComposerOpen(false);setEditingNote(null);setRemoteNoteDeleted(false);}}>Back to notes</button></div></div>}
+          {remoteNoteUpdate&&!remoteNoteDeleted&&<div className="remote-note-banner" role="status"><span>Updated by {remoteNoteUpdate.updatedByName??"another member"} at {new Date(remoteNoteUpdate.updatedAt).toLocaleString()}.</span><button type="button" className="text-action" onClick={()=>{setNoteConflict({latest:remoteNoteUpdate,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null}});setRemoteNoteUpdate(null);}}>Review update</button></div>}
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
           <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div><label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
+          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving || remoteNoteDeleted}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
         </section>
       </div>}
       {viewingNote && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setViewingNote(null);}}>
