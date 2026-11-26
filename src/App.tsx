@@ -570,20 +570,22 @@ export default function App() {
       else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
       return{from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
     };
-    let cursor:string|null=null;
+    let cursor:string|null=null,reminderCursor:string|null=null;
     setEventsLoading(true);setEventsError("");
     return subscribePoll("calendar:"+user.id+":"+calendarMode+":"+calendarCursor.getFullYear()+"-"+calendarCursor.getMonth()+"-"+calendarCursor.getDate(),30000,async signal=>{
       const {from,to}=range();
       const [response,reminderResponse]=await Promise.all([
         fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(cursor?"&updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal}),
-        fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal})
+        fetch("/api/reminders?limit=100"+(reminderCursor?"&updatedSince="+encodeURIComponent(reminderCursor):""),{credentials:"same-origin",cache:"no-store",signal})
       ]);
       if(!response.ok)throw new Error("Unable to load calendar events.");
       const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
       if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
       cursor=result.nextCursor??new Date().toISOString();
-      if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};setEventReminders(reminderResult.reminders);}
-      setEventsError("");setEventsLoading(false);
+      if(!reminderResponse.ok)throw new Error("Unable to load reminders.");
+      const reminderResult=await reminderResponse.json() as {reminders:Reminder[];nextCursor?:string};
+      if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
+      reminderCursor=reminderResult.nextCursor??new Date().toISOString();setEventsError("");setEventsLoading(false);
     });
   },[view,user,calendarMode,calendarCursor,calendarRefresh]);
 
