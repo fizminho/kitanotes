@@ -131,6 +131,7 @@ type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
   categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
 };
+type NoteConflict = {latest:Note;mine:{title:string;content:string;categoryId:string|null}};
 
 export default function App() {
   // Track the iPhone's visual viewport so bottom-sheet modals resize when the keyboard opens.
@@ -151,6 +152,11 @@ export default function App() {
 
   const [view, setView] = useState<View>("notes");
   const [query, setQuery] = useState("");
+  const [globalSearchActive,setGlobalSearchActive]=useState(false);
+  const [globalSearchResults,setGlobalSearchResults]=useState<Note[]>([]);
+  const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
+  const [globalSearchError,setGlobalSearchError]=useState("");
+  const [noteConflict,setNoteConflict]=useState<NoteConflict|null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [manageTab, setManageTab] = useState<ManageTab>("people");
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -408,6 +414,18 @@ export default function App() {
       .finally(() => { if (active) setNotesLoading(false); });
     return () => { active = false; };
   }, [user, activeWorkspaceId, showArchived]);
+
+  useEffect(()=>{
+    if(!globalSearchActive||!user||view!=="notes"||!query.trim()){setGlobalSearchResults([]);setGlobalSearchError("");setGlobalSearchLoading(false);return;}
+    const controller=new AbortController();let active=true;
+    const timer=window.setTimeout(async()=>{
+      setGlobalSearchLoading(true);setGlobalSearchError("");
+      try{const response=await fetch("/api/notes?q="+encodeURIComponent(query.trim())+"&limit=100",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to search notes across workspaces.");const result=await response.json() as {notes:Note[]};if(active)setGlobalSearchResults(result.notes);}
+      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setGlobalSearchError(error instanceof Error?error.message:"Global search failed.");}
+      finally{if(active)setGlobalSearchLoading(false);}
+    },250);
+    return()=>{active=false;window.clearTimeout(timer);controller.abort();};
+  },[globalSearchActive,user,view,query]);
 
   // Keep an open shared note fresh without a scheduled Worker cron or realtime infrastructure.
   useEffect(() => {
@@ -686,9 +704,12 @@ export default function App() {
     return sortedNotes.filter(note => (!categoryFilter || (categoryFilter === "__none" ? !note.categoryId : note.categoryId === categoryFilter))
       && (!value || (note.title + " " + note.content + " " + (note.categoryName ?? "")).toLowerCase().includes(value)));
   }, [sortedNotes, query, categoryFilter]);
+  const displayNotes=globalSearchActive?globalSearchResults:visibleNotes;
   const sharedWorkspaces = useMemo(() => workspaces.filter(item => item.visibility === "shared"), [workspaces]);
   const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId);
   const canWrite = activeWorkspace ? activeWorkspace.role !== "viewer" : true;
+
+  function openGlobalNote(note:Note){setActiveWorkspaceId(note.workspaceId);setShowArchived(false);setViewingNote(note);setNotes(current=>current.some(item=>item.id===note.id)?current:[note,...current]);}
 
   function startNewNote() {
     setEditingNote(null);
@@ -765,6 +786,17 @@ export default function App() {
     }
   }
 
+  function useLatestNoteConflict(){if(!noteConflict)return;setDraftTitle(noteConflict.latest.title);setDraftContent(noteConflict.latest.content);setSelectedCategoryId(noteConflict.latest.categoryId??"");setEditingNote(noteConflict.latest);setNoteConflict(null);}
+  async function keepMineAfterConflict(){
+    if(!noteConflict||saving)return;const conflict=noteConflict;setSaving(true);
+    try{const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({...conflict.mine,version:conflict.latest.version})});const result=await response.json() as {note?:Note;latestNote?:Note};
+      if(response.status===409&&result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});return;}
+      if(!response.ok||!result.note)throw new Error("Unable to save your version of this note.");
+      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));setViewingNote(current=>current?.id===result.note!.id?result.note!:current);setEditingNote(null);setComposerOpen(false);setNoteConflict(null);pushToast("Your version was saved.");
+    }catch(error){setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict.");}finally{setSaving(false);}
+  }
+  async function copyMineAndUseLatest(){if(!noteConflict)return;try{await navigator.clipboard.writeText(noteConflict.mine.content);pushToast("Your unsaved text was copied.");}catch{pushToast("Clipboard unavailable. Copy your text before choosing Use theirs.","error");return;}useLatestNoteConflict();}
+
   async function saveNote() {
     if (!draftTitle.trim() || saving) return;
     setSaving(true);
@@ -778,7 +810,8 @@ export default function App() {
           ? { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, version: editingNote.version }
           : { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, workspaceId: activeWorkspaceId })
       });
-      const result = await response.json() as { note?: Note; error?: string };
+      const result = await response.json() as { note?: Note; error?: string; latestNote?:Note };
+      if(response.status===409&&result.latestNote){setNoteConflict({latest:result.latestNote,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null}});return;}
       if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "This note changed elsewhere. Refresh and try again." : "Unable to save this note.");
       setNotes(current => editingNote
         ? current.map(note => note.id === result.note!.id ? result.note! : note)
@@ -1646,22 +1679,22 @@ export default function App() {
 
           {view === "notes" && <>
             <div className="toolbar">
-              <label className="search-box"><Search size={17} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search notes  ( / )" />{query&&<button className="mini-icon" onClick={()=>setQuery("")} aria-label="Clear search"><X size={14}/></button>}</label>
+              <label className="search-box"><Search size={17} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search notes  ( / )" />{query&&<button className="mini-icon" onClick={()=>setQuery("")} aria-label="Clear search"><X size={14}/></button>}</label><button type="button" className={globalSearchActive?"filter-button active-filter":"filter-button"} onClick={()=>{setGlobalSearchActive(value=>!value);setGlobalSearchResults([]);}}>Search all spaces</button>
               <label className="filter-button"><select className="sort-select" aria-label="Sort notes" value={sortMode} onChange={event=>setSortMode(event.target.value as SortMode)}><option value="updated">Recently updated</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select></label>
               <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>setShowArchived(value=>!value)}><Archive size={14}/> Arkib</button>
             </div>
-            {user&&(categories.length>0)&&<div className="chip-row" role="tablist" aria-label="Tapis mengikut kategori"><button className={!categoryFilter?"chip active":"chip"} onClick={()=>setCategoryFilter("")}>All</button>{categories.filter(category=>!["uncategorised","uncategorized","unassigned"].includes(category.name.trim().toLowerCase())).map(category=><button key={category.id} className={categoryFilter===category.id?"chip active":"chip"} onClick={()=>setCategoryFilter(category.id)}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/>{category.name}</button>)}<button className={categoryFilter==="__none"?"chip active":"chip"} onClick={()=>setCategoryFilter("__none")}><Tag size={11}/> Uncategorised</button>
+            {!globalSearchActive&&user&&(categories.length>0)&&<div className="chip-row" role="tablist" aria-label="Tapis mengikut kategori"><button className={!categoryFilter?"chip active":"chip"} onClick={()=>setCategoryFilter("")}>All</button>{categories.filter(category=>!["uncategorised","uncategorized","unassigned"].includes(category.name.trim().toLowerCase())).map(category=><button key={category.id} className={categoryFilter===category.id?"chip active":"chip"} onClick={()=>setCategoryFilter(category.id)}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/>{category.name}</button>)}<button className={categoryFilter==="__none"?"chip active":"chip"} onClick={()=>setCategoryFilter("__none")}><Tag size={11}/> Uncategorised</button>
             </div>}
-            <div className="notes-meta">{notesLoading?"":visibleNotes.length+" nota"+(showArchived?" dalam arkib":"")}
+            <div className="notes-meta">{globalSearchActive?(globalSearchLoading?"Searching all workspaces…":displayNotes.length+" results across joined workspaces"):notesLoading?"":visibleNotes.length+" nota"+(showArchived?" dalam arkib":"")}
             </div>
-            {notesError && <div className="inline-error">{notesError}</div>}
-            {notesLoading ? <div className="loading-state">Memuatkan nota…</div> : visibleNotes.length > 0 ? <div className="notes-grid">
+            {notesError && <div className="inline-error">{notesError}</div>}{globalSearchError&&<div className="inline-error">{globalSearchError}</div>}
+            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="loading-state">Memuatkan nota…</div>:visibleNotes.length > 0 ? <div className="notes-grid">
               {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>) }
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
               <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
               <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google or a passkey to create and sync your notes."}</p>
-              {user&&canWrite&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
+              {user&&canWrite&&!globalSearchActive&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
             </div>}
           </>}
 
@@ -1807,6 +1840,7 @@ export default function App() {
         </section>
       </div>}
 
+      {noteConflict&&<div className="modal-backdrop" role="presentation"><section className="composer conflict-composer" role="dialog" aria-modal="true" aria-labelledby="note-conflict-title"><header><div><span className="eyebrow">EDIT CONFLICT</span><h2 id="note-conflict-title">This note changed elsewhere</h2></div></header><p>Someone saved a newer version at {new Date(noteConflict.latest.updatedAt).toLocaleString()}. Your unsaved text is still here. Choose how to continue.</p><div className="conflict-preview"><strong>Latest saved version</strong><p>{noteConflict.latest.content.slice(0,320)||"No content"}</p></div><footer><button className="secondary-button" onClick={copyMineAndUseLatest} disabled={saving}>Copy mine and use theirs</button><button className="secondary-button" onClick={useLatestNoteConflict} disabled={saving}>Use theirs</button><button className="primary-button" onClick={keepMineAfterConflict} disabled={saving}>{saving?"Saving…":"Keep mine"}</button></footer></section></div>}
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>

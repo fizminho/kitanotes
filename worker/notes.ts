@@ -160,7 +160,8 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const categoryId = body.categoryId === undefined ? row.category_id : nullableText(body.categoryId, 64);
     const version = Number(body.version);
     const archivedAt = body.archived === undefined ? row.archived_at : (typeof body.archived === "boolean" ? (body.archived ? new Date().toISOString() : null) : undefined);
-    if (!title || content === null || categoryId === undefined || archivedAt === undefined || !Number.isInteger(version) || version !== row.version) return json({ error: "INVALID_OR_STALE_NOTE", currentVersion: row.version }, 409);
+    if (!title || content === null || categoryId === undefined || archivedAt === undefined || !Number.isInteger(version)) return json({ error: "INVALID_NOTE_UPDATE" }, 400);
+    if(version!==row.version)return json({error:"VERSION_CONFLICT",currentVersion:row.version,latestNote:noteDto(row)},409);
     if (!(await categoryBelongsToWorkspace(db, categoryId, row.workspace_id))) return json({ error: "INVALID_CATEGORY" }, 400);
     const now = new Date().toISOString();
     const result = await db.prepare("UPDATE notes SET title=?,content=?,category_id=?,archived_at=?,updated_by_user_id=?,version=version+1,updated_at=? WHERE id=? AND workspace_id=? AND version=? AND deleted_at IS NULL")
