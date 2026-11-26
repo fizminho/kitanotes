@@ -11,8 +11,8 @@ const migrations=[
  "0006_ai_consent_and_usage.sql","0007_request_rate_limits.sql","0008_push_subscriptions.sql",
  "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
  "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
- "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql","0030_push_preview_and_debounce.sql",
- "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql"
+ "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
+ "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0030_push_preview_and_debounce.sql"
 ];
 class D1TestDatabase{
  constructor(){this.sqlite=new DatabaseSync(":memory:");this.sqlite.exec("PRAGMA foreign_keys=ON");for(const file of migrations)this.sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));}
@@ -97,5 +97,26 @@ test("workspace notifications are hidden after membership is revoked",async()=>{
   assert.deepEqual(result.notifications.map(item=>item.id),["n2"]);
   assert.equal(result.unreadCount,1);
   assert.deepEqual(result.unreadByWorkspace,{});
+ }finally{db.close();}
+});
+
+test("notification preferences default new users to detailed previews and persist generic mode",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  const initial=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1),env);
+  assert.equal((await initial.json()).preferences.pushPreviewMode,"detailed");
+  const body={pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"generic"};
+  const saved=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",body),env);
+  assert.equal(saved.status,200);
+  assert.equal((await saved.json()).preferences.pushPreviewMode,"generic");
+  assert.equal(db.sqlite.prepare("SELECT push_preview_mode FROM notification_preferences WHERE user_id='u1'").get().push_preview_mode,"generic");
+ }finally{db.close();}
+});
+
+test("existing preference rows migrate to generic preview mode",async()=>{
+ const {db}=seed();
+ try{
+  db.sqlite.prepare("INSERT INTO notification_preferences (user_id,created_at,updated_at) VALUES ('u1','now','now')").run();
+  assert.equal(db.sqlite.prepare("SELECT push_preview_mode FROM notification_preferences WHERE user_id='u1'").get().push_preview_mode,"generic");
  }finally{db.close();}
 });
