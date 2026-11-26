@@ -753,15 +753,18 @@ The following items are implemented on the current feature branch but are not co
 - Incremental Notes, Events, Reminders and Workspace membership sync.
 - Keyed polling scheduler, pause/resume, jitter, backoff and request cancellation.
 - Polling-based member presence.
+- Remote note update/deletion banners that preserve the active local draft and open conflict review without overwriting the editor.
+- Visible sync state with last-updated time, offline/repeated-error banners, and manual refresh controls for Notes and Calendar.
+- Loading skeletons for Notes and Calendar, reduced-motion support, and keyboard focus/touch-target improvements.
 
 Still requiring a separate UX/verification pass:
 
-- Inline updated-by banners while a user is editing, with explicit preservation of unsaved text when a remote delete occurs.
-- A single visible sync-status indicator for Up to date, Syncing and Paused/offline, plus an offline banner.
-- Pull-to-refresh on Notes and Calendar and explicit Updated just now feedback.
+
+
+
 - A complete offline write queue. Current local drafts are recovery only.
-- Skeleton loaders and dynamic text-size review across all workspace/calendar states.
-- Full screen-reader announcement and contrast audit, including event title plus workspace name.
+- Dynamic text-size review across all workspace/calendar states.
+- Full screen-reader announcement audit, including event title plus workspace name. Contrast-aware workspace initials and reduced-motion skeleton behaviour are implemented, but a full contrast audit remains.
 - Traffic/conflict measurement before any decision to adopt SSE or WebSocket.
 
 ### 18.7 Core design principle (supersedes Section 16)
