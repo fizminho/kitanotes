@@ -437,6 +437,8 @@ export default function App() {
     if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
   },[workspaces,pushToast]);
 
+  useEffect(()=>{setViewingNote(null);},[activeWorkspaceId]);
+
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
     let active = true;
@@ -500,6 +502,7 @@ export default function App() {
     return subscribePoll("note:"+viewingNote.id,5000,async signal=>{
       if(checklistSavingLine!==null)return;
       const response=await fetch("/api/notes/"+encodeURIComponent(viewingNote.id),{credentials:"same-origin",cache:"no-store",signal});
+      if(response.status===404){if(!signal.aborted){setViewingNote(current=>current?.id===viewingNote.id?null:current);pushToast("This note is no longer available in your current workspaces.","error");}return;}
       if(!response.ok)throw new Error("Unable to refresh this note.");
       const result=await response.json() as {note?:Note};
       if(signal.aborted||!result.note||result.note.id!==viewingNote.id)return;
