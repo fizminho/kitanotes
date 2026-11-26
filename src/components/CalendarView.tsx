@@ -20,7 +20,7 @@ type Props = {
   calendarDays:Date[]; calendarAgendaItems:CalendarItem[]; calendarTransferBusy:boolean;
   calendarIcsInputRef:RefObject<HTMLInputElement>;
   onImportCalendarIcs:(file:File)=>void; onExportCalendarIcs:()=>void; onMoveCalendar:(amount:number)=>void;
-  onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; onOpenLinkedNote:(noteId:string,workspaceId:string)=>void; calendarFocusDate?:string|null;
+  onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; onOpenLinkedNote:(noteId:string,workspaceId:string)=>void; onRefresh:()=>void; calendarFocusDate?:string|null;
 };
 function dateKey(value:Date):string {
   return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
