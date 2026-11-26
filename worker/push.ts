@@ -9,11 +9,11 @@ type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;share
 
 export function safePushMessage(kind:PushKind):{title:string;body:string} {
  switch(kind){
-  case "reminder": return {title:"KitaNotes reminder",body:"You have a reminder due. Open KitaNotes to view it."};
-  case "shared_note": return {title:"New shared note",body:"A member added a note to a workspace you belong to."};
-  case "shared_note_update": return {title:"Shared note updated",body:"A shared note was changed or deleted. Open KitaNotes for details."};
-  case "event": return {title:"Calendar updated",body:"A calendar event changed. Open KitaNotes for details."};
-  case "workspace": return {title:"Workspace update",body:"There is an update in one of your workspaces."};
+  case "reminder": return {title:"Reminder due",body:"A reminder is due. Open KitaNotes to review it."};
+  case "shared_note": return {title:"New shared note",body:"Someone added a note in a shared workspace. Open KitaNotes to view it."};
+  case "shared_note_update": return {title:"Shared note changed",body:"A shared note was updated or removed. Open KitaNotes to review it."};
+  case "event": return {title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it."};
+  case "workspace": return {title:"Workspace activity",body:"Your workspace membership or permissions changed. Open KitaNotes to review it."};
   default: return {title:"KitaNotes",body:"Push notifications are connected on this device."};
  }
 }
@@ -65,7 +65,7 @@ function validSubscription(value:unknown):value is PushSubscription {
  return validEndpoint(item.endpoint)&&!!keys&&typeof keys.p256dh==="string"&&keys.p256dh.length>=80&&keys.p256dh.length<=100&&typeof keys.auth==="string"&&keys.auth.length>=16&&keys.auth.length<=32;
 }
 
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,data:{title:string;body:string;url?:string;tag?:string},kind:PushKind="test",scope?:{workspaceId?:string|null;important?:boolean}):Promise<void> {
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,_data:{title:string;body:string;url?:string;tag?:string},kind:PushKind="test",scope?:{workspaceId?:string|null;important?:boolean}):Promise<void> {
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
@@ -85,16 +85,15 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  if(kind==="event"&&preferences.event_push_enabled!==1)return;
  if(kind==="workspace"&&preferences.workspace_push_enabled!==1)return;
  if(kind!=="test"&&isWithinQuietHours(preferences))return;
- const workspaceName=scope?.workspaceId?(await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(scope.workspaceId).first<{name:string}>())?.name:null;
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
    const baseMessage=safePushMessage(kind);
-   const message=workspaceName?{title:(baseMessage.title+" · "+workspaceName).slice(0,100),body:(baseMessage.body+" Workspace: "+workspaceName).slice(0,160)}:baseMessage;
-   let requestedUrl="/";
-   if(typeof data.url==="string"&&data.url.startsWith("/")&&!data.url.startsWith("//")){try{const parsed=new URL(data.url,"https://kitanotes.invalid");if(parsed.origin==="https://kitanotes.invalid")requestedUrl=parsed.pathname+parsed.search+parsed.hash;}catch{/* keep root fallback */}}
-   const requestedTag=typeof data.tag==="string"&&data.tag.length<=100?data.tag:"kitanotes-"+kind+"-"+crypto.randomUUID();
+   const message=baseMessage;
+   // Push services and lock screens must never receive resource/workspace identifiers.
+   const requestedUrl="/";
+   const requestedTag="kitanotes-"+kind+"-"+crypto.randomUUID();
    const payload=await buildPushPayload({data:{...message,url:requestedUrl,tag:requestedTag},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
    const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
    if(response.status===404||response.status===410){await db.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(row.id).run();return;}
