@@ -1,11 +1,12 @@
 import { buildPushPayload, type PushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
+import { buildPushContent, defaultPushUrl, safePushMessage, validPushTag, validPushUrl, type PushMessageInput, type PushKind } from "./push-content.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
-type PushKind = "reminder" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
-type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
+
+type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string;push_preview_mode:"detailed"|"generic"};
 
 export function safePushMessage(kind:PushKind):{title:string;body:string} {
  switch(kind){
@@ -65,36 +66,49 @@ function validSubscription(value:unknown):value is PushSubscription {
  return validEndpoint(item.endpoint)&&!!keys&&typeof keys.p256dh==="string"&&keys.p256dh.length>=80&&keys.p256dh.length<=100&&typeof keys.auth==="string"&&keys.auth.length>=16&&keys.auth.length<=32;
 }
 
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,_data:{title:string;body:string;url?:string;tag?:string},kind:PushKind="test",scope?:{workspaceId?:string|null;important?:boolean}):Promise<void> {
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,message:PushMessageInput,scope?:{workspaceId?:string|null;important?:boolean}):Promise<void> {
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
-  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,shared_note_update_push_enabled,event_push_enabled,workspace_push_enabled,quiet_hours_start,quiet_hours_end,timezone FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"};
+  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,shared_note_update_push_enabled,event_push_enabled,workspace_push_enabled,quiet_hours_start,quiet_hours_end,timezone,push_preview_mode FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur",push_preview_mode:"detailed"};
  } catch { return; }
  if(preferences.push_enabled!==1)return;
- if(scope?.workspaceId){
+ const workspaceId=message.workspaceId??scope?.workspaceId??null;
+ if(workspaceId){
   try{
-   const workspacePreference=await db.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id=? AND workspace_id=?").bind(userId,scope.workspaceId).first<{mode:"all"|"important"|"mute"}>();
+   const workspacePreference=await db.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id=? AND workspace_id=?").bind(userId,workspaceId).first<{mode:"all"|"important"|"mute"}>();
    const mode=workspacePreference?.mode??"all";
-   if(mode==="mute"||(mode==="important"&&scope.important!==true))return;
+   if(mode==="mute"||(mode==="important"&&(message.important??scope?.important)!==true))return;
   }catch{return;}
  }
+ const kind=message.kind;
  if(kind==="reminder"&&preferences.reminder_push_enabled!==1)return;
  if(kind==="shared_note"&&preferences.shared_note_push_enabled!==1)return;
  if(kind==="shared_note_update"&&preferences.shared_note_update_push_enabled!==1)return;
  if(kind==="event"&&preferences.event_push_enabled!==1)return;
  if(kind==="workspace"&&preferences.workspace_push_enabled!==1)return;
  if(kind!=="test"&&isWithinQuietHours(preferences))return;
+ if(message.subtype==="edited"&&message.resourceType==="note"&&message.resourceId){
+  try{
+   const now=Date.now(),key="push:edit:"+message.resourceId+":"+(message.actorId??"unknown")+":"+userId;
+   const claimed=await db.prepare("INSERT INTO push_debounce (debounce_key,expires_at) VALUES (?,?) ON CONFLICT(debounce_key) DO UPDATE SET expires_at=excluded.expires_at WHERE push_debounce.expires_at<=? RETURNING debounce_key")
+    .bind(key,new Date(now+120000).toISOString(),new Date(now).toISOString()).first<{debounce_key:string}>();
+   if(!claimed)return;
+  }catch{return;}
+ }
+ const built=buildPushContent(message,preferences.push_preview_mode,preferences.timezone||"Asia/Kuala_Lumpur");
+ const target=validPushUrl(message.url)?message.url:defaultPushUrl(message);
+ const tag=validPushTag(message.tag)?message.tag:defaultPushTag(message,userId);
+ const payloadData={v:2,kind:message.kind,subtype:message.subtype,title:built.title,body:built.body,url:target,tag,renotify:true,data:{workspaceId:message.workspaceId??undefined,resourceType:message.resourceType??undefined,resourceId:message.resourceId??undefined,notificationId:message.notificationId??undefined}};
+ let encoded="";
+ try{encoded=JSON.stringify(payloadData);if(new TextEncoder().encode(encoded).byteLength>3072)return;}catch{return;}
+ const ttl=message.kind==="reminder"?86400:message.kind==="event"?14400:3600;
+ const urgency=message.kind==="reminder"?"high":"normal";
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
-   const baseMessage=safePushMessage(kind);
-   const message=baseMessage;
-   // Push services and lock screens must never receive resource/workspace identifiers.
-   const requestedUrl="/";
-   const requestedTag="kitanotes-"+kind+"-"+crypto.randomUUID();
-   const payload=await buildPushPayload({data:{...message,url:requestedUrl,tag:requestedTag},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
+   const payload=await buildPushPayload({data:payloadData,options:{ttl,urgency}},subscription,vapid(env));
    const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
    if(response.status===404||response.status===410){await db.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(row.id).run();return;}
    if(response.ok){const now=new Date().toISOString();await db.prepare("UPDATE push_subscriptions SET last_success_at=?,updated_at=? WHERE id=?").bind(now,now,row.id).run();}
@@ -141,7 +155,7 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
   if(!pushConfigured(env))return json({error:"PUSH_NOT_CONFIGURED"},503);
   const rate=await consumeRateLimit(env.DB,"push:test:user:"+user.id,3,60*1000);
   if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
-  await sendPushToUser(env.DB,env,user.id,{title:"KitaNotes",body:"Push notifications are connected on this device.",url:"/",tag:"kitanotes-test"});
+  await sendPushToUser(env.DB,env,user.id,{kind:"test",subtype:"test",url:"/",tag:"kitanotes-test"});
   return json({ok:true});
  }
  return json({error:"METHOD_NOT_ALLOWED"},405);
