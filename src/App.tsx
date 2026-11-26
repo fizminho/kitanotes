@@ -596,12 +596,11 @@ export default function App() {
 
   useEffect(()=>{
     if(!notificationsOpen||!user)return;
-    let first=true;
     setNotificationsLoading(true);
     return subscribePoll("notifications:inbox:"+user.id,30000,async signal=>{
       const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to load notifications.");
       const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};
-      setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");setNotificationsLoading(false);first=false;
+      setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");setNotificationsLoading(false);
     });
   },[notificationsOpen,user]);
 
