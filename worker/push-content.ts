@@ -82,7 +82,7 @@ export function buildPushContent(message:PushMessageInput,previewMode:"detailed"
  return{title:truncatePushText(value.title,60)||fallback.title,body:truncatePushText(value.body,120)||fallback.body};
 }
 export function validPushUrl(value:unknown):value is string{
- return typeof value==="string"&&value.startsWith("/")&&!value.startsWith("//")&&!value.includes("\\\\")&&!/[\\r\\n\\u0000-\\u001f]/.test(value);
+ return typeof value==="string"&&value.startsWith("/")&&!value.startsWith("//")&&!value.includes(String.fromCharCode(92))&&!/[\\r\\n\\u0000-\\u001f]/.test(value);
 }
 export function validPushTag(value:unknown):value is string{
  return typeof value==="string"&&value.length>0&&value.length<=64&&/^[a-z0-9:_-]+$/.test(value);
