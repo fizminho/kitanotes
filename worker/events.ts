@@ -91,7 +91,7 @@ async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:Execu
   } catch { return json({error:"EVENT_CREATE_FAILED"},400); }
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
-  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/?workspaceId="+encodeURIComponent(workspaceId)+"&eventId="+encodeURIComponent(id),tag:"event-created-"+id},"event",{workspaceId:row.workspace_id,important:false})));
+  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/?workspaceId="+encodeURIComponent(workspaceId)+"&eventId="+encodeURIComponent(id),tag:"event-created-"+id},"event",{workspaceId,important:false})));
   if(ctx)ctx.waitUntil(pushTask);else await pushTask;
   const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
