@@ -536,12 +536,12 @@ export default function App() {
   },[user,activeWorkspaceId,pushToast]);
 
   useEffect(()=>{
-    if(!user||!activeWorkspaceId||!workspaces.some(item=>item.id===activeWorkspaceId))return;
+    if(!user||!activeWorkspaceId)return;
     return subscribePoll("presence:"+user.id+":"+activeWorkspaceId,60000,async signal=>{
       const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/presence",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}",signal});
       if(!response.ok)throw new Error("Presence heartbeat failed.");
     });
-  },[user,activeWorkspaceId,workspaces]);
+  },[user,activeWorkspaceId]);
 
   useEffect(()=>{
     if(!user){setUnreadCount(0);setUnreadByWorkspace({});return;}
@@ -1994,12 +1994,13 @@ export default function App() {
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
+          {!remoteNoteDeleted&&!canWrite&&editingNote&&<div className="remote-note-banner deleted" role="status">Your workspace role changed. You can still copy your draft, but you can no longer save edits here.</div>}
           {remoteNoteDeleted&&<div className="remote-note-banner deleted" role="alert"><span>This note was deleted or you lost access. Your unsaved text remains in a local recovery draft.</span><div><button type="button" className="text-action" onClick={()=>void navigator.clipboard?.writeText(draftContent)}>Copy my draft</button><button type="button" className="text-action" onClick={()=>{setComposerOpen(false);setEditingNote(null);setRemoteNoteDeleted(false);}}>Back to notes</button></div></div>}
           {remoteNoteUpdate&&!remoteNoteDeleted&&<div className="remote-note-banner" role="status"><span>Updated by {remoteNoteUpdate.updatedByName??"another member"} at {new Date(remoteNoteUpdate.updatedAt).toLocaleString()}.</span><button type="button" className="text-action" onClick={()=>{setNoteConflict({latest:remoteNoteUpdate,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null}});setRemoteNoteUpdate(null);}}>Review update</button></div>}
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
           <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div><label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving || remoteNoteDeleted}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
+          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving || remoteNoteDeleted || !canWrite}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
         </section>
       </div>}
       {viewingNote && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setViewingNote(null);}}>
