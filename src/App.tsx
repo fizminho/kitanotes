@@ -13,8 +13,8 @@ type Toast = { id:number; text:string; tone:"ok"|"error" };
 type View = "notes" | "calendar" | "shared";
 type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}> };
 
-type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void };
-function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePickerProps){
+type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void; unreadByWorkspace?:Record<string,number> };
+function WorkspacePicker({workspaces,activeWorkspaceId,onChange,unreadByWorkspace={}}:WorkspacePickerProps){
   const [open,setOpen]=useState(false);
   const rootRef=useRef<HTMLDivElement|null>(null);
   const active=workspaces.find(item=>item.id===activeWorkspaceId);
@@ -28,7 +28,7 @@ function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePicker
   },[open]);
   return <div className="workspace-picker" ref={rootRef}>
     <button type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
-      <span className="workspace-avatar">K</span>
+      <span className="workspace-avatar">K</span>{(unreadByWorkspace[activeWorkspaceId]??0)>0&&<span className="workspace-unread-dot" aria-label="Unread workspace activity"/>}
       <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
       <ChevronDown size={16} className={open?"workspace-picker-chevron open":"workspace-picker-chevron"}/>
     </button>
@@ -36,7 +36,7 @@ function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePicker
       {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
         <span className="workspace-picker-option-avatar">{workspace.name.trim().slice(0,1).toUpperCase()||"K"}</span>
         <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
-        {workspace.id===activeWorkspaceId&&<Check size={16}/>}
+        {(unreadByWorkspace[workspace.id]??0)>0&&<span className="workspace-unread-count" aria-label={(unreadByWorkspace[workspace.id]??0)+" unread notifications"}>{(unreadByWorkspace[workspace.id]??0)>99?"99+":unreadByWorkspace[workspace.id]}</span>}{workspace.id===activeWorkspaceId&&<Check size={16}/>}
       </button>)}
       {!workspaces.length&&<div className="workspace-picker-empty">No workspaces available</div>}
     </div>}
@@ -259,6 +259,11 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadByWorkspace,setUnreadByWorkspace]=useState<Record<string,number>>({});
+  const [workspaceNotificationPreferences,setWorkspaceNotificationPreferences]=useState<Array<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>>([]);
+  const [workspaceNotificationSaving,setWorkspaceNotificationSaving]=useState<string|null>(null);
+  const [calendarFocusDate,setCalendarFocusDate]=useState<string|null>(null);
+  const deepLinkHandled=useRef(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
   const [installPrompt,setInstallPrompt]=useState<InstallPromptEvent|null>(null);
@@ -518,7 +523,7 @@ export default function App() {
   useEffect(()=>{
     if(!user){setUnreadCount(0);return;}
     let active=true,timer:number|undefined,controller:AbortController|null=null;
-    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();try{const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(response.ok){const result=await response.json() as {unreadCount:number};if(active)setUnreadCount(result.unreadCount);}}catch{/* retried next cycle */}finally{controller=null;schedule();}};
+    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();try{const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(response.ok){const result=await response.json() as {unreadCount:number;unreadByWorkspace?:Record<string,number>};if(active){setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});}}}catch{/* retried next cycle */}finally{controller=null;schedule();}};
     const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
     const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
     const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
@@ -625,9 +630,16 @@ export default function App() {
   
   useEffect(()=>{
     if(!notificationsOpen||!user)return;
+    let active=true;
+    fetch("/api/notifications/workspaces",{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Unable to load workspace alert preferences.");const result=await response.json() as {workspaces:Array<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>};if(active)setWorkspaceNotificationPreferences(result.workspaces);}).catch(error=>{if(active)setNotificationError(error instanceof Error?error.message:"Unable to load workspace alert preferences.");});
+    return()=>{active=false;};
+  },[notificationsOpen,user]);
+
+  useEffect(()=>{
+    if(!notificationsOpen||!user)return;
     let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
     const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();setNotificationsLoading(true);
-      try{const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to load notifications.");const result=await response.json() as {notifications:Notification[];unreadCount:number};if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);setNotificationError("");}}
+      try{const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to load notifications.");const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");}}
       catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");}
       finally{inFlight=false;controller=null;if(active)setNotificationsLoading(false);schedule();}
     };
@@ -735,6 +747,13 @@ export default function App() {
     try{const response=await fetch("/api/push/test",{method:"POST",credentials:"same-origin"});if(!response.ok)throw new Error("Unable to send a test notification.");}
     catch(error){setPushError(error instanceof Error?error.message:"Unable to send a test notification.");}
     finally{setPushBusy(false);}
+  }
+
+  async function saveWorkspaceNotificationPreference(workspaceId:string,mode:"all"|"important"|"mute"){
+    setWorkspaceNotificationSaving(workspaceId);
+    try{const response=await fetch("/api/notifications/workspaces/"+encodeURIComponent(workspaceId),{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({mode})});if(!response.ok)throw new Error("Unable to save workspace notification preference.");setWorkspaceNotificationPreferences(current=>current.map(item=>item.id===workspaceId?{...item,mode}:item));}
+    catch(error){setNotificationError(error instanceof Error?error.message:"Unable to save workspace notification preference.");}
+    finally{setWorkspaceNotificationSaving(null);}
   }
 
   async function saveNotificationPreferences(){
@@ -1688,7 +1707,7 @@ export default function App() {
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <div className="workspace-switch-row">
-          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
+          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} unreadByWorkspace={unreadByWorkspace} />
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
@@ -1731,6 +1750,13 @@ export default function App() {
             {notificationError&&<p className="invite-error">{notificationError}</p>}
             
             {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=><button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><small>{new Date(notification.createdAt).toLocaleString()}</small></button>)}
+            {user&&<details className="notification-settings">
+              <summary><span><strong>Workspace alerts</strong><small>All, important only, or mute each workspace</small></span><ChevronDown size={16}/></summary>
+              <div className="notification-settings-content">
+                {workspaceNotificationPreferences.length===0?<p>No joined workspaces.</p>:workspaceNotificationPreferences.map(item=><label className="workspace-notification-row" key={item.id}><span><strong>{item.name}</strong><small>{item.role}</small></span><select className="invite-input" value={item.mode} disabled={workspaceNotificationSaving===item.id} onChange={event=>void saveWorkspaceNotificationPreference(item.id,event.target.value as "all"|"important"|"mute")}><option value="all">All alerts</option><option value="important">Important only</option><option value="mute">Mute</option></select></label>)}
+                <p className="notification-settings-note">Important alerts include reminders and workspace access or role changes. Muting a workspace affects push only; the in-app inbox remains available.</p>
+              </div>
+            </details>}
             {user&&<details className="notification-settings">
               <summary><span><strong>Delivery preferences</strong><small>Choose which alerts reach this device</small></span><ChevronDown size={16}/></summary>
               <div className="notification-settings-content">

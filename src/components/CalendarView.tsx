@@ -20,7 +20,7 @@ type Props = {
   calendarDays:Date[]; calendarAgendaItems:CalendarItem[]; calendarTransferBusy:boolean;
   calendarIcsInputRef:RefObject<HTMLInputElement>;
   onImportCalendarIcs:(file:File)=>void; onExportCalendarIcs:()=>void; onMoveCalendar:(amount:number)=>void;
-  onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void;
+  onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; calendarFocusDate?:string|null;
 };
 function dateKey(value:Date):string {
   return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
@@ -31,6 +31,7 @@ export default function CalendarView(props:Props) {
     calendarTransferBusy,calendarIcsInputRef,onImportCalendarIcs,onExportCalendarIcs,
     onMoveCalendar,onEditEvent,onDeleteEvent}=props;
   const [selectedDate,setSelectedDate]=useState<Date|null>(null);
+  useEffect(()=>{if(calendarFocusDate){const date=new Date(calendarFocusDate+"T12:00:00");if(!Number.isNaN(date.getTime()))setSelectedDate(date);}},[calendarFocusDate]);
   const [workspaceFilter,setWorkspaceFilter]=useState<string>(()=>{try{return localStorage.getItem("kitanotes-calendar-workspace-filter")??"all";}catch{return "all";}});
   const [workspaceColorOverrides,setWorkspaceColorOverrides]=useState<Record<string,string>>(()=>{try{const value=JSON.parse(localStorage.getItem("kitanotes-calendar-workspace-colors")??"{}");return value&&typeof value==="object"?value as Record<string,string>:{ };}catch{return {};}});
   const workspaceColors=["#6477d8","#159b83","#d18a36","#b36ac8","#d46d78","#4389b7","#82933c","#98765b"];
