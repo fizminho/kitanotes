@@ -745,7 +745,7 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if(!user){setNotificationPrefs({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});return;}
+    if(!user){setNotificationPrefs({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});return;}
     let active=true;setNotificationPrefsLoading(true);
     fetch("/api/notifications/preferences",{credentials:"same-origin"}).then(async response=>{
       if(!response.ok)throw new Error("Unable to load notification preferences.");
