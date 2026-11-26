@@ -37,7 +37,7 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
   const result=await db.prepare("SELECT w.id,w.name,wm.role,COALESCE(p.mode,'all') AS mode FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN workspace_notification_preferences p ON p.workspace_id=w.id AND p.user_id=wm.user_id WHERE wm.user_id=? ORDER BY w.name COLLATE NOCASE").bind(user.id).all<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>();
   return json({workspaces:result.results});
  }
- const workspacePreferenceMatch=url.pathname.match(/^\\/api\\/notifications\\/workspaces\\/([^/]+)$/);
+ const workspacePreferenceMatch=url.pathname.match(/^\/api\/notifications\/workspaces\/([^/]+)$/);
  if(workspacePreferenceMatch&&request.method==="PUT"){
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
   const body=await readJsonBody(request),mode=body?.mode;

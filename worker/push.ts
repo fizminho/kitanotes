@@ -85,11 +85,11 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  if(kind==="event"&&preferences.event_push_enabled!==1)return;
  if(kind==="workspace"&&preferences.workspace_push_enabled!==1)return;
  if(kind!=="test"&&isWithinQuietHours(preferences))return;
+ const workspaceName=scope?.workspaceId?(await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(scope.workspaceId).first<{name:string}>())?.name:null;
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
-   const workspaceName=scope?.workspaceId?(await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(scope.workspaceId).first<{name:string}>())?.name:null;
    const baseMessage=safePushMessage(kind);
    const message=workspaceName?{title:(baseMessage.title+" · "+workspaceName).slice(0,100),body:(baseMessage.body+" Workspace: "+workspaceName).slice(0,160)}:baseMessage;
    const requestedUrl=typeof data.url==="string"&&data.url.startsWith("/")&&!data.url.startsWith("//")?data.url:"/";
