@@ -11,7 +11,7 @@ const migrations=[
  "0006_ai_consent_and_usage.sql","0007_request_rate_limits.sql","0008_push_subscriptions.sql",
  "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
  "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
- "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
+ "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql","0030_push_preview_and_debounce.sql",
  "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql"
 ];
 class D1TestDatabase{
