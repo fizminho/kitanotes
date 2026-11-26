@@ -77,3 +77,25 @@ test("notification preference endpoint rejects oversized JSON request bodies",as
   assert.equal(db.sqlite.prepare("SELECT user_id FROM notification_preferences WHERE user_id='u1'").get(),undefined);
  }finally{db.close();}
 });
+
+test("workspace notifications are hidden after membership is revoked",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  const now=new Date().toISOString();
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('w1','Private project','u1','shared','shared',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?),('w1','u2','viewer',?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO notifications (id,user_id,workspace_id,notification_type,title,body,idempotency_key,created_at) VALUES ('shared-n','u2','w1','shared_note','Private project','Sensitive note title','shared-key',?)").run(now);
+
+  const before=await handleNotificationsRequest(request("/api/notifications",tokens.u2),env);
+  assert.equal(before.status,200);
+  assert.equal((await before.json()).notifications.length,2);
+
+  db.sqlite.prepare("DELETE FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").run();
+  const after=await handleNotificationsRequest(request("/api/notifications",tokens.u2),env);
+  assert.equal(after.status,200);
+  const result=await after.json();
+  assert.deepEqual(result.notifications.map(item=>item.id),["n2"]);
+  assert.equal(result.unreadCount,1);
+  assert.deepEqual(result.unreadByWorkspace,{});
+ }finally{db.close();}
+});
