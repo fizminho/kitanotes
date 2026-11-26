@@ -140,7 +140,7 @@ function notificationPresentation(notification:Notification):{kind:string;title:
       kind="Calendar";title="Calendar event cancelled";body=quote(notification.body)+" was cancelled"+(workspace?" in "+workspace:"")+".";
       break;
     case "reminder":
-      kind="Reminder";title="Reminder due";body=quote(notification.title.replace(/^Reminder:\\s*/i,""))+" is due. "+notification.body;
+      kind="Reminder";title="Reminder due";body=quote(notification.title.replace(/^Reminder:\s*/i,""))+" is due. "+notification.body;
       break;
     case "invitation_accepted":
       kind="Workspace";title="Invitation accepted";
