@@ -43,6 +43,12 @@ Never commit the private key or paste it into a chat or frontend environment var
 
 This release caches only the application shell and static assets. It does not cache private API responses, permit offline note editing, or promise delivery while a device is offline or push permission is denied.
 
+
+
+## Notification content catalogue
+
+See [Push Notification Content Catalogue](./PUSH_NOTIFICATION_CATALOG.md) for the exact device-visible title/body for each push kind, function-by-function trigger coverage, recipient rules, in-app versus push differences, delivery preferences, privacy guarantees and current gaps.
+
 ## Per-user notification preferences
 
 Migrations `0009_notification_preferences.sql` and `0015_notification_activity_preferences.sql` add user-scoped delivery settings exposed through:
