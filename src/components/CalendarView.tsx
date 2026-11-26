@@ -22,6 +22,7 @@ type Props = {
   onImportCalendarIcs:(file:File)=>void; onExportCalendarIcs:()=>void; onMoveCalendar:(amount:number)=>void;
   onEditEvent:(event:CalendarEvent)=>void; onDeleteEvent:(event:CalendarEvent)=>void; onOpenLinkedNote:(noteId:string,workspaceId:string)=>void; onRefresh:()=>void; calendarFocusDate?:string|null;
 };
+function contrastText(hex:string){const value=hex.replace("#","");if(!/^[0-9a-fA-F]{6}$/.test(value))return "#fff";const channels=[0,2,4].map(index=>parseInt(value.slice(index,index+2),16)/255).map(channel=>channel<=0.04045?channel/12.92:Math.pow((channel+0.055)/1.055,2.4));const luminance=0.2126*channels[0]+0.7152*channels[1]+0.0722*channels[2];return luminance>0.179?"#111827":"#fff";}
 function dateKey(value:Date):string {
   return value.getFullYear()+"-"+String(value.getMonth()+1).padStart(2,"0")+"-"+String(value.getDate()).padStart(2,"0");
 }
