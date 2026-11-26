@@ -474,6 +474,7 @@ export default function App() {
         const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");
         const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to sync notes.");
         const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};
+        if(signal.aborted)return;
         if(!cursor)setNotes(result.notes);
         else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});
         cursor=result.nextCursor??new Date().toISOString();setNotesError("");
@@ -501,7 +502,7 @@ export default function App() {
       const response=await fetch("/api/notes/"+encodeURIComponent(viewingNote.id),{credentials:"same-origin",cache:"no-store",signal});
       if(!response.ok)throw new Error("Unable to refresh this note.");
       const result=await response.json() as {note?:Note};
-      if(!result.note||result.note.id!==viewingNote.id)return;
+      if(signal.aborted||!result.note||result.note.id!==viewingNote.id)return;
       setViewingNote(current=>!current||current.id!==result.note!.id||current.version>=result.note!.version?current:result.note!);
       setNotes(current=>current.map(note=>note.id===result.note!.id&&note.version<result.note!.version?result.note!:note));
     });
@@ -528,6 +529,7 @@ export default function App() {
     return subscribePoll("workspaces:"+user.id,60000,async signal=>{
       const response=await fetch("/api/workspaces"+(cursor?"?updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspaces.");
       const result=await response.json() as {workspaces:Workspace[];removedWorkspaceIds?:string[];starredWorkspaceId:string|null;nextCursor?:string};
+      if(signal.aborted)return;
       if(!cursor)setWorkspaces(result.workspaces);
       else setWorkspaces(current=>{const removed=new Set(result.removedWorkspaceIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.workspaces)byId.set(item.id,item);return [...byId.values()];});
       setStarredWorkspaceId(result.starredWorkspaceId);cursor=result.nextCursor??new Date().toISOString();
@@ -549,6 +551,7 @@ export default function App() {
     return subscribePoll("notifications:unread:"+user.id,30000,async signal=>{
       const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh notification count.");
       const result=await response.json() as {unreadCount:number;unreadByWorkspace?:Record<string,number>};
+      if(signal.aborted)return;
       setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});
     });
   },[user]);
@@ -615,10 +618,12 @@ export default function App() {
         ]);
         if(!response.ok)throw new Error("Unable to load calendar events.");
         const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
+        if(signal.aborted)return;
         if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
         cursor=result.nextCursor??new Date().toISOString();
         if(!reminderResponse.ok)throw new Error("Unable to load reminders.");
         const reminderResult=await reminderResponse.json() as {reminders:Reminder[];nextCursor?:string};
+        if(signal.aborted)return;
         if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
         reminderCursor=reminderResult.nextCursor??new Date().toISOString();setEventsError("");
       }catch(error){if(!signal.aborted)setEventsError(error instanceof Error?error.message:"Unable to refresh calendar.");throw error;}
@@ -640,6 +645,7 @@ export default function App() {
       try{
         const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to load notifications.");
         const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};
+        if(signal.aborted)return;
         setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");
       }catch(error){if(!signal.aborted)setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");throw error;}
       finally{setNotificationsLoading(false);}
@@ -1490,7 +1496,7 @@ export default function App() {
     return subscribePoll("activity:"+activeWorkspaceId+":"+activityTypeFilter+":"+activityPersonFilter,15000,async signal=>{
       const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter);
       const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh activity.");
-      const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);
+      const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};if(signal.aborted)return;setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);
     });
   },[inviteOpen,manageTab,activeWorkspaceId,activityTypeFilter,activityPersonFilter]);
 
@@ -1498,7 +1504,7 @@ export default function App() {
     if(!inviteOpen||manageTab!=="people"||!activeWorkspaceId)return;
     return subscribePoll("members:"+activeWorkspaceId,15000,async signal=>{
       const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspace members.");
-      const result=await response.json() as {members:WorkspaceMember[]};setWorkspaceMembers(result.members);
+      const result=await response.json() as {members:WorkspaceMember[]};if(signal.aborted)return;setWorkspaceMembers(result.members);
     });
   },[inviteOpen,manageTab,activeWorkspaceId]);
 
