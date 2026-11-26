@@ -225,7 +225,7 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
       const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
       const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
       const workspaceName=await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(row.workspace_id).first<{name:string}>();
-      const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{kind:"shared_note_update",subtype:"deleted",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:row.title,workspaceId:row.workspace_id,resourceType:"note",resourceId:noteId,url:"/?workspaceId="+encodeURIComponent(row.workspace_id),tag:"note:"+noteId,important:false})));
+      const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{kind:"shared_note_update",subtype:"deleted",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:row.title,workspaceId:row.workspace_id,resourceType:"note",resourceId:noteId,url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&noteId="+encodeURIComponent(noteId),tag:"note:"+noteId,important:false})));
       if(ctx)ctx.waitUntil(pushTask);else await pushTask;
       return json({ok:true});
     }
