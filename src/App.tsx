@@ -268,6 +268,7 @@ export default function App() {
   const [calendarFocusDate,setCalendarFocusDate]=useState<string|null>(null);
   const [isOnline,setIsOnline]=useState(()=>typeof navigator==="undefined"?true:navigator.onLine);
   const [syncStatus,setSyncStatus]=useState<"up-to-date"|"syncing"|"paused">("up-to-date");
+  const [lastSyncedAt,setLastSyncedAt]=useState<string|null>(null);
   const deepLinkHandled=useRef(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
@@ -516,7 +517,7 @@ export default function App() {
 
   useEffect(()=>{
     const updateOnline=()=>setIsOnline(navigator.onLine);
-    const updateSync=(event:Event)=>{const detail=(event as CustomEvent<{status:"up-to-date"|"syncing"|"paused"}>).detail;if(detail?.status)setSyncStatus(detail.status);};
+    const updateSync=(event:Event)=>{const detail=(event as CustomEvent<{status:"up-to-date"|"syncing"|"paused";updatedAt?:string|null}>).detail;if(detail?.status)setSyncStatus(detail.status);if(detail?.updatedAt)setLastSyncedAt(detail.updatedAt);};
     window.addEventListener("online",updateOnline);window.addEventListener("offline",updateOnline);window.addEventListener("kitanotes:sync-status",updateSync);
     return()=>{window.removeEventListener("online",updateOnline);window.removeEventListener("offline",updateOnline);window.removeEventListener("kitanotes:sync-status",updateSync);};
   },[]);
@@ -1736,7 +1737,7 @@ export default function App() {
         </a>
         <div className="workspace-switch-row">
           <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} unreadByWorkspace={unreadByWorkspace} />
-          <div className="sync-status" role="status" aria-live="polite"><span className={"sync-status-dot "+(isOnline&&syncStatus==="up-to-date"?"good":isOnline?"waiting":"offline")}/>{!isOnline?"Offline":syncStatus==="syncing"?"Syncing":syncStatus==="paused"?"Sync paused":"Up to date"}</div>
+          <div className="sync-status" role="status" aria-live="polite"><span className={"sync-status-dot "+(isOnline&&syncStatus==="up-to-date"?"good":isOnline?"waiting":"offline")}/>{!isOnline?"Offline":syncStatus==="syncing"?"Syncing":syncStatus==="paused"?"Sync paused":lastSyncedAt?"Updated "+new Date(lastSyncedAt).toLocaleTimeString():"Up to date"}</div>
 
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
@@ -1834,7 +1835,7 @@ export default function App() {
             <div className="notes-meta">{globalSearchActive?(globalSearchLoading?"Searching all workspaces…":displayNotes.length+" results across joined workspaces"):notesLoading?"":visibleNotes.length+" nota"+(showArchived?" dalam arkib":"")}
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}{globalSearchError&&<div className="inline-error">{globalSearchError}</div>}
-            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="loading-state">Memuatkan nota…</div>:visibleNotes.length > 0 ? <div className="notes-grid">
+            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="notes-skeleton-grid" aria-label="Loading notes" aria-busy="true">{[0,1,2].map(index=><div className="note-skeleton" key={index}><i/><i/><i/></div>)}</div>:visibleNotes.length > 0 ? <div className="notes-grid">
               {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived||showTrash} isTrash={showTrash} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={showTrash?restoreFromTrash:restoreNote} onDelete={deleteNote}/>) }
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
