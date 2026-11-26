@@ -92,7 +92,8 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
    const baseMessage=safePushMessage(kind);
    const message=workspaceName?{title:(baseMessage.title+" · "+workspaceName).slice(0,100),body:(baseMessage.body+" Workspace: "+workspaceName).slice(0,160)}:baseMessage;
-   const requestedUrl=typeof data.url==="string"&&data.url.startsWith("/")&&!data.url.startsWith("//")?data.url:"/";
+   let requestedUrl="/";
+   if(typeof data.url==="string"&&data.url.startsWith("/")&&!data.url.startsWith("//")){try{const parsed=new URL(data.url,"https://kitanotes.invalid");if(parsed.origin==="https://kitanotes.invalid")requestedUrl=parsed.pathname+parsed.search+parsed.hash;}catch{/* keep root fallback */}}
    const requestedTag=typeof data.tag==="string"&&data.tag.length<=100?data.tag:"kitanotes-"+kind+"-"+crypto.randomUUID();
    const payload=await buildPushPayload({data:{...message,url:requestedUrl,tag:requestedTag},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
    const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
