@@ -716,6 +716,7 @@ The aggregate Calendar is a personal view, not a shared cross-workspace data bou
 - Workspaces have shared Owner-configurable icon and colour defaults. Each user may override a workspace colour locally in their own calendar.
 - Calendar filter chips persist per user and show the source workspace name. Event detail shows the workspace name and colour.
 - Event creation requires a writable workspace. The linked-note picker is restricted to notes in the selected event workspace.
+- Standalone or note-linked reminders that are not attached to an Event appear in the aggregate Calendar with their source workspace name and colour. Event-linked reminders stay associated with their Event and are not duplicated as separate calendar items.
 - Event detail shows a linked-note title and workspace. Selecting it switches the active Notes workspace and opens the note. A soft-deleted or inaccessible note is shown as unavailable.
 - Calendar polling uses the visible date range, one aggregate request, an updatedSince cursor and removed event IDs.
 
@@ -764,7 +765,7 @@ Still requiring a separate UX/verification pass:
 
 - A complete offline write queue. Current local drafts are recovery only.
 - Dynamic text-size review across all workspace/calendar states.
-- Full screen-reader announcement audit, including event title plus workspace name. Contrast-aware workspace initials and reduced-motion skeleton behaviour are implemented, but a full contrast audit remains.
+- Full screen-reader announcement audit, including event title plus workspace name. ARIA labels/live regions, keyboard focus, larger touch targets, contrast-aware workspace initials and reduced-motion handling have been improved; manual VoiceOver/NVDA and full-app contrast verification remain.
 - Traffic/conflict measurement before any decision to adopt SSE or WebSocket.
 
 ### 18.7 Core design principle (supersedes Section 16)
