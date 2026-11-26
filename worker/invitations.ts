@@ -252,24 +252,36 @@ async function deleteWorkspace(request: Request, env: InvitationEnv, userId: str
   return json({deleted:true});
 }
 
+async function workspaceSummary(env:InvitationEnv,userId:string,workspaceId:string):Promise<Response>{
+  const db=env.DB!;
+  if(!(await memberRole(db,workspaceId,userId)))return json({error:"NOT_FOUND"},404);
+  const [notes,events,members,pending]=await Promise.all([
+    db.prepare("SELECT COUNT(*) AS total FROM notes WHERE workspace_id=? AND deleted_at IS NULL").bind(workspaceId).first<{total:number}>(),
+    db.prepare("SELECT COUNT(*) AS total FROM calendar_events WHERE workspace_id=? AND deleted_at IS NULL").bind(workspaceId).first<{total:number}>(),
+    db.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id=?").bind(workspaceId).first<{total:number}>(),
+    db.prepare("SELECT COUNT(*) AS total FROM invitations WHERE workspace_id=? AND status='pending' AND expires_at>?").bind(workspaceId,new Date().toISOString()).first<{total:number}>()
+  ]);
+  return json({notes:notes?.total??0,events:events?.total??0,members:members?.total??0,pendingInvitations:pending?.total??0});
+}
+
 async function listActivity(request:Request,env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
   const url=new URL(request.url);
   const type=(url.searchParams.get("type")??"").slice(0,64);
   const actor=(url.searchParams.get("actor")??"").slice(0,64);
-  const before=(url.searchParams.get("before")??"").slice(0,40);
+  const before=(url.searchParams.get("before")??"").slice(0,120);
+  const [beforeDate,beforeId]=before.split("|");
   const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit"))||50));
-  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,COALESCE(t.display_name,n.title,e.title) AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id LEFT JOIN notes n ON a.target_type='note' AND n.id=a.target_id LEFT JOIN calendar_events e ON a.target_type='event' AND e.id=a.target_id WHERE a.workspace_id=? AND (?='' OR a.event_type=?) AND (?='' OR a.actor_user_id=?) AND (?='' OR a.created_at<?) ORDER BY a.created_at DESC,a.id DESC LIMIT ?")
-    .bind(workspaceId,type,type,actor,actor,before,before,limit+1).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
+  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,COALESCE(t.display_name,n.title,e.title) AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id LEFT JOIN notes n ON a.target_type='note' AND n.id=a.target_id LEFT JOIN calendar_events e ON a.target_type='event' AND e.id=a.target_id WHERE a.workspace_id=? AND (?='' OR a.event_type=?) AND (?='' OR a.actor_user_id=?) AND (?='' OR a.created_at<? OR (a.created_at=? AND a.id<?)) ORDER BY a.created_at DESC,a.id DESC LIMIT ?")
+    .bind(workspaceId,type,type,actor,actor,beforeDate??"",beforeDate??"",beforeDate??"",beforeId??"",limit+1).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
   const hasMore=result.results.length>limit;
   const rows=result.results.slice(0,limit);
-  return json({ activity: rows.map(row => {
-    let metadata: Record<string, unknown> = {};
-    try { metadata = JSON.parse(row.metadata_json); } catch { /* ignore malformed metadata */ }
+  return json({activity:rows.map(row=>{
+    let metadata:Record<string,unknown>={};try{metadata=JSON.parse(row.metadata_json);}catch{/* ignore malformed metadata */}
     delete metadata.email;
-    return { id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",actorId:row.actor_user_id,target:row.target_name||null,metadata,createdAt:row.created_at };
-  }),nextCursor:hasMore?rows[rows.length-1]?.created_at??null:null });
+    return{id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",actorId:row.actor_user_id,target:row.target_name||null,metadata,createdAt:row.created_at};
+  }),nextCursor:hasMore?(rows[rows.length-1]?.created_at??"")+"|"+(rows[rows.length-1]?.id??""):null});
 }
 
 async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
@@ -325,10 +337,11 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
     await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
     return json({ workspace: { id,name,type:"shared",visibility:"shared",role:"owner" } },201);
   }
-  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity))?$/);
+  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity|summary))?$/);
   if (workspaceMatch) {
     const id=decodeURIComponent(workspaceMatch[1]);
     if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
+    if(request.method==="GET" && url.pathname.endsWith("/summary")) return workspaceSummary(env,user.id,id);
     if(request.method==="PATCH" && url.pathname.includes("/members/")) return updateMemberRole(request,env,user.id,id,decodeURIComponent(url.pathname.split("/").pop()??""));
     if(request.method==="DELETE" && url.pathname.includes("/members/")) {
       const memberId=decodeURIComponent(url.pathname.split("/").pop()??"");

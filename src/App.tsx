@@ -1449,7 +1449,8 @@ export default function App() {
 
   async function leaveWorkspace() {
     if (!activeWorkspace || !user || workspaceActionBusy || activeWorkspace.role === "owner") return;
-    if (!window.confirm("Leave \u201c" + activeWorkspace.name + "\u201d? You will lose access until the owner invites you again.")) return;
+    const confirmation=window.prompt("Leaving "+activeWorkspace.name+" removes access to its notes, events and reminders. Its events will disappear from your calendar. Your own workspace is unaffected. Type the workspace name to continue:", "");
+    if(confirmation!==activeWorkspace.name)return;
     setWorkspaceActionBusy(true);
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(activeWorkspace.id) + "/members/" + encodeURIComponent(user.id), { method: "DELETE", credentials: "same-origin" });
@@ -1463,7 +1464,10 @@ export default function App() {
 
   async function deleteWorkspace() {
     if (!activeWorkspace || !user || workspaceActionBusy || activeWorkspace.role !== "owner" || activeWorkspace.type !== "shared") return;
-    if (!window.confirm("Permanently delete \u201c" + activeWorkspace.name + "\u201d with all its notes, categories, events and members? This cannot be undone.")) return;
+    let summary:{notes:number;events:number;members:number;pendingInvitations:number}={notes:notes.filter(note=>note.workspaceId===activeWorkspace.id).length,events:events.filter(event=>event.workspaceId===activeWorkspace.id).length,members:workspaceMembers.length,pendingInvitations:invitations.filter(item=>item.status==="pending").length};
+    try{const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspace.id)+"/summary",{credentials:"same-origin"});if(response.ok){const result=await response.json() as typeof summary;summary=result;}}catch{/* show best available counts */}
+    const confirmation=window.prompt("Permanently delete "+activeWorkspace.name+"? This permanently deletes "+summary.notes+" notes, "+summary.events+" events, "+summary.members+" members and "+summary.pendingInvitations+" pending invitations. Export anything you need first. This cannot be undone.\n\nType the workspace name to continue:", "");
+    if(confirmation!==activeWorkspace.name)return;
     setWorkspaceActionBusy(true);
     try {
       const response = await fetch("/api/workspaces/" + encodeURIComponent(activeWorkspace.id), { method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" });
