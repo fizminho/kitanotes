@@ -562,7 +562,8 @@ export default function App() {
   },[user]);
 
   useEffect(() => {
-    if (!activeWorkspaceId) { setCategories([]); return; }
+    setCategories([]);
+    if (!activeWorkspaceId) return;
     let active=true;
     fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"})
       .then(async response=>{if(!response.ok)throw new Error("Unable to load categories.");const result=await response.json() as {categories:Category[]};if(active)setCategories(result.categories);})
@@ -585,7 +586,7 @@ export default function App() {
     if (!inviteOpen || !activeWorkspaceId) return;
     let active = true;
     const owner = workspaces.find(item => item.id === activeWorkspaceId)?.role === "owner";
-    setInvitationsLoading(true);
+    setWorkspaceMembers([]);setInvitations([]);setActivity([]);setActivityNextCursor(null);setInvitationsLoading(true);setInviteCreateError("");
     const id = encodeURIComponent(activeWorkspaceId);
     Promise.all([
       fetch("/api/workspaces/" + id + "/members", { credentials: "same-origin" }),
@@ -1848,7 +1849,7 @@ export default function App() {
             <div className="notes-meta">{globalSearchActive?(globalSearchLoading?"Searching all workspaces…":displayNotes.length+" results across joined workspaces"):notesLoading?"":visibleNotes.length+" nota"+(showArchived?" dalam arkib":"")}
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}{globalSearchError&&<div className="inline-error">{globalSearchError}</div>}
-            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="notes-skeleton-grid" aria-label="Loading notes" aria-busy="true">{[0,1,2].map(index=><div className="note-skeleton" key={index}><i/><i/><i/></div>)}</div>:visibleNotes.length > 0 ? <div className="notes-grid">
+            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="notes-skeleton-grid" role="status" aria-live="polite" aria-label="Loading notes" aria-busy="true">{[0,1,2].map(index=><div className="note-skeleton" key={index}><i/><i/><i/></div>)}</div>:visibleNotes.length > 0 ? <div className="notes-grid">
               {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived||showTrash} isTrash={showTrash} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={showTrash?restoreFromTrash:restoreNote} onDelete={deleteNote}/>) }
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
