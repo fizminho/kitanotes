@@ -1163,3 +1163,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important}}
 
 .calendar-detail-card.reminder{border-style:dashed}.calendar-reminder-summary{margin-top:10px}
+
+.calendar-marker.reminder{outline:1px dashed currentColor;outline-offset:1px}
