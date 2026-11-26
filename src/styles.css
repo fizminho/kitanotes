@@ -1273,3 +1273,28 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .calendar-navigation{grid-template-columns:auto auto 36px 36px minmax(0,1fr)}
   .calendar-navigation>.calendar-arrow{width:36px}
 }
+
+
+/* New/edit note: keep the editor body independently scrollable on mobile.
+   The title bar and save action remain visible while the iOS keyboard is open. */
+.note-composer{display:flex;flex-direction:column;min-height:0}
+.note-composer>header,.note-composer>footer{flex:0 0 auto}
+.note-composer-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.note-composer-body .field-label{display:grid;gap:7px}
+.note-composer-body .note-title-field{margin:0 0 12px}
+.note-composer-body .note-content-field{margin:0}
+.note-composer-body .composer-title{display:block;min-width:0}
+.note-composer-body textarea{display:block;min-width:0}
+.note-composer-body .composer-counter{margin:6px 0 10px}
+@media(max-width:760px){
+  .modal-backdrop .note-composer{overflow:hidden!important;padding-bottom:8px!important}
+  .modal-backdrop .note-composer>header{position:relative;top:auto;flex:0 0 auto;margin-bottom:10px}
+  .modal-backdrop .note-composer-body{padding:0 1px 12px;scroll-padding-block:16px}
+  .modal-backdrop .note-composer-body .note-title-field{margin-bottom:10px}
+  .modal-backdrop .note-composer-body .composer-title{min-height:46px;padding:10px 2px;font-size:17px}
+  .modal-backdrop .note-composer-body textarea{min-height:120px;height:clamp(120px,28dvh,240px);max-height:42dvh;resize:vertical;padding:12px 2px;line-height:1.6}
+  .modal-backdrop .note-composer>footer{position:relative!important;inset:auto!important;bottom:auto!important;top:auto!important;left:auto!important;transform:none!important;flex:0 0 auto;width:100%;margin:8px 0 0!important;padding:10px 0 max(4px,env(safe-area-inset-bottom,0px))!important;background:#fff!important;border-top:1px solid #ececf3!important;box-shadow:none!important}
+  [data-theme=dark] .modal-backdrop .note-composer>footer{background:#171827!important;border-top-color:#34364a!important}
+  .modal-backdrop .note-composer>footer>span{font-size:9px;line-height:1.35}
+  .modal-backdrop .note-composer>footer>.primary-button{width:100%;min-height:46px;justify-content:center}
+}
