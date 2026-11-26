@@ -6,7 +6,7 @@ type Role = "owner" | "editor" | "viewer";
 type NoteRow = {
   id: string; workspace_id: string; title: string; content: string; category_id: string | null;
   category_name?: string | null; created_by_user_id: string; created_by_name?:string|null;  updated_by_user_id?:string|null; updated_by_name?:string|null;  version: number;
-  created_at: string; updated_at: string; archived_at: string | null;
+  created_at: string; updated_at: string; archived_at: string | null; deleted_at?:string|null;
 };
 type CategoryRow = {
   id: string; workspace_id: string; name: string; color: string | null;
@@ -98,7 +98,7 @@ function noteDto(row: NoteRow) {
     categoryId: row.category_id, categoryName: row.category_name ?? null,
     createdBy: row.created_by_user_id, createdByName:row.created_by_name??null,
     updatedBy:row.updated_by_user_id??null, updatedByName:row.updated_by_name??null, version: row.version,
-    createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at
+    createdAt: row.created_at, updatedAt: row.updated_at, archivedAt: row.archived_at, deletedAt:row.deleted_at??null
   };
 }
 async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string}, url: URL, userId: string, ctx?:ExecutionContext): Promise<Response | null> {
@@ -108,6 +108,21 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const workspaceId = url.searchParams.get("workspaceId");
     const query = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+    if(url.searchParams.get("trash")==="1"){
+      const cutoff=new Date(Date.now()-30*86400000).toISOString();
+      const result=workspaceId
+        ? await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.workspace_id=? AND n.deleted_at>? ORDER BY n.deleted_at DESC LIMIT ?").bind(workspaceId,cutoff,limit).all<NoteRow>()
+        : await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n JOIN workspace_members wm ON wm.workspace_id=n.workspace_id LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE wm.user_id=? AND n.deleted_at>? ORDER BY n.deleted_at DESC LIMIT ?").bind(userId,cutoff,limit).all<NoteRow>();
+      return json({notes:result.results.map(noteDto),retentionDays:30});
+    }
+    const sinceValue=url.searchParams.get("updatedSince");
+    if(sinceValue){
+      const since=new Date(sinceValue);if(Number.isNaN(since.getTime()))return json({error:"INVALID_SYNC_CURSOR"},400);
+      const cursor=since.toISOString(),syncNow=new Date().toISOString(),scope=workspaceId?"n.workspace_id=?":"EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=n.workspace_id AND wm.user_id=?)",scopeValue=workspaceId??userId;
+      const result=await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE "+scope+" AND n.deleted_at IS NULL AND n.archived_at IS NULL AND n.updated_at>? AND n.updated_at<=? ORDER BY n.updated_at,n.id LIMIT ?").bind(scopeValue,cursor,syncNow,limit).all<NoteRow>();
+      const removed=await db.prepare("SELECT n.id FROM notes n WHERE "+scope+" AND ((n.deleted_at>? AND n.deleted_at<=?) OR (n.archived_at>? AND n.archived_at<=?))").bind(scopeValue,cursor,syncNow,cursor,syncNow).all<{id:string}>();
+      return json({notes:result.results.map(noteDto),removedNoteIds:removed.results.map(row=>row.id),nextCursor:syncNow});
+    }
     const archiveFilter = url.searchParams.get("archived") === "1" ? "n.archived_at IS NOT NULL" : "n.archived_at IS NULL";
     if (workspaceId && !(await roleFor(db, workspaceId, userId))) return json({ error: "NOT_FOUND" }, 404);
     const pattern = "%" + query.replace(/[\\%_]/g, "\\$&") + "%";
@@ -141,6 +156,22 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("New note: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/",tag:"shared-note-"+id},"shared_note")));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
     return json({ note: row ? noteDto(row) : null }, 201);
+  }
+  const restoreMatch=path.match(/^\/api\/notes\/([^/]+)\/restore$/);
+  if(restoreMatch&&request.method==="POST"){
+    if(!isSameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+    const noteId=decodeURIComponent(restoreMatch[1]);
+    const row=await db.prepare("SELECT id,workspace_id,deleted_at FROM notes WHERE id=? AND deleted_at IS NOT NULL").bind(noteId).first<{id:string;workspace_id:string;deleted_at:string}>();
+    const role=row?await roleFor(db,row.workspace_id,userId):null;
+    if(!row||!role)return json({error:"NOT_FOUND"},404);
+    if(role!=="owner"&&role!=="editor")return json({error:"FORBIDDEN"},403);
+    if(row.deleted_at<=new Date(Date.now()-30*86400000).toISOString())return json({error:"TRASH_RETENTION_EXPIRED"},410);
+    const now=new Date().toISOString();
+    const result=await db.prepare("UPDATE notes SET deleted_at=NULL,updated_at=?,updated_by_user_id=?,version=version+1 WHERE id=? AND workspace_id=? AND deleted_at=?").bind(now,userId,noteId,row.workspace_id,row.deleted_at).run();
+    if(changes(result)!==1)return json({error:"RESTORE_CONFLICT"},409);
+    await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.restored','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
+    const restored=await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?").bind(noteId).first<NoteRow>();
+    return json({note:restored?noteDto(restored):null});
   }
   const match = path.match(/^\/api\/notes\/([^/]+)$/);
   if (!match) return null;
