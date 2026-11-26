@@ -1461,6 +1461,14 @@ export default function App() {
     });
   },[inviteOpen,manageTab,activeWorkspaceId,activityTypeFilter,activityPersonFilter]);
 
+  useEffect(()=>{
+    if(!inviteOpen||manageTab!=="people"||!activeWorkspaceId)return;
+    return subscribePoll("members:"+activeWorkspaceId,15000,async signal=>{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspace members.");
+      const result=await response.json() as {members:WorkspaceMember[]};setWorkspaceMembers(result.members);
+    });
+  },[inviteOpen,manageTab,activeWorkspaceId]);
+
   async function loadMoreActivity(){
     if(!activeWorkspaceId||!activityNextCursor||activityLoadingMore)return;
     setActivityLoadingMore(true);
