@@ -252,17 +252,24 @@ async function deleteWorkspace(request: Request, env: InvitationEnv, userId: str
   return json({deleted:true});
 }
 
-async function listActivity(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
+async function listActivity(request:Request,env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
-  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,t.display_name AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id WHERE a.workspace_id=? ORDER BY a.created_at DESC LIMIT 50")
-    .bind(workspaceId).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
-  return json({ activity: result.results.map(row => {
+  const url=new URL(request.url);
+  const type=(url.searchParams.get("type")??"").slice(0,64);
+  const actor=(url.searchParams.get("actor")??"").slice(0,64);
+  const before=(url.searchParams.get("before")??"").slice(0,40);
+  const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit"))||50));
+  const result = await db.prepare("SELECT a.id,a.event_type,a.target_type,a.target_id,a.metadata_json,a.created_at,a.actor_user_id,u.display_name AS actor_name,COALESCE(t.display_name,n.title,e.title) AS target_name FROM activity_events a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN users t ON a.target_type='user' AND t.id=a.target_id LEFT JOIN notes n ON a.target_type='note' AND n.id=a.target_id LEFT JOIN calendar_events e ON a.target_type='event' AND e.id=a.target_id WHERE a.workspace_id=? AND (?='' OR a.event_type=?) AND (?='' OR a.actor_user_id=?) AND (?='' OR a.created_at<?) ORDER BY a.created_at DESC,a.id DESC LIMIT ?")
+    .bind(workspaceId,type,type,actor,actor,before,before,limit+1).all<{id:string;event_type:string;target_type:string;target_id:string;metadata_json:string;created_at:string;actor_user_id:string|null;actor_name:string|null;target_name:string|null}>();
+  const hasMore=result.results.length>limit;
+  const rows=result.results.slice(0,limit);
+  return json({ activity: rows.map(row => {
     let metadata: Record<string, unknown> = {};
     try { metadata = JSON.parse(row.metadata_json); } catch { /* ignore malformed metadata */ }
     delete metadata.email;
-    return { id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",target:row.target_name||null,metadata,createdAt:row.created_at };
-  }) });
+    return { id:row.id,type:row.event_type,actor:row.actor_name||"Workspace member",actorId:row.actor_user_id,target:row.target_name||null,metadata,createdAt:row.created_at };
+  }),nextCursor:hasMore?rows[rows.length-1]?.created_at??null:null });
 }
 
 async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
@@ -328,7 +335,7 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
       if(memberId===user.id) return leaveWorkspace(request,env,user.id,id);
       return removeMember(request,env,user.id,id,memberId);
     }
-    if(request.method==="GET" && url.pathname.endsWith("/activity")) return listActivity(env,user.id,id);
+    if(request.method==="GET" && url.pathname.endsWith("/activity")) return listActivity(request,env,user.id,id);
     if(request.method==="DELETE" && !url.pathname.includes("/members")) return deleteWorkspace(request,env,user.id,id);
     if(request.method==="PATCH") {
       if(!sameOrigin(request)) return json({error:"CSRF_ORIGIN_REJECTED"},403);

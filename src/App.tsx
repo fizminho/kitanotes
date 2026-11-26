@@ -6,7 +6,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
 
-type ActivityItem = { id:string; type:string; actor:string; target:string|null; metadata:Record<string,unknown>; createdAt:string };
+type ActivityItem = { id:string; type:string; actor:string; actorId:string|null; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
 type SortMode = "updated" | "oldest" | "title";
 type Toast = { id:number; text:string; tone:"ok"|"error" };
@@ -160,6 +160,10 @@ export default function App() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [manageTab, setManageTab] = useState<ManageTab>("people");
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [activityTypeFilter,setActivityTypeFilter]=useState("");
+  const [activityPersonFilter,setActivityPersonFilter]=useState("");
+  const [activityNextCursor,setActivityNextCursor]=useState<string|null>(null);
+  const [activityLoadingMore,setActivityLoadingMore]=useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("updated");
   const [showArchived, setShowArchived] = useState(false);
   const [theme, setTheme] = useState<"light"|"dark">(() => { try { const saved = localStorage.getItem("kitanotes-theme"); if (saved === "dark" || saved === "light") return saved; } catch { /* ignore */ } return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"; });
@@ -501,19 +505,19 @@ export default function App() {
     Promise.all([
       fetch("/api/workspaces/" + id + "/members", { credentials: "same-origin" }),
       owner ? fetch("/api/invitations?workspaceId=" + id, { credentials: "same-origin" }) : Promise.resolve(null),
-      fetch("/api/workspaces/" + id + "/activity", { credentials: "same-origin" })
+      fetch("/api/workspaces/" + id + "/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter), { credentials: "same-origin" })
     ]).then(async ([memberResponse, inviteResponse, activityResponse]) => {
       if (!memberResponse.ok) throw new Error("Unable to load workspace members.");
       const memberResult = await memberResponse.json() as { members: WorkspaceMember[] };
       if (inviteResponse && !inviteResponse.ok) throw new Error("Unable to load invitations.");
       const inviteResult = inviteResponse ? await inviteResponse.json() as { invitations: Invitation[] } : { invitations: [] };
-      const activityResult = activityResponse.ok ? await activityResponse.json() as { activity: ActivityItem[] } : { activity: [] };
+      const activityResult = activityResponse.ok ? await activityResponse.json() as { activity: ActivityItem[]; nextCursor?:string|null } : { activity: [],nextCursor:null };
       if (!active) return;
-      setWorkspaceMembers(memberResult.members); setInvitations(inviteResult.invitations); setActivity(activityResult.activity);
+      setWorkspaceMembers(memberResult.members); setInvitations(inviteResult.invitations); setActivity(activityResult.activity);setActivityNextCursor(activityResult.nextCursor??null);
     }).catch(error => { if (active) setInviteCreateError(error instanceof Error ? error.message : "Unable to load sharing details."); })
       .finally(() => { if (active) setInvitationsLoading(false); });
     return () => { active = false; };
-  }, [inviteOpen, activeWorkspaceId, inviteRefresh, workspaces]);
+  }, [inviteOpen, activeWorkspaceId, inviteRefresh, workspaces, activityTypeFilter, activityPersonFilter]);
 
   useEffect(() => {
     if (view !== "calendar" || !user) return;
@@ -1397,11 +1401,28 @@ export default function App() {
     finally { setInviteSending(false); }
   }
 
+  async function loadMoreActivity(){
+    if(!activeWorkspaceId||!activityNextCursor||activityLoadingMore)return;
+    setActivityLoadingMore(true);
+    try{const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter)+"&before="+encodeURIComponent(activityNextCursor);
+      const response=await fetch(url,{credentials:"same-origin"});if(!response.ok)throw new Error("Unable to load more activity.");
+      const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};
+      setActivity(current=>[...current,...result.activity.filter(item=>!current.some(existing=>existing.id===item.id))]);setActivityNextCursor(result.nextCursor??null);
+    }catch(error){setInviteCreateError(error instanceof Error?error.message:"Unable to load more activity.");}
+    finally{setActivityLoadingMore(false);}
+  }
+
   function describeActivity(item: ActivityItem): string {
     const role = typeof item.metadata.role === "string" ? item.metadata.role : "";
     switch (item.type) {
       case "invitation.created": return item.actor + " invited " + (item.target ?? "someone") + (role ? " as " + role : "");
       case "invitation.revoked": return item.actor + " revoked an invitation";
+      case "note.created": return item.actor + " created the note " + (item.target ? "“"+item.target+"”" : "");
+      case "note.updated": return item.actor + " updated the note " + (item.target ? "“"+item.target+"”" : "");
+      case "note.deleted": return item.actor + " deleted a note";
+      case "event.created": return item.actor + " created the event " + (item.target ? "“"+item.target+"”" : "");
+      case "event.updated": return item.actor + " updated the event " + (item.target ? "“"+item.target+"”" : "");
+      case "event.deleted": return item.actor + " deleted an event";
       case "member.joined": return item.actor + " joined" + (role ? " as " + role : "");
       case "member.left": return item.actor + " left the space";
       case "member.removed": return item.actor + " removed " + (item.target ?? "a member");
@@ -1810,7 +1831,9 @@ export default function App() {
           </>}
 
           {manageTab==="activity"&&<div className="invite-list">
-            {invitationsLoading?<p>Loading activity…</p>:activity.length===0?<p>No sharing activity yet.</p>:activity.map(item=><div className="invite-list-row" key={item.id}><div><strong>{describeActivity(item)}</strong><small>{new Date(item.createdAt).toLocaleString()}</small></div></div>)}
+            <div className="activity-filters"><label>Type<select className="invite-input" value={activityTypeFilter} onChange={event=>setActivityTypeFilter(event.target.value)}><option value="">All activity</option><option value="note.created">Notes created</option><option value="note.updated">Notes updated</option><option value="note.deleted">Notes deleted</option><option value="event.created">Events created</option><option value="event.updated">Events updated</option><option value="event.deleted">Events deleted</option><option value="member.joined">Members joined</option><option value="member.left">Members left</option><option value="member.removed">Members removed</option><option value="member.role_changed">Role changes</option></select></label><label>Person<select className="invite-input" value={activityPersonFilter} onChange={event=>setActivityPersonFilter(event.target.value)}><option value="">Everyone</option>{Array.from(new Map(activity.filter(item=>item.actorId).map(item=>[item.actorId!,item.actor])).entries()).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label></div>
+            {invitationsLoading?<p>Loading activity…</p>:activity.length===0?<p>No activity matches these filters.</p>:activity.map(item=><div className="invite-list-row" key={item.id}><div><strong>{describeActivity(item)}</strong><small>{new Date(item.createdAt).toLocaleString()}</small></div></div>)}
+            {activityNextCursor&&<button className="secondary-button" onClick={()=>void loadMoreActivity()} disabled={activityLoadingMore}>{activityLoadingMore?"Loading…":"Load more activity"}</button>}
           </div>}
 
           {manageTab==="settings"&&activeWorkspace.role==="owner"&&<div className="invite-list">
