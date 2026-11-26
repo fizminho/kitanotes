@@ -478,7 +478,7 @@ export default function App() {
 
   // One keyed poller per open note. The scheduler pauses it while hidden/offline.
   useEffect(()=>{
-    if(!viewingNote?.id)return;
+    if(!viewingNote?.id||viewingNote.deletedAt)return;
     return subscribePoll("note:"+viewingNote.id,5000,async signal=>{
       if(checklistSavingLine!==null)return;
       const response=await fetch("/api/notes/"+encodeURIComponent(viewingNote.id),{credentials:"same-origin",cache:"no-store",signal});
@@ -1774,7 +1774,7 @@ export default function App() {
             <div className="toolbar">
               <label className="search-box"><Search size={17} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search notes  ( / )" />{query&&<button className="mini-icon" onClick={()=>setQuery("")} aria-label="Clear search"><X size={14}/></button>}</label><button type="button" className={globalSearchActive?"filter-button active-filter":"filter-button"} onClick={()=>{setGlobalSearchActive(value=>!value);setGlobalSearchResults([]);}}>Search all spaces</button>
               <label className="filter-button"><select className="sort-select" aria-label="Sort notes" value={sortMode} onChange={event=>setSortMode(event.target.value as SortMode)}><option value="updated">Recently updated</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select></label>
-              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>{setShowArchived(value=>!value);setShowTrash(false);}}><Archive size={14}/> Arkib</button><button className={showTrash?"filter-button active-filter":"filter-button"} onClick={()=>{setShowTrash(value=>!value);setShowArchived(false);setCategoryFilter("");}}><Trash2 size={14}/> Trash</button>
+              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>{setShowArchived(value=>!value);setShowTrash(false);}}><Archive size={14}/> Arkib</button><button className={showTrash?"filter-button active-filter":"filter-button"} onClick={()=>{setShowTrash(value=>!value);setShowArchived(false);setGlobalSearchActive(false);setQuery("");setCategoryFilter("");}}><Trash2 size={14}/> Trash</button>
             </div>
             {!globalSearchActive&&user&&(categories.length>0)&&<div className="chip-row" role="tablist" aria-label="Tapis mengikut kategori"><button className={!categoryFilter?"chip active":"chip"} onClick={()=>setCategoryFilter("")}>All</button>{categories.filter(category=>!["uncategorised","uncategorized","unassigned"].includes(category.name.trim().toLowerCase())).map(category=><button key={category.id} className={categoryFilter===category.id?"chip active":"chip"} onClick={()=>setCategoryFilter(category.id)}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/>{category.name}</button>)}<button className={categoryFilter==="__none"?"chip active":"chip"} onClick={()=>setCategoryFilter("__none")}><Tag size={11}/> Uncategorised</button>
             </div>}
