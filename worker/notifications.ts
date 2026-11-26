@@ -65,12 +65,16 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
  if(url.pathname==="/api/notifications"&&request.method==="GET"){
   const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit"))||50));
   const unreadOnly=url.searchParams.get("unreadOnly")==="1";
+  // A removed member must not retain access to notification metadata from a workspace.
+  // Keep personal notifications (workspace_id IS NULL), but hide workspace notifications
+  // unless the user is still an active member of that workspace.
+  const membershipVisibility="(workspace_id IS NULL OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=notifications.workspace_id AND wm.user_id=notifications.user_id))";
   const result=unreadOnly
-   ? await db.prepare("SELECT * FROM notifications WHERE user_id=? AND read_at IS NULL ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>()
-   : await db.prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>();
+   ? await db.prepare("SELECT * FROM notifications WHERE user_id=? AND read_at IS NULL AND "+membershipVisibility+" ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>()
+   : await db.prepare("SELECT * FROM notifications WHERE user_id=? AND "+membershipVisibility+" ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>();
   const [unread,byWorkspace]=await Promise.all([
-   db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL").bind(user.id).first<{count:number}>(),
-   db.prepare("SELECT workspace_id,COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL AND workspace_id IS NOT NULL GROUP BY workspace_id").bind(user.id).all<{workspace_id:string;count:number}>()
+   db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL AND "+membershipVisibility).bind(user.id).first<{count:number}>(),
+   db.prepare("SELECT workspace_id,COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL AND workspace_id IS NOT NULL AND "+membershipVisibility+" GROUP BY workspace_id").bind(user.id).all<{workspace_id:string;count:number}>()
   ]);
   return json({notifications:result.results.map(dto),unreadCount:Number(unread?.count??0),unreadByWorkspace:Object.fromEntries(byWorkspace.results.map(row=>[row.workspace_id,Number(row.count)]))});
  }
