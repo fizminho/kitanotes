@@ -202,14 +202,14 @@ Calendar Events include fields such as:
 - `linked_note_id`
 - `version`
 
-Every workspace-owned event must have a workspace ID. The workspace ID defines its access boundary.
+Every workspace-owned event must have a workspace ID. The workspace ID defines its access boundary. The API rejects event creation if the workspace ID is missing or the caller is not an Owner or Editor; it never guesses a fallback workspace.
 
 ### 5.2 Create an event
 
 1. User opens Calendar.
 2. User selects a date.
 3. User selects **Create Event**.
-4. Frontend submits the active workspace ID.
+4. Frontend requires the user to choose a writable workspace in the event composer and submits that explicit workspace ID.
 5. Backend verifies workspace membership.
 6. Backend verifies the user has Owner or Editor permission.
 7. If the event links to a note, backend verifies that the note belongs to the same workspace.
@@ -225,23 +225,23 @@ POST /api/events
 
 ### 5.3 Read events
 
-The current frontend request was observed as:
+The Calendar requests events for its visible date range without a workspace filter:
 
 ```http
 GET /api/events?from={date}&to={date}
 ```
 
-The request does not include a workspace ID. The current backend behaviour without a workspace filter can return events from all workspaces the user belongs to.
-
-This differs from Notes and Reminders, which are scoped to the active workspace.
+The backend returns events from every workspace the signed-in user currently belongs to. This is intentional: Calendar is an aggregate personal view, independent of the active Notes workspace. Workspace filters are applied only in the client and must not narrow the aggregate request.
 
 ### 5.4 Reminders
 
-The current frontend requests reminders using the active workspace:
+Calendar requests reminders without a workspace filter:
 
 ```http
-GET /api/reminders?workspaceId={workspaceId}&limit=100
+GET /api/reminders?limit=100
 ```
+
+The backend returns reminders only from workspaces the signed-in user currently belongs to. Event-linked reminders are displayed alongside the aggregate Calendar. Standalone reminders visibly identify their workspace.
 
 Target scope comparison:
 
@@ -249,7 +249,7 @@ Target scope comparison:
 |---|---|
 | Notes | Active workspace only |
 | Calendar Events | Aggregate across all joined workspaces, filtered in the client |
-| Reminders | Aggregate across joined workspaces when tied to calendar events |
+| Reminders | Aggregate across joined workspaces; event-linked and standalone reminders identify their source workspace |
 
 ### 5.5 Calendar permissions
 
