@@ -67,7 +67,7 @@ function request(path,token,method="GET",body){
 test("calendar events store UTC instants, retain timezone and enforce workspace roles",async()=>{
   const{db,env,tokens}=seed();
   try{
-    const created=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{title:"School meeting",description:"Meet teacher",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur",linkedNoteId:"n1"}),env);
+    const created=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{title:"School meeting",description:"Meet teacher",workspaceId:"w1",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur",linkedNoteId:"n1"}),env);
     assert.equal(created.status,201);
     const event=(await created.json()).event;
     assert.equal(event.startsAt,"2026-11-23T01:00:00.000Z");
@@ -88,7 +88,7 @@ test("calendar events store UTC instants, retain timezone and enforce workspace 
     assert.equal(outsider.status,404);
     const viewerEdit=await handleEventsRequest(request("/api/events/"+event.id,tokens.u2,"PATCH",{version:1,title:"No access"}),env);
     assert.equal(viewerEdit.status,403);
-    const wrongLink=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{title:"Bad link",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur",linkedNoteId:"n2"}),env);
+    const wrongLink=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{title:"Bad link",workspaceId:"w1",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur",linkedNoteId:"n2"}),env);
     assert.equal(wrongLink.status,400);
   }finally{db.close();}
 });
@@ -96,7 +96,7 @@ test("calendar events store UTC instants, retain timezone and enforce workspace 
 test("event deletion cancels linked pending reminders",async()=>{
   const{db,env,tokens}=seed();
   try{
-    const created=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{title:"Appointment",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur"}),env);
+    const created=await handleEventsRequest(request("/api/events",tokens.u1,"POST",{workspaceId:"w1",title:"Appointment",startsAt:"2026-11-23T09:00:00+08:00",endsAt:"2026-11-23T10:00:00+08:00",timezone:"Asia/Kuala_Lumpur"}),env);
     const event=(await created.json()).event;
     const reminder=await handleRemindersRequest(request("/api/reminders",tokens.u1,"POST",{eventId:event.id,title:"Leave home",dueAt:"2026-11-23T08:00:00+08:00",timezone:"Asia/Kuala_Lumpur"}),env);
     assert.equal(reminder.status,201);
