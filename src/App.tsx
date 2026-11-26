@@ -465,12 +465,14 @@ export default function App() {
     if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote||showArchived||showTrash)return;
     let cursor:string|null=null;
     return subscribePoll("notes:"+user.id+":"+activeWorkspaceId,30000,async signal=>{
-      const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");
-      const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to sync notes.");
-      const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};
-      if(!cursor)setNotes(result.notes);
-      else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});
-      cursor=result.nextCursor??new Date().toISOString();
+      try{
+        const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");
+        const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to sync notes.");
+        const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};
+        if(!cursor)setNotes(result.notes);
+        else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});
+        cursor=result.nextCursor??new Date().toISOString();setNotesError("");
+      }catch(error){if(!signal.aborted)setNotesError(error instanceof Error?error.message:"Notes sync paused.");throw error;}
     });
   },[view,user,activeWorkspaceId,composerOpen,editingNote?.id,showArchived,showTrash]);
 
@@ -573,19 +575,22 @@ export default function App() {
     let cursor:string|null=null,reminderCursor:string|null=null;
     setEventsLoading(true);setEventsError("");
     return subscribePoll("calendar:"+user.id+":"+calendarMode+":"+calendarCursor.getFullYear()+"-"+calendarCursor.getMonth()+"-"+calendarCursor.getDate(),30000,async signal=>{
-      const {from,to}=range();
-      const [response,reminderResponse]=await Promise.all([
-        fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(cursor?"&updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal}),
-        fetch("/api/reminders?limit=100"+(reminderCursor?"&updatedSince="+encodeURIComponent(reminderCursor):""),{credentials:"same-origin",cache:"no-store",signal})
-      ]);
-      if(!response.ok)throw new Error("Unable to load calendar events.");
-      const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
-      if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
-      cursor=result.nextCursor??new Date().toISOString();
-      if(!reminderResponse.ok)throw new Error("Unable to load reminders.");
-      const reminderResult=await reminderResponse.json() as {reminders:Reminder[];nextCursor?:string};
-      if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
-      reminderCursor=reminderResult.nextCursor??new Date().toISOString();setEventsError("");setEventsLoading(false);
+      try{
+        const {from,to}=range();
+        const [response,reminderResponse]=await Promise.all([
+          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(cursor?"&updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal}),
+          fetch("/api/reminders?limit=100"+(reminderCursor?"&updatedSince="+encodeURIComponent(reminderCursor):""),{credentials:"same-origin",cache:"no-store",signal})
+        ]);
+        if(!response.ok)throw new Error("Unable to load calendar events.");
+        const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];nextCursor?:string};
+        if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
+        cursor=result.nextCursor??new Date().toISOString();
+        if(!reminderResponse.ok)throw new Error("Unable to load reminders.");
+        const reminderResult=await reminderResponse.json() as {reminders:Reminder[];nextCursor?:string};
+        if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
+        reminderCursor=reminderResult.nextCursor??new Date().toISOString();setEventsError("");
+      }catch(error){if(!signal.aborted)setEventsError(error instanceof Error?error.message:"Unable to refresh calendar.");throw error;}
+      finally{setEventsLoading(false);}
     });
   },[view,user,calendarMode,calendarCursor,calendarRefresh]);
 
@@ -600,9 +605,12 @@ export default function App() {
     if(!notificationsOpen||!user)return;
     setNotificationsLoading(true);
     return subscribePoll("notifications:inbox:"+user.id,30000,async signal=>{
-      const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to load notifications.");
-      const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};
-      setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");setNotificationsLoading(false);
+      try{
+        const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to load notifications.");
+        const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};
+        setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");
+      }catch(error){if(!signal.aborted)setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");throw error;}
+      finally{setNotificationsLoading(false);}
     });
   },[notificationsOpen,user]);
 
