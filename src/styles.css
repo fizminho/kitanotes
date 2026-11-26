@@ -1298,3 +1298,22 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .modal-backdrop .note-composer>footer>span{font-size:9px;line-height:1.35}
   .modal-backdrop .note-composer>footer>.primary-button{width:100%;min-height:46px;justify-content:center}
 }
+
+/* Clearer notification hierarchy: category/time first, action and detail below. */
+.notification-item{gap:6px;padding:13px 8px;border-radius:9px;transition:background .15s ease}
+.notification-item:hover{background:#f7f6ff}
+.notification-item.unread{background:#f5f3ff;border-left:3px solid #7568d8;padding-left:9px}
+.notification-item .notification-kind{font-size:9px;line-height:1.3;font-weight:700;letter-spacing:.035em;text-transform:uppercase;color:#8178c9}
+.notification-item strong{font-size:12px;line-height:1.35;color:#34384b}
+.notification-item span{font-size:11px;line-height:1.5;color:#686d80;overflow-wrap:anywhere}
+.notification-item .notification-exact-time{font-size:9px;color:#a0a2ae}
+[data-theme=dark] .notification-item:hover{background:#202137}
+[data-theme=dark] .notification-item.unread{background:#24213c;border-left-color:#9b90f0}
+[data-theme=dark] .notification-item .notification-kind{color:#b1a9ff}
+[data-theme=dark] .notification-item strong{color:#eeeefa}
+[data-theme=dark] .notification-item span{color:#b7b9cb}
+@media(max-width:760px){
+  .notification-panel{max-height:calc(var(--app-visual-height,100dvh) - 78px);padding:12px}
+  .notification-item{padding:12px 7px}
+  .notification-item.unread{padding-left:8px}
+}

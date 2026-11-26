@@ -113,6 +113,66 @@ type Category = {id:string;workspaceId:string;name:string;color:string|null;sort
 type Reminder = {id:string;workspaceId:string;eventId:string|null;noteId:string|null;title:string;dueAt:string;timezone:string;status:"pending"|"delivered"|"cancelled"};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; createdAt:string; updatedAt:string; version:number };
 type Notification = { id:string; workspaceId:string|null; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
+function notificationPresentation(notification:Notification):{kind:string;title:string;body:string;time:string;timeLabel:string}{
+  const separator=notification.title.lastIndexOf(" · ");
+  const workspace=separator>=0?notification.title.slice(separator+3).trim():"";
+  const quote=(value:string)=>"“"+value+"”";
+  let kind="Workspace";
+  let title=notification.title;
+  let body=notification.body;
+  switch(notification.type){
+    case "shared_note":
+      kind="Notes";title="New note added";body=quote(notification.body)+" was added"+(workspace?" to "+workspace:" to this workspace")+".";
+      break;
+    case "note.updated":
+      kind="Notes";title="Note updated";body=quote(notification.body)+" was updated"+(workspace?" in "+workspace:"")+".";
+      break;
+    case "note.deleted":
+      kind="Notes";title="Note deleted";body=quote(notification.body)+" was deleted"+(workspace?" from "+workspace:" from this workspace")+".";
+      break;
+    case "event.created":
+      kind="Calendar";title="New calendar event";body=quote(notification.body)+" was added"+(workspace?" to "+workspace:" to this calendar")+".";
+      break;
+    case "event.updated":
+      kind="Calendar";title="Calendar event updated";body=quote(notification.body)+" was updated"+(workspace?" in "+workspace:"")+".";
+      break;
+    case "event.deleted":
+      kind="Calendar";title="Calendar event cancelled";body=quote(notification.body)+" was cancelled"+(workspace?" in "+workspace:"")+".";
+      break;
+    case "reminder":
+      kind="Reminder";title="Reminder due";body=quote(notification.title.replace(/^Reminder:\s*/i,""))+" is due. "+notification.body;
+      break;
+    case "invitation_accepted":
+      kind="Workspace";title="Invitation accepted";
+      break;
+    case "member_role_changed":
+      kind="Workspace";title="Your workspace role changed";
+      break;
+    case "member_removed":
+      kind="Access";title="Workspace access removed";
+      break;
+    case "member_left":
+      kind="Workspace";title="A member left";
+      break;
+    case "ownership_transferred":
+      kind="Workspace";title="Workspace ownership transferred";
+      break;
+  }
+  const timestamp=new Date(notification.createdAt);
+  const ageSeconds=Math.max(0,Math.floor((Date.now()-timestamp.getTime())/1000));
+  let timeLabel:string;
+  if(!Number.isFinite(timestamp.getTime()))timeLabel="Recently";
+  else if(ageSeconds<60)timeLabel="Just now";
+  else{
+    const relative=new Intl.RelativeTimeFormat("en",{numeric:"auto"});
+    if(ageSeconds<3600)timeLabel=relative.format(-Math.floor(ageSeconds/60),"minute");
+    else if(ageSeconds<86400)timeLabel=relative.format(-Math.floor(ageSeconds/3600),"hour");
+    else if(ageSeconds<604800)timeLabel=relative.format(-Math.floor(ageSeconds/86400),"day");
+    else timeLabel=relative.format(-Math.floor(ageSeconds/604800),"week");
+  }
+  return{kind,title,body,time:timestamp.toLocaleString(),timeLabel};
+}
+
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
 type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
@@ -1809,7 +1869,7 @@ export default function App() {
             {pushError&&<p className="invite-error">{pushError}</p>}
             {notificationError&&<p className="invite-error">{notificationError}</p>}
             
-            {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=><button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><small>{new Date(notification.createdAt).toLocaleString()}</small></button>)}
+            {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=>{const copy=notificationPresentation(notification);return <button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><small className="notification-kind">{copy.kind} · {copy.timeLabel}</small><strong>{copy.title}</strong><span>{copy.body}</span><small className="notification-exact-time" title={copy.time}>{copy.time}</small></button>;})}
             {user&&<details className="notification-settings">
               <summary><span><strong>Workspace alerts</strong><small>All, important only, or mute each workspace</small></span><ChevronDown size={16}/></summary>
               <div className="notification-settings-content">
