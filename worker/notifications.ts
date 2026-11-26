@@ -33,6 +33,22 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
  const user=await getCurrentUser(request,env);
  if(!user)return json({error:"UNAUTHENTICATED"},401);
  const db=env.DB;
+ if(url.pathname==="/api/notifications/workspaces"&&request.method==="GET"){
+  const result=await db.prepare("SELECT w.id,w.name,wm.role,COALESCE(p.mode,'all') AS mode FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN workspace_notification_preferences p ON p.workspace_id=w.id AND p.user_id=wm.user_id WHERE wm.user_id=? ORDER BY w.name COLLATE NOCASE").bind(user.id).all<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>();
+  return json({workspaces:result.results});
+ }
+ const workspacePreferenceMatch=url.pathname.match(/^\/api\/notifications\/workspaces\/([^/]+)$/);
+ if(workspacePreferenceMatch&&request.method==="PUT"){
+  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+  const body=await readJsonBody(request),mode=body?.mode;
+  if(mode!=="all"&&mode!=="important"&&mode!=="mute")return json({error:"INVALID_WORKSPACE_NOTIFICATION_MODE"},400);
+  const workspaceId=decodeURIComponent(workspacePreferenceMatch[1]);
+  const membership=await db.prepare("SELECT workspace_id FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,user.id).first<{workspace_id:string}>();
+  if(!membership)return json({error:"NOT_FOUND"},404);
+  const now=new Date().toISOString();
+  await db.prepare("INSERT INTO workspace_notification_preferences (user_id,workspace_id,mode,updated_at) VALUES (?,?,?,?) ON CONFLICT(user_id,workspace_id) DO UPDATE SET mode=excluded.mode,updated_at=excluded.updated_at").bind(user.id,workspaceId,mode,now).run();
+  return json({ok:true,workspaceId,mode});
+ }
  if(url.pathname==="/api/notifications/preferences"&&request.method==="GET"){
   return json({preferences:await readPreferences(db,user.id)});
  }
@@ -49,11 +65,18 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
  if(url.pathname==="/api/notifications"&&request.method==="GET"){
   const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit"))||50));
   const unreadOnly=url.searchParams.get("unreadOnly")==="1";
+  // A removed member must not retain access to notification metadata from a workspace.
+  // Keep personal notifications (workspace_id IS NULL), but hide workspace notifications
+  // unless the user is still an active member of that workspace.
+  const membershipVisibility="(workspace_id IS NULL OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=notifications.workspace_id AND wm.user_id=notifications.user_id))";
   const result=unreadOnly
-   ? await db.prepare("SELECT * FROM notifications WHERE user_id=? AND read_at IS NULL ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>()
-   : await db.prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>();
-  const unread=await db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL").bind(user.id).first<{count:number}>();
-  return json({notifications:result.results.map(dto),unreadCount:Number(unread?.count??0)});
+   ? await db.prepare("SELECT * FROM notifications WHERE user_id=? AND read_at IS NULL AND "+membershipVisibility+" ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>()
+   : await db.prepare("SELECT * FROM notifications WHERE user_id=? AND "+membershipVisibility+" ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all<NotificationRow>();
+  const [unread,byWorkspace]=await Promise.all([
+   db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL AND "+membershipVisibility).bind(user.id).first<{count:number}>(),
+   db.prepare("SELECT workspace_id,COUNT(*) AS count FROM notifications WHERE user_id=? AND read_at IS NULL AND workspace_id IS NOT NULL AND "+membershipVisibility+" GROUP BY workspace_id").bind(user.id).all<{workspace_id:string;count:number}>()
+  ]);
+  return json({notifications:result.results.map(dto),unreadCount:Number(unread?.count??0),unreadByWorkspace:Object.fromEntries(byWorkspace.results.map(row=>[row.workspace_id,Number(row.count)]))});
  }
  if(url.pathname==="/api/notifications/read-all"&&request.method==="POST"){
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);

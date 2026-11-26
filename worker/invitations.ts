@@ -153,17 +153,20 @@ async function acceptInvitation(request: Request, env: InvitationEnv, userId: st
     const ws=await db.prepare("SELECT visibility,owner_user_id FROM workspaces WHERE id=?").bind(openLink.workspace_id).first<{visibility:string;owner_user_id:string}>();
     if(!ws||ws.visibility!=="shared")return json({error:"WORKSPACE_NOT_SHARED"},410);
     const existingMember=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(openLink.workspace_id,userId).first<{role:string}>();
-    if(!existingMember)await db.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,?,?)").bind(openLink.workspace_id,userId,openLink.role,now).run();
+    if(!existingMember)await db.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role,joined_at) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM workspaces WHERE id=? AND visibility='shared')").bind(openLink.workspace_id,userId,openLink.role,now,openLink.workspace_id).run();
+    const currentMember=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(openLink.workspace_id,userId).first<{role:string}>();
+    if(!currentMember)return json({error:"WORKSPACE_NOT_SHARED"},410);
     await logActivity(db,openLink.workspace_id,userId,"member.joined","user",userId,{role:openLink.role,via:"invite_link"});
     if(ws.owner_user_id!==userId)await notifyUser(db,ws.owner_user_id,openLink.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".","workspace",openLink.workspace_id,"invite-link-join:"+openLink.workspace_id+":"+userId);
-    if(ws.owner_user_id!==userId)await sendPushToUser(db,env,ws.owner_user_id,{title:"New workspace member",body:(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".",url:"/",tag:"workspace-join-"+openLink.workspace_id+"-"+userId},"workspace");
-    return json({accepted:true,workspaceId:openLink.workspace_id,role:existingMember?.role??openLink.role,alreadyMember:Boolean(existingMember)});
+    if(ws.owner_user_id!==userId)await sendPushToUser(db,env,ws.owner_user_id,{title:"New workspace member",body:(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".",url:"/?workspaceId="+encodeURIComponent(openLink.workspace_id),tag:"workspace-join-"+openLink.workspace_id+"-"+userId},"workspace",{workspaceId:openLink.workspace_id,important:true});
+    return json({accepted:true,workspaceId:openLink.workspace_id,role:currentMember.role,alreadyMember:Boolean(existingMember)});
   }
-  const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? RETURNING workspace_id,role")
+  const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id=invitations.workspace_id AND w.visibility='shared') RETURNING workspace_id,role")
     .bind(userId,now,hash,user.email_normalized,now).first<{workspace_id:string;role:"editor"|"viewer"}>();
   if (!accepted) {
-    const existing = await db.prepare("SELECT status,expires_at,invited_email_normalized FROM invitations WHERE token_hash=?")
-      .bind(hash).first<{status:string;expires_at:string;invited_email_normalized:string}>();
+    const existing = await db.prepare("SELECT i.status,i.expires_at,i.invited_email_normalized,w.visibility FROM invitations i LEFT JOIN workspaces w ON w.id=i.workspace_id WHERE i.token_hash=?")
+      .bind(hash).first<{status:string;expires_at:string;invited_email_normalized:string;visibility:string|null}>();
+    if(existing&&existing.visibility!=="shared")return json({error:"WORKSPACE_NOT_SHARED"},410);
     if (existing?.status === "pending" && existing.expires_at <= now) {
       await db.prepare("UPDATE invitations SET status='expired' WHERE token_hash=? AND status='pending'").bind(hash).run();
       return json({ error: "INVITATION_EXPIRED" },410);
@@ -175,7 +178,7 @@ async function acceptInvitation(request: Request, env: InvitationEnv, userId: st
   const ownerRow = await db.prepare("SELECT owner_user_id FROM workspaces WHERE id=?").bind(accepted.workspace_id).first<{owner_user_id:string}>();
   if (ownerRow && ownerRow.owner_user_id !== userId) {
     await notifyUser(db,ownerRow.owner_user_id,accepted.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,accepted.workspace_id))+" as "+accepted.role+".","workspace",accepted.workspace_id,"invitation_accepted:"+accepted.workspace_id+":"+userId+":"+now);
-    await sendPushToUser(db,env,ownerRow.owner_user_id,{title:"New workspace member",body:(await displayName(db,userId))+" joined "+(await workspaceName(db,accepted.workspace_id))+" as "+accepted.role+".",url:"/",tag:"workspace-join-"+accepted.workspace_id+"-"+userId},"workspace");
+    await sendPushToUser(db,env,ownerRow.owner_user_id,{title:"New workspace member",body:(await displayName(db,userId))+" joined "+(await workspaceName(db,accepted.workspace_id))+" as "+accepted.role+".",url:"/?workspaceId="+encodeURIComponent(accepted.workspace_id),tag:"workspace-join-"+accepted.workspace_id+"-"+userId},"workspace",{workspaceId:accepted.workspace_id,important:true});
   }
   return json({ accepted:true,workspaceId:accepted.workspace_id,role:accepted.role });
 }
@@ -195,9 +198,10 @@ async function revokeInvitation(request: Request, env: InvitationEnv, userId: st
 async function listMembers(env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
   const db = env.DB!;
   if (!(await memberRole(db,workspaceId,userId))) return json({ error:"NOT_FOUND" },404);
-  const result = await db.prepare("SELECT wm.user_id,wm.role,wm.joined_at,u.email,u.display_name FROM workspace_members wm JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=? ORDER BY CASE WHEN wm.role='owner' THEN 0 ELSE 1 END,u.email_normalized")
-    .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null}>();
-  return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at})) });
+  const now=new Date().getTime();
+  const result = await db.prepare("SELECT wm.user_id,wm.role,wm.joined_at,u.email,u.display_name,p.last_seen_at FROM workspace_members wm JOIN users u ON u.id=wm.user_id LEFT JOIN workspace_presence p ON p.workspace_id=wm.workspace_id AND p.user_id=wm.user_id WHERE wm.workspace_id=? ORDER BY CASE WHEN wm.role='owner' THEN 0 ELSE 1 END,u.email_normalized")
+    .bind(workspaceId).all<{user_id:string;role:"owner"|"editor"|"viewer";joined_at:string;email:string;display_name:string|null;last_seen_at:string|null}>();
+  return json({ members:result.results.map(row=>({userId:row.user_id,email:row.email,displayName:row.display_name,role:row.role,joinedAt:row.joined_at,lastSeenAt:row.last_seen_at,isOnline:Boolean(row.last_seen_at&&now-new Date(row.last_seen_at).getTime()<90000)})) });
 }
 async function updateMemberRole(request: Request, env: InvitationEnv, userId: string, workspaceId: string, memberId: string): Promise<Response> {
   if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
@@ -212,7 +216,7 @@ async function updateMemberRole(request: Request, env: InvitationEnv, userId: st
   if (member.role !== role) {
     await logActivity(db,workspaceId,userId,"member.role_changed","user",memberId,{from:member.role,to:role});
     await notifyUser(db,memberId,workspaceId,"member_role_changed","Your permission changed","You are now "+(role==="editor"?"an editor":"a viewer")+" in "+(await workspaceName(db,workspaceId))+".","workspace",workspaceId,"role_changed:"+workspaceId+":"+memberId+":"+role+":"+Date.now());
-    await sendPushToUser(db,env,memberId,{title:"Workspace role updated",body:"Your role in "+(await workspaceName(db,workspaceId))+" changed to "+(role==="editor"?"Editor":"Viewer")+".",url:"/",tag:"workspace-role-"+workspaceId},"workspace");
+    await sendPushToUser(db,env,memberId,{title:"Workspace role updated",body:"Your role in "+(await workspaceName(db,workspaceId))+" changed to "+(role==="editor"?"Editor":"Viewer")+".",url:"/?workspaceId="+encodeURIComponent(workspaceId),tag:"workspace-role-"+workspaceId},"workspace",{workspaceId,important:true});
   }
   return json({updated:true,role});
 }
@@ -228,7 +232,7 @@ async function removeMember(request: Request, env: InvitationEnv, userId: string
   await db.prepare("DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role<>'owner'").bind(workspaceId,memberId).run();
   await logActivity(db,workspaceId,userId,"member.removed","user",memberId);
   await notifyUser(db,memberId,null,"member_removed","Removed from a shared space","You no longer have access to "+spaceName+".","workspace",workspaceId,"member_removed:"+workspaceId+":"+memberId+":"+Date.now());
-  await sendPushToUser(db,env,memberId,{title:"Workspace access removed",body:"You no longer have access to "+spaceName+".",url:"/",tag:"workspace-removed-"+workspaceId},"workspace");
+  await sendPushToUser(db,env,memberId,{title:"Workspace access removed",body:"You no longer have access to "+spaceName+".",url:"/",tag:"workspace-removed-"+workspaceId},"workspace",{workspaceId,important:true});
   return json({removed:true});
 }
 
@@ -241,7 +245,7 @@ async function leaveWorkspace(request: Request, env: InvitationEnv, userId: stri
   await logActivity(db,workspaceId,userId,"member.left","user",userId);
   const ownerRow = await db.prepare("SELECT owner_user_id FROM workspaces WHERE id=?").bind(workspaceId).first<{owner_user_id:string}>();
   if (ownerRow) await notifyUser(db,ownerRow.owner_user_id,workspaceId,"member_left","A member left",(await displayName(db,userId))+" left "+(await workspaceName(db,workspaceId))+".","workspace",workspaceId,"member_left:"+workspaceId+":"+userId+":"+Date.now());
-  if (ownerRow) await sendPushToUser(db,env,ownerRow.owner_user_id,{title:"Workspace member left",body:(await displayName(db,userId))+" left "+(await workspaceName(db,workspaceId))+".",url:"/",tag:"workspace-left-"+workspaceId+"-"+userId},"workspace");
+  if (ownerRow) await sendPushToUser(db,env,ownerRow.owner_user_id,{title:"Workspace member left",body:(await displayName(db,userId))+" left "+(await workspaceName(db,workspaceId))+".",url:"/?workspaceId="+encodeURIComponent(workspaceId),tag:"workspace-left-"+workspaceId+"-"+userId},"workspace",{workspaceId,important:true});
   return json({left:true});
 }
 async function deleteWorkspace(request: Request, env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
@@ -284,19 +288,20 @@ async function listActivity(request:Request,env: InvitationEnv, userId: string, 
   }),nextCursor:hasMore?(rows[rows.length-1]?.created_at??"")+"|"+(rows[rows.length-1]?.id??""):null});
 }
 
-async function listWorkspaces(env: InvitationEnv, userId: string): Promise<Response> {
-  const [result, preference] = await Promise.all([
-    env.DB!.prepare(
-      "SELECT w.id,w.name,w.workspace_type,w.visibility,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id LEFT JOIN user_workspace_preferences p ON p.user_id=wm.user_id WHERE wm.user_id=? ORDER BY CASE WHEN w.id=p.starred_workspace_id THEN 0 ELSE 1 END,CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE"
-    ).bind(userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"}>(),
-    env.DB!.prepare("SELECT p.starred_workspace_id FROM user_workspace_preferences p JOIN workspace_members wm ON wm.workspace_id=p.starred_workspace_id AND wm.user_id=p.user_id WHERE p.user_id=?").bind(userId).first<{starred_workspace_id:string|null}>()
-  ]);
-  return json({
-    workspaces: result.results.map(row => ({
-      id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,role:row.role
-    })),
-    starredWorkspaceId: preference?.starred_workspace_id ?? null
-  });
+async function listWorkspaces(request:Request,env:InvitationEnv,userId:string):Promise<Response>{
+  const url=new URL(request.url),sinceValue=url.searchParams.get("updatedSince");
+  const syncNow=new Date().toISOString();
+  const preference=await env.DB!.prepare("SELECT p.starred_workspace_id FROM user_workspace_preferences p JOIN workspace_members wm ON wm.workspace_id=p.starred_workspace_id AND wm.user_id=p.user_id WHERE p.user_id=?").bind(userId).first<{starred_workspace_id:string|null}>();
+  const baseSql="SELECT w.id,w.name,w.workspace_type,w.visibility,w.color,w.icon,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id WHERE wm.user_id=?";
+  if(sinceValue){
+    const parsed=new Date(sinceValue);if(Number.isNaN(parsed.getTime()))return json({error:"INVALID_SYNC_CURSOR"},400);
+    const since=parsed.toISOString();
+    const result=await env.DB!.prepare(baseSql+" AND (w.updated_at>=? OR w.id IN (SELECT workspace_id FROM workspace_membership_changes WHERE user_id=? AND changed_at>=? AND changed_at<=?)) ORDER BY w.name COLLATE NOCASE").bind(userId,since,userId,since,syncNow).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";color:string;icon:string;role:"owner"|"editor"|"viewer"}>();
+    const removed=await env.DB!.prepare("SELECT DISTINCT c.workspace_id FROM workspace_membership_changes c WHERE c.user_id=? AND c.active=0 AND c.changed_at>? AND c.changed_at<=? AND NOT EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=c.workspace_id AND wm.user_id=c.user_id)").bind(userId,since,syncNow).all<{workspace_id:string}>();
+    return json({workspaces:result.results.map(row=>({id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,color:row.color??null,icon:row.icon??"📁",role:row.role})),removedWorkspaceIds:removed.results.map(row=>row.workspace_id),starredWorkspaceId:preference?.starred_workspace_id??null,nextCursor:syncNow});
+  }
+  const result=await env.DB!.prepare(baseSql+" ORDER BY CASE WHEN w.id=(SELECT starred_workspace_id FROM user_workspace_preferences WHERE user_id=?) THEN 0 ELSE 1 END,CASE WHEN w.visibility='private' THEN 0 ELSE 1 END,w.name COLLATE NOCASE").bind(userId,userId).all<{id:string;name:string;workspace_type:"shared";visibility:"private"|"shared";color:string;icon:string;role:"owner"|"editor"|"viewer"}>();
+  return json({workspaces:result.results.map(row=>({id:row.id,name:row.name,type:"shared" as const,visibility:row.visibility,color:row.color??null,icon:row.icon??"📁",role:row.role})),starredWorkspaceId:preference?.starred_workspace_id??null,nextCursor:syncNow});
 }
 
 async function updateStarredWorkspace(request: Request, env: InvitationEnv, userId: string): Promise<Response> {
@@ -320,11 +325,12 @@ async function invitationPreview(request:Request,env:InvitationEnv):Promise<Resp
   const token=new URL(request.url).searchParams.get("token")??"";
   if(token.length<32||token.length>256)return json({valid:false,error:"INVALID_INVITATION_TOKEN"},400);
   const hash=await tokenHash(token);
-  const row=await env.DB!.prepare("SELECT i.workspace_id,i.role,i.status,i.expires_at,w.name AS workspace_name,u.display_name AS inviter_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id LEFT JOIN users u ON u.id=i.invited_by_user_id WHERE i.token_hash=?")
-    .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";status:string;expires_at:string;workspace_name:string;inviter_name:string|null}>();
+  const row=await env.DB!.prepare("SELECT i.workspace_id,i.role,i.status,i.expires_at,w.name AS workspace_name,w.visibility,u.display_name AS inviter_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id LEFT JOIN users u ON u.id=i.invited_by_user_id WHERE i.token_hash=?")
+    .bind(hash).first<{workspace_id:string;role:"editor"|"viewer";status:string;expires_at:string;workspace_name:string;visibility:string;inviter_name:string|null}>();
   if(!row)return json({valid:false,error:"INVITATION_INVALID"});
-  if(row.status!=="pending")return json({valid:false,error:row.status==="revoked"?"INVITATION_REVOKED":"INVITATION_ALREADY_USED"});
-  if(row.expires_at<=new Date().toISOString())return json({valid:false,error:"INVITATION_EXPIRED"},410);
+  if(row.visibility!=="shared")return json({valid:false,error:"WORKSPACE_NOT_SHARED"});
+  if(row.status!=="pending")return json({valid:false,error:row.status==="revoked"?"INVITATION_REVOKED":"INVITATION_ALREADY_USED",workspaceName:row.workspace_name,inviterName:row.inviter_name||"the workspace owner"});
+  if(row.expires_at<=new Date().toISOString())return json({valid:false,error:"INVITATION_EXPIRED",workspaceName:row.workspace_name,inviterName:row.inviter_name||"the workspace owner"},410);
   const count=await env.DB!.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id=?").bind(row.workspace_id).first<{total:number}>();
   return json({valid:true,workspaceName:row.workspace_name,inviterName:row.inviter_name||"A workspace member",role:row.role,memberCount:count?.total??0,expiresAt:row.expires_at});
 }
@@ -336,7 +342,7 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
   if(url.pathname==="/api/invitations/preview"&&request.method==="GET")return invitationPreview(request,env);
   const user = await getCurrentUser(request,env);
   if (!user) return json({ error: "UNAUTHENTICATED" },401);
-  if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(env,user.id);
+  if (url.pathname === "/api/workspaces" && request.method === "GET") return listWorkspaces(request,env,user.id);
   if (url.pathname === "/api/workspaces/star" && request.method === "PUT") return updateStarredWorkspace(request,env,user.id);
   if (url.pathname === "/api/workspaces" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ error: "CSRF_ORIGIN_REJECTED" },403);
@@ -351,9 +357,29 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
     await env.DB!.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES (?,?,'owner',?)").bind(id,user.id,now).run();
     return json({ workspace: { id,name,type:"shared",visibility:"shared",role:"owner" } },201);
   }
-  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity|summary))?$/);
+  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)(?:\/(?:members(?:\/([^/]+))?|activity|summary|appearance|presence))?$/);
   if (workspaceMatch) {
     const id=decodeURIComponent(workspaceMatch[1]);
+    if(request.method==="PUT"&&url.pathname.endsWith("/appearance")){
+      if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+      const body=await readJsonBody(request),color=body?.color,icon=body?.icon;
+      const allowedIcons=["📁","👥","💼","🏠","❤️","📚","📅","⭐","🎓","🛒"];
+      if(typeof color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(color)||typeof icon!=="string"||!allowedIcons.includes(icon))return json({error:"INVALID_WORKSPACE_APPEARANCE"},400);
+      const owner=await env.DB!.prepare("SELECT id FROM workspaces WHERE id=? AND owner_user_id=?").bind(id,user.id).first<{id:string}>();
+      if(!owner)return json({error:"FORBIDDEN"},403);
+      const now=new Date().toISOString();
+      await env.DB!.prepare("UPDATE workspaces SET color=?,icon=?,updated_at=? WHERE id=?").bind(color,icon,now,id).run();
+      await logActivity(env.DB!,id,user.id,"workspace.appearance_updated","workspace",id);
+      return json({ok:true,color,icon,updatedAt:now});
+    }
+    if(request.method==="POST"&&url.pathname.endsWith("/presence")){
+      if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
+      const member=await env.DB!.prepare("SELECT workspace_id FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(id,user.id).first<{workspace_id:string}>();
+      if(!member)return json({error:"NOT_FOUND"},404);
+      const now=new Date().toISOString();
+      await env.DB!.prepare("INSERT INTO workspace_presence(workspace_id,user_id,last_seen_at) VALUES(?,?,?) ON CONFLICT(workspace_id,user_id) DO UPDATE SET last_seen_at=excluded.last_seen_at").bind(id,user.id,now).run();
+      return json({ok:true,lastSeenAt:now});
+    }
     if(request.method==="GET" && url.pathname.endsWith("/members")) return listMembers(env,user.id,id);
     if(request.method==="GET" && url.pathname.endsWith("/summary")) return workspaceSummary(env,user.id,id);
     if(request.method==="PATCH" && url.pathname.includes("/members/")) return updateMemberRole(request,env,user.id,id,decodeURIComponent(url.pathname.split("/").pop()??""));
@@ -434,7 +460,7 @@ export async function handleInvitationsRequest(request: Request, env: Invitation
         if (claimed !== 1) return json({error:"OWNERSHIP_TRANSFER_CONFLICT"},409);
         await logActivity(env.DB!,id,user.id,"workspace.ownership_transferred","user",targetId);
         await notifyUser(env.DB!,targetId,id,"ownership_transferred","You now own a space",(await displayName(env.DB!,user.id))+" made you the owner of "+(await workspaceName(env.DB!,id))+".","workspace",id,"ownership:"+id+":"+targetId+":"+Date.now());
-        await sendPushToUser(env.DB!,env,targetId,{title:"Workspace ownership transferred",body:"You are now the owner of "+(await workspaceName(env.DB!,id))+".",url:"/",tag:"workspace-owner-"+id},"workspace");
+        await sendPushToUser(env.DB!,env,targetId,{title:"Workspace ownership transferred",body:"You are now the owner of "+(await workspaceName(env.DB!,id))+".",url:"/?workspaceId="+encodeURIComponent(id),tag:"workspace-owner-"+id},"workspace",{workspaceId:id,important:true});
         return json({updated:true,ownerUserId:targetId});
       }
       const name=typeof body?.name==="string"?body.name.trim():"";

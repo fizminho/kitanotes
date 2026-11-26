@@ -38,3 +38,29 @@
 ## Verification
 
 Run npm test and npm run build. Add integration coverage for aggregate event access, cross-workspace isolation, Viewer write rejection, revoked membership, invitation expiry/reuse, and linked-resource workspace boundaries. Do not mark a phase complete until the behaviour is implemented and tested.
+
+
+## Implementation status (2026-11-27)
+
+Implementation is in PR #55 on `feat/shared-workspace-final-lifecycle-sync`. The feature is not released until the final head passes Build and Validate, D1 migration validation, Worker bundle validation and CodeQL, then merges to `main`.
+
+Implemented on the branch:
+- Aggregate Calendar Events and Reminders across current workspace memberships, with per-event workspace authorization and source identity.
+- Calendar workspace filters, local colour overrides, monthly summary, date agenda, and visible workspace labels for standalone reminders.
+- Workspace-scoped Notes and Categories, cross-workspace global search, workspace unread indicators, and immediate clearing of stale workspace data.
+- Same-workspace linked-note validation and picker, optimistic conflict review, local recovery drafts, and remote update/deletion handling.
+- Invitation preview and lifecycle management, including backend visibility checks on preview and acceptance.
+- Make Private, Leave and Delete confirmation flows; 30-day Trash/Restore and bounded scheduled purge.
+- Activity type/person filters and cursor pagination.
+- Workspace-aware in-app notifications, push preferences, unread counts and notification deep links.
+- Incremental Notes, Events, Reminders and membership deltas, including removal of cached aggregate events/reminders when membership is revoked.
+- Centralized visible-screen polling with offline/hidden pause, resume refresh, jitter, bounded backoff, request cancellation and presence heartbeat.
+- Loading skeletons, sync state, offline recovery messaging, calendar contrast-aware workspace markers, keyboard focus and larger touch targets.
+
+Verification coverage on the branch includes aggregate event/reminder access, cross-workspace isolation, Viewer write rejection, invitation expiry/reuse/visibility, linked-resource boundaries, notification ownership/preferences, Trash retention, polling and migration validation.
+
+Not represented as implemented:
+- A full offline write queue. Offline edits remain local recovery drafts only.
+- A device/screen-reader verification session across VoiceOver/NVDA and all workspace/calendar states. ARIA announcements and labels have been improved, but manual assistive-technology verification remains.
+- A complete visual contrast and enlarged-text review across every screen. Calendar/workspace typography and contrast have been improved; the remaining full-app review is a separate verification task.
+- Production traffic/conflict measurements. Polling remains the selected strategy; do not introduce SSE/WebSocket without those measurements.

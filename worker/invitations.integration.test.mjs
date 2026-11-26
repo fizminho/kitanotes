@@ -9,7 +9,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0018_workspace_starred_default.sql"]) {
+    for (const file of ["migrations/0001_initial.sql", "migrations/0002_sessions.sql", "migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0018_workspace_starred_default.sql","migrations/0022_note_trash_retention.sql","migrations/0023_workspace_notification_preferences.sql","migrations/0024_workspace_notification_feed.sql","migrations/0025_workspace_membership_delta.sql","migrations/0026_workspace_appearance.sql","migrations/0027_workspace_presence.sql","migrations/0028_batch_workspace_notifications.sql","migrations/0029_invitation_visibility_guard.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     }
   }
@@ -407,4 +407,22 @@ test("revoked invitation token cannot be accepted", async () => {
   } finally {
     db.close();
   }
+});
+
+test("pending invitation cannot grant membership after workspace becomes private",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  const created=await handleInvitationsRequest(request("/api/invitations",tokens.u1,"POST",{workspaceId:"w1",email:"invitee@example.com",role:"editor"}),env);
+  assert.equal(created.status,201);
+  const body=await created.json();
+  const token=new URL(body.invitationUrl).searchParams.get("token");
+  db.sqlite.prepare("UPDATE workspaces SET visibility='private' WHERE id='w1'").run();
+  const preview=await handleInvitationsRequest(request("/api/invitations/preview?token="+encodeURIComponent(token),tokens.u2),env);
+  assert.equal((await preview.json()).error,"WORKSPACE_NOT_SHARED");
+  const accepted=await handleInvitationsRequest(request("/api/invitations/accept",tokens.u2,"POST",{token}),env);
+  assert.equal(accepted.status,410);
+  assert.equal((await accepted.json()).error,"WORKSPACE_NOT_SHARED");
+  assert.equal(db.sqlite.prepare("SELECT status FROM invitations WHERE id=?").get(body.invitation.id).status,"pending");
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS total FROM workspace_members WHERE workspace_id='w1' AND user_id='u2'").get().total,0);
+ }finally{db.close();}
 });

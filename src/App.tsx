@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AiAssistantModal = lazy(() => import("./components/AiAssistantModal"));
 const CalendarView = lazy(() => import("./components/CalendarView"));
-import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star } from "lucide-react";
+import { Bell, CalendarDays, Check, ChevronDown, Command, Fingerprint, LogIn, LogOut, Plus, Search, Sparkles, Users, X, Archive, Moon, Sun, Tag, Star, Trash2, RefreshCw } from "lucide-react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { defaultReminderDateTime } from "./calendar-utils.ts";
 import NoteCard from "./components/NoteCard";
+import { refreshPolls, subscribePoll } from "./poll-scheduler";
 
 type ActivityItem = { id:string; type:string; actor:string; actorId:string|null; target:string|null; metadata:Record<string,unknown>; createdAt:string };
 type ManageTab = "people" | "invite" | "activity" | "settings" | "leave";
@@ -13,8 +14,8 @@ type Toast = { id:number; text:string; tone:"ok"|"error" };
 type View = "notes" | "calendar" | "shared";
 type InstallPromptEvent = Event & { prompt:()=>Promise<void>; userChoice:Promise<{outcome:"accepted"|"dismissed";platform:string}> };
 
-type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void };
-function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePickerProps){
+type WorkspacePickerProps = { workspaces:Workspace[]; activeWorkspaceId:string; onChange:(id:string)=>void; unreadByWorkspace?:Record<string,number> };
+function WorkspacePicker({workspaces,activeWorkspaceId,onChange,unreadByWorkspace={}}:WorkspacePickerProps){
   const [open,setOpen]=useState(false);
   const rootRef=useRef<HTMLDivElement|null>(null);
   const active=workspaces.find(item=>item.id===activeWorkspaceId);
@@ -27,16 +28,16 @@ function WorkspacePicker({workspaces,activeWorkspaceId,onChange}:WorkspacePicker
     return()=>{document.removeEventListener("pointerdown",onPointerDown);document.removeEventListener("keydown",onKeyDown);};
   },[open]);
   return <div className="workspace-picker" ref={rootRef}>
-    <button type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
-      <span className="workspace-avatar">K</span>
-      <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
+    <button type="button" className="workspace-picker-trigger" aria-label="Choose workspace" aria-haspopup="true" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>
+      <span className="workspace-avatar" style={{backgroundColor:active?.color??undefined}}>{active?.icon??"📁"}</span>{(unreadByWorkspace[activeWorkspaceId]??0)>0&&<span className="workspace-unread-dot" aria-label="Unread workspace activity"/>}
+      <span className="workspace-picker-copy"><strong>{active?.name??"My workspace"}</strong><small>{active?.visibility==="shared"?"Shared space":"Private workspace"} · {active?.role??"Owner"}</small></span>
       <ChevronDown size={16} className={open?"workspace-picker-chevron open":"workspace-picker-chevron"}/>
     </button>
-    {open&&<div className="workspace-picker-menu" role="listbox" aria-label="Workspaces">
-      {workspaces.map(workspace=><button type="button" role="option" aria-selected={workspace.id===activeWorkspaceId} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
-        <span className="workspace-picker-option-avatar">{workspace.name.trim().slice(0,1).toUpperCase()||"K"}</span>
-        <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"}</small></span>
-        {workspace.id===activeWorkspaceId&&<Check size={16}/>}
+    {open&&<div className="workspace-picker-menu" role="group" aria-label="Workspaces">
+      {workspaces.map(workspace=><button type="button" aria-current={workspace.id===activeWorkspaceId?"true":undefined} key={workspace.id} className={workspace.id===activeWorkspaceId?"workspace-picker-option active":"workspace-picker-option"} onClick={()=>{onChange(workspace.id);setOpen(false);}}>
+        <span className="workspace-picker-option-avatar" style={{backgroundColor:workspace.color??undefined}}>{(workspace.icon??workspace.name.trim().slice(0,1).toUpperCase())||"K"}</span>
+        <span className="workspace-picker-option-copy"><strong>{workspace.name}</strong><small>{workspace.visibility==="shared"?"Shared space":"Private workspace"} · {workspace.role}</small></span>
+        {(unreadByWorkspace[workspace.id]??0)>0&&<span className="workspace-unread-count" aria-label={(unreadByWorkspace[workspace.id]??0)+" unread notifications"}>{(unreadByWorkspace[workspace.id]??0)>99?"99+":unreadByWorkspace[workspace.id]}</span>}{workspace.id===activeWorkspaceId&&<Check size={16}/>}
       </button>)}
       {!workspaces.length&&<div className="workspace-picker-empty">No workspaces available</div>}
     </div>}
@@ -106,12 +107,12 @@ function zonedDateTimeToIso(value:string,timezone:string):string {
 }
 type SessionUser = { id: string; email: string; displayName: string | null; avatarUrl: string | null; personalWorkspaceId: string | null; googleLinked?:boolean };
 type Invitation = { id: string; email: string; role: "editor" | "viewer"; status: string; expiresAt: string };
-type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string};
-type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer"};
+type WorkspaceMember = {userId:string;email:string;displayName:string|null;role:"owner"|"editor"|"viewer";joinedAt:string;lastSeenAt:string|null;isOnline:boolean};
+type Workspace = {id:string;name:string;type:"shared";visibility:"private"|"shared";role:"owner"|"editor"|"viewer";color?:string|null;icon?:string|null};
 type Category = {id:string;workspaceId:string;name:string;color:string|null;sortOrder:number};
 type Reminder = {id:string;workspaceId:string;eventId:string|null;noteId:string|null;title:string;dueAt:string;timezone:string;status:"pending"|"delivered"|"cancelled"};
 type CalendarEvent = { id:string; workspaceId:string; title:string; description:string; startsAt:string; endsAt:string; timezone:string; allDay:boolean; linkedNoteId:string|null; createdBy:string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; createdAt:string; updatedAt:string; version:number };
-type Notification = { id:string; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
+type Notification = { id:string; workspaceId:string|null; type:string; title:string; body:string; resourceType:string|null; resourceId:string|null; createdAt:string; readAt:string|null };
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
 type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
 type AiDraft = {
@@ -129,7 +130,7 @@ type ExistingNoteProposal = {noteId:string;categoryName:string;reason:string;sel
 type WorkspaceAiDraft = {name:string;categories:Array<{name:string;description:string}>};
 type Note = {
   id: string; workspaceId: string; title: string; content: string; categoryId: string | null;
-  categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null;
+  categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null; deletedAt?:string|null;
 };
 function noteDraftStorageKey(userId:string,workspaceId:string,noteId:string|null){return "kitanotes-note-draft:"+userId+":"+workspaceId+":"+(noteId??"new");}
 type NoteConflict = {latest:Note;mine:{title:string;content:string;categoryId:string|null}};
@@ -158,6 +159,8 @@ export default function App() {
   const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
   const [globalSearchError,setGlobalSearchError]=useState("");
   const [noteConflict,setNoteConflict]=useState<NoteConflict|null>(null);
+  const [remoteNoteUpdate,setRemoteNoteUpdate]=useState<Note|null>(null);
+  const [remoteNoteDeleted,setRemoteNoteDeleted]=useState(false);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [manageTab, setManageTab] = useState<ManageTab>("people");
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -167,6 +170,7 @@ export default function App() {
   const [activityLoadingMore,setActivityLoadingMore]=useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("updated");
   const [showArchived, setShowArchived] = useState(false);
+  const [showTrash,setShowTrash]=useState(false);
   const [theme, setTheme] = useState<"light"|"dark">(() => { try { const saved = localStorage.getItem("kitanotes-theme"); if (saved === "dark" || saved === "light") return saved; } catch { /* ignore */ } return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"; });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -181,6 +185,8 @@ export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [workspaces,setWorkspaces]=useState<Workspace[]>([]);
   const [activeWorkspaceId,setActiveWorkspaceId]=useState("");
+  const activeWorkspaceIdRef=useRef("");
+  useEffect(()=>{activeWorkspaceIdRef.current=activeWorkspaceId;},[activeWorkspaceId]);
   const [starredWorkspaceId,setStarredWorkspaceId]=useState<string|null>(null);
   const [starredWorkspaceSaving,setStarredWorkspaceSaving]=useState(false);
   const [workspaceModalOpen,setWorkspaceModalOpen]=useState(false);
@@ -258,6 +264,14 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadByWorkspace,setUnreadByWorkspace]=useState<Record<string,number>>({});
+  const [workspaceNotificationPreferences,setWorkspaceNotificationPreferences]=useState<Array<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>>([]);
+  const [workspaceNotificationSaving,setWorkspaceNotificationSaving]=useState<string|null>(null);
+  const [calendarFocusDate,setCalendarFocusDate]=useState<string|null>(null);
+  const [isOnline,setIsOnline]=useState(()=>typeof navigator==="undefined"?true:navigator.onLine);
+  const [syncStatus,setSyncStatus]=useState<"up-to-date"|"syncing"|"paused">("up-to-date");
+  const [lastSyncedAt,setLastSyncedAt]=useState<string|null>(null);
+  const deepLinkHandled=useRef(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationError, setNotificationError] = useState("");
   const [installPrompt,setInstallPrompt]=useState<InstallPromptEvent|null>(null);
@@ -413,13 +427,27 @@ export default function App() {
     return()=>{active=false;};
   },[inviteToken]);
 
+  useEffect(()=>{
+    if(deepLinkHandled.current||workspaces.length===0)return;
+    const params=new URLSearchParams(window.location.search),workspaceId=params.get("workspaceId"),noteId=params.get("noteId"),eventId=params.get("eventId");
+    if(!workspaceId&&!noteId&&!eventId)return;
+    deepLinkHandled.current=true;
+    if(workspaceId&&!workspaces.some(item=>item.id===workspaceId)){window.history.replaceState({},"","/");pushToast("That workspace is no longer available.","error");return;}
+    if(workspaceId)setActiveWorkspaceId(workspaceId);
+    window.history.replaceState({},"","/");
+    if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(workspaceId&&(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId))return;if(!workspaceId&&workspaces.some(item=>item.id===result.note.workspaceId))setActiveWorkspaceId(result.note.workspaceId);setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
+    if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
+  },[workspaces,pushToast]);
+
+  useEffect(()=>{setViewingNote(current=>current&&current.workspaceId!==activeWorkspaceId?null:current);},[activeWorkspaceId]);
+
   useEffect(() => {
     if (!user || !activeWorkspaceId) { setNotes([]); return; }
     let active = true;
     setNotes([]);
     setNotesLoading(true);
     setNotesError("");
-    fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
+    fetch("/api/notes?limit=100&workspaceId=" + encodeURIComponent(activeWorkspaceId) + (showTrash ? "&trash=1" : showArchived ? "&archived=1" : ""), { credentials: "same-origin" })
       .then(async response => {
         if (!response.ok) throw new Error(response.status === 503 ? "Database setup is not complete yet." : "Unable to load notes.");
         const result = await response.json() as { notes: Note[] };
@@ -428,7 +456,7 @@ export default function App() {
       .catch(error => { if (active) setNotesError(error instanceof Error ? error.message : "Unable to load notes."); })
       .finally(() => { if (active) setNotesLoading(false); });
     return () => { active = false; };
-  }, [user, activeWorkspaceId, showArchived]);
+  }, [user, activeWorkspaceId, showArchived,showTrash]);
 
   useEffect(()=>{
     if(!globalSearchActive||!user||view!=="notes"||!query.trim()){setGlobalSearchResults([]);setGlobalSearchError("");setGlobalSearchLoading(false);return;}
@@ -443,52 +471,47 @@ export default function App() {
   },[globalSearchActive,user,view,query]);
 
   useEffect(()=>{
-    if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote)return;
-    let active=true,inFlight=false,timer:number|undefined;let controller:AbortController|null=null;
-    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
-      try{const response=await fetch("/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to sync notes.");const result=await response.json() as {notes:Note[]};if(active)setNotes(current=>{const byId=new Map(current.map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return result.notes.map(note=>byId.get(note.id)!).sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});}
-      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotesError(error instanceof Error?error.message:"Notes sync paused.");}
-      finally{inFlight=false;controller=null;schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
-  },[view,user,activeWorkspaceId,composerOpen,editingNote?.id]);
+    if(view!=="notes"||!user||!activeWorkspaceId||composerOpen||editingNote||showArchived||showTrash)return;
+    let cursor:string|null=null;
+    return subscribePoll("notes:"+user.id+":"+activeWorkspaceId,30000,async signal=>{
+      try{
+        const url="/api/notes?limit=100&workspaceId="+encodeURIComponent(activeWorkspaceId)+(cursor?"&updatedSince="+encodeURIComponent(cursor):"");
+        const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to sync notes.");
+        const result=await response.json() as {notes:Note[];removedNoteIds?:string[];nextCursor?:string};
+        if(signal.aborted)return;
+        if(!cursor)setNotes(result.notes);
+        else setNotes(current=>{const removed=new Set(result.removedNoteIds??[]),byId=new Map(current.filter(note=>!removed.has(note.id)).map(note=>[note.id,note]));for(const note of result.notes){const existing=byId.get(note.id);if(!existing||note.version>existing.version)byId.set(note.id,note);}return [...byId.values()].sort((x,y)=>y.updatedAt.localeCompare(x.updatedAt));});
+        cursor=result.nextCursor??new Date().toISOString();setNotesError("");
+      }catch(error){if(!signal.aborted)setNotesError(error instanceof Error?error.message:"Notes sync paused.");throw error;}
+    });
+  },[view,user,activeWorkspaceId,composerOpen,editingNote?.id,showArchived,showTrash]);
 
-  // Keep an open shared note fresh without a scheduled Worker cron or realtime infrastructure.
-  useEffect(() => {
-    if (!viewingNote?.id) return;
-    let active = true;
-    let inFlight = false;
-    const syncOpenNote = async () => {
-      if (!active || document.visibilityState !== "visible" || inFlight || checklistSavingLine !== null) return;
-      inFlight = true;
-      try {
-        const response = await fetch("/api/notes/" + encodeURIComponent(viewingNote.id), {
-          credentials: "same-origin",
-          cache: "no-store"
-        });
-        if (!response.ok) return;
-        const result = await response.json() as { note?: Note };
-        if (!active || !result.note || result.note.id !== viewingNote.id) return;
-        setViewingNote(current => {
-          if (!current || current.id !== result.note!.id || current.version >= result.note!.version) return current;
-          return result.note!;
-        });
-        setNotes(current => current.map(note =>
-          note.id === result.note!.id && note.version < result.note!.version ? result.note! : note
-        ));
-      } catch {
-        // A transient network failure is retried on the next polling cycle.
-      } finally {
-        inFlight = false;
-      }
-    };
-    const timer = window.setInterval(() => { void syncOpenNote(); }, 5000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [viewingNote?.id, checklistSavingLine]);
+  useEffect(()=>{
+    if(!composerOpen||!editingNote||noteConflict)return;
+    return subscribePoll("note-editor:"+editingNote.id,5000,async signal=>{
+      const response=await fetch("/api/notes/"+encodeURIComponent(editingNote.id),{credentials:"same-origin",cache:"no-store",signal});
+      if(response.status===404){setRemoteNoteDeleted(true);return;}
+      if(!response.ok)throw new Error("Unable to check for note updates.");
+      const result=await response.json() as {note?:Note};
+      if(signal.aborted||!result.note)return;
+      if(result.note.version>editingNote.version)setRemoteNoteUpdate(current=>!current||result.note!.version>current.version?result.note!:current);
+    });
+  },[composerOpen,editingNote?.id,editingNote?.version,noteConflict]);
+
+  // One keyed poller per open note. The scheduler pauses it while hidden/offline.
+  useEffect(()=>{
+    if(!viewingNote?.id||viewingNote.deletedAt)return;
+    return subscribePoll("note:"+viewingNote.id,5000,async signal=>{
+      if(checklistSavingLine!==null)return;
+      const response=await fetch("/api/notes/"+encodeURIComponent(viewingNote.id),{credentials:"same-origin",cache:"no-store",signal});
+      if(response.status===404){if(!signal.aborted){setViewingNote(current=>current?.id===viewingNote.id?null:current);pushToast("This note is no longer available in your current workspaces.","error");}return;}
+      if(!response.ok)throw new Error("Unable to refresh this note.");
+      const result=await response.json() as {note?:Note};
+      if(signal.aborted||!result.note||result.note.id!==viewingNote.id)return;
+      setViewingNote(current=>!current||current.id!==result.note!.id||current.version>=result.note!.version?current:result.note!);
+      setNotes(current=>current.map(note=>note.id===result.note!.id&&note.version<result.note!.version?result.note!:note));
+    });
+  },[viewingNote?.id,checklistSavingLine,pushToast]);
 
   useEffect(()=>{
     if(!composerOpen||!user||!activeWorkspaceId)return;
@@ -499,34 +522,49 @@ export default function App() {
   useEffect(() => { setCategoryFilter("");if(activeWorkspaceId){try{localStorage.setItem("kitanotes-active-workspace",activeWorkspaceId);}catch{/* storage unavailable */}} }, [activeWorkspaceId]);
 
   useEffect(()=>{
+    const updateOnline=()=>setIsOnline(navigator.onLine);
+    const updateSync=(event:Event)=>{const detail=(event as CustomEvent<{status:"up-to-date"|"syncing"|"paused";updatedAt?:string|null}>).detail;if(detail?.status)setSyncStatus(detail.status);if(detail?.updatedAt)setLastSyncedAt(detail.updatedAt);};
+    window.addEventListener("online",updateOnline);window.addEventListener("offline",updateOnline);window.addEventListener("kitanotes:sync-status",updateSync);
+    return()=>{window.removeEventListener("online",updateOnline);window.removeEventListener("offline",updateOnline);window.removeEventListener("kitanotes:sync-status",updateSync);};
+  },[]);
+
+  useEffect(()=>{
     if(!user)return;
-    let active=true,timer:number|undefined,controller:AbortController|null=null;
-    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();
-      try{const response=await fetch("/api/workspaces",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)return;const result=await response.json() as {workspaces:Workspace[];starredWorkspaceId:string|null};if(!active)return;
-        setWorkspaces(result.workspaces);setStarredWorkspaceId(result.starredWorkspaceId);
-        if(!result.workspaces.some(item=>item.id===activeWorkspaceId)){const next=result.workspaces.find(item=>item.id===result.starredWorkspaceId)?.id??result.workspaces.find(item=>item.id===user.personalWorkspaceId)?.id??result.workspaces[0]?.id??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);if(activeWorkspaceId)pushToast("You no longer have access to a workspace. Your view has been switched.");}
-      }catch{/* retry on the next cycle */}finally{controller=null;schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),60000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    let cursor:string|null=null;
+    return subscribePoll("workspaces:"+user.id,60000,async signal=>{
+      const response=await fetch("/api/workspaces"+(cursor?"?updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspaces.");
+      const result=await response.json() as {workspaces:Workspace[];removedWorkspaceIds?:string[];starredWorkspaceId:string|null;nextCursor?:string};
+      if(signal.aborted)return;
+      if(!cursor)setWorkspaces(result.workspaces);
+      else setWorkspaces(current=>{const removed=new Set(result.removedWorkspaceIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.workspaces)byId.set(item.id,item);return [...byId.values()];});
+      setStarredWorkspaceId(result.starredWorkspaceId);cursor=result.nextCursor??new Date().toISOString();
+      if(result.removedWorkspaceIds?.length){const removed=new Set(result.removedWorkspaceIds);setGlobalSearchResults(current=>current.filter(note=>!removed.has(note.workspaceId)));setViewingNote(current=>current&&!removed.has(current.workspaceId)?current:null);}
+      const available=Boolean(cursor&&result.removedWorkspaceIds?.includes(activeWorkspaceId));
+      if(available){const next=user.personalWorkspaceId??"";setNotes([]);setCategories([]);setActiveWorkspaceId(next);setCalendarRefresh(value=>value+1);pushToast("You no longer have access to a workspace. Your view has been switched.");}
+    });
   },[user,activeWorkspaceId,pushToast]);
 
   useEffect(()=>{
-    if(!user){setUnreadCount(0);return;}
-    let active=true,timer:number|undefined,controller:AbortController|null=null;
-    const sync=async()=>{if(!active||document.visibilityState!=="visible"||!navigator.onLine)return;controller=new AbortController();try{const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(response.ok){const result=await response.json() as {unreadCount:number};if(active)setUnreadCount(result.unreadCount);}}catch{/* retried next cycle */}finally{controller=null;schedule();}};
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    void sync();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    if(!user||!activeWorkspaceId)return;
+    return subscribePoll("presence:"+user.id+":"+activeWorkspaceId,60000,async signal=>{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/presence",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}",signal});
+      if(!response.ok)throw new Error("Presence heartbeat failed.");
+    });
+  },[user,activeWorkspaceId]);
+
+  useEffect(()=>{
+    if(!user){setUnreadCount(0);setUnreadByWorkspace({});return;}
+    return subscribePoll("notifications:unread:"+user.id,30000,async signal=>{
+      const response=await fetch("/api/notifications?limit=1",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh notification count.");
+      const result=await response.json() as {unreadCount:number;unreadByWorkspace?:Record<string,number>};
+      if(signal.aborted)return;
+      setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});
+    });
   },[user]);
 
   useEffect(() => {
-    if (!activeWorkspaceId) { setCategories([]); return; }
+    setCategories([]);
+    if (!activeWorkspaceId) return;
     let active=true;
     fetch("/api/categories?workspaceId="+encodeURIComponent(activeWorkspaceId),{credentials:"same-origin"})
       .then(async response=>{if(!response.ok)throw new Error("Unable to load categories.");const result=await response.json() as {categories:Category[]};if(active)setCategories(result.categories);})
@@ -549,7 +587,7 @@ export default function App() {
     if (!inviteOpen || !activeWorkspaceId) return;
     let active = true;
     const owner = workspaces.find(item => item.id === activeWorkspaceId)?.role === "owner";
-    setInvitationsLoading(true);
+    setWorkspaceMembers([]);setInvitations([]);setActivity([]);setActivityNextCursor(null);setInvitationsLoading(true);setInviteCreateError("");
     const id = encodeURIComponent(activeWorkspaceId);
     Promise.all([
       fetch("/api/workspaces/" + id + "/members", { credentials: "same-origin" }),
@@ -568,71 +606,59 @@ export default function App() {
     return () => { active = false; };
   }, [inviteOpen, activeWorkspaceId, inviteRefresh, workspaces, activityTypeFilter, activityPersonFilter]);
 
-  useEffect(() => {
-    if (view !== "calendar" || !user) return;
-    let active = true;
-    let inFlight = false;
-    let timer: number | undefined;
-    let controller: AbortController | null = null;
-    let delay = 30000;
-    const range = () => {
-      const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
-      const rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
+  useEffect(()=>{
+    if(view!=="calendar"||!user)return;
+    const range=()=>{
+      const rangeStart=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1),rangeEnd=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,1);
       if(calendarMode==="week"){rangeStart.setDate(calendarCursor.getDate()-((calendarCursor.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+7);}
       else{rangeStart.setDate(rangeStart.getDate()-((rangeStart.getDay()+6)%7));rangeEnd.setTime(rangeStart.getTime());rangeEnd.setDate(rangeStart.getDate()+42);}
-      return {from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
+      return{from:new Date(rangeStart.getTime()-86400000).toISOString(),to:new Date(rangeEnd.getTime()+86400000).toISOString()};
     };
-    const schedule = () => {
-      if(!active || document.visibilityState!=="visible" || !navigator.onLine)return;
-      const jitter=0.9+Math.random()*0.2;
-      timer=window.setTimeout(()=>void sync(),Math.round(delay*jitter));
-    };
-    const sync = async () => {
-      if(!active || inFlight || document.visibilityState!=="visible" || !navigator.onLine)return;
-      inFlight=true;
-      controller=new AbortController();
-      const {from,to}=range();
+    let cursor:string|null=null,reminderCursor:string|null=null;
+    setEventsLoading(true);setEventsError("");
+    return subscribePoll("calendar:"+user.id+":"+calendarMode+":"+calendarCursor.getFullYear()+"-"+calendarCursor.getMonth()+"-"+calendarCursor.getDate(),30000,async signal=>{
       try{
+        const {from,to}=range();
         const [response,reminderResponse]=await Promise.all([
-          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to),{credentials:"same-origin",cache:"no-store",signal:controller.signal}),
-          fetch("/api/reminders?limit=100",{credentials:"same-origin",cache:"no-store",signal:controller.signal})
+          fetch("/api/events?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)+(cursor?"&updatedSince="+encodeURIComponent(cursor):""),{credentials:"same-origin",cache:"no-store",signal}),
+          fetch("/api/reminders?limit=100"+(reminderCursor?"&updatedSince="+encodeURIComponent(reminderCursor):""),{credentials:"same-origin",cache:"no-store",signal})
         ]);
         if(!response.ok)throw new Error("Unable to load calendar events.");
-        const result=await response.json() as {events:CalendarEvent[]};
-        if(!active)return;
-        setEvents(result.events);
-        if(reminderResponse.ok){const reminderResult=await reminderResponse.json() as {reminders:Reminder[]};if(active)setEventReminders(reminderResult.reminders);}
-        setEventsError("");
-        delay=30000;
-      }catch(error){
-        if(active && !(error instanceof DOMException && error.name==="AbortError")){setEventsError(error instanceof Error?error.message:"Calendar sync is paused.");delay=Math.min(60000,Math.max(10000,delay*2));}
-      }finally{inFlight=false;controller=null;schedule();}
-    };
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);delay=30000;void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>{delay=30000;void sync();};
-    const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    setEventsLoading(true);
-    setEventsError("");
-    void sync().finally(()=>{if(active)setEventsLoading(false);});
-    document.addEventListener("visibilitychange",onVisibility);
-    window.addEventListener("online",onOnline);
-    window.addEventListener("offline",onOffline);
-    return ()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+        const result=await response.json() as {events:CalendarEvent[];removedEventIds?:string[];removedWorkspaceIds?:string[];nextCursor?:string};
+        if(signal.aborted)return;
+        if(!cursor)setEvents(result.events);else setEvents(current=>{const removed=new Set(result.removedEventIds??[]),byId=new Map(current.filter(item=>!removed.has(item.id)).map(item=>[item.id,item]));for(const item of result.events)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>x.startsAt.localeCompare(y.startsAt));});
+        cursor=result.nextCursor??new Date().toISOString();
+        if(!reminderResponse.ok)throw new Error("Unable to load reminders.");
+        const reminderResult=await reminderResponse.json() as {reminders:Reminder[];removedWorkspaceIds?:string[];nextCursor?:string};
+        if(signal.aborted)return;
+        const removedWorkspaceIds=new Set([...(result.removedWorkspaceIds??[]),...(reminderResult.removedWorkspaceIds??[])]);
+        if(removedWorkspaceIds.size){setEvents(current=>current.filter(item=>!removedWorkspaceIds.has(item.workspaceId)));setEventReminders(current=>current.filter(item=>!removedWorkspaceIds.has(item.workspaceId)));}
+        if(!reminderCursor)setEventReminders(reminderResult.reminders);else setEventReminders(current=>{const byId=new Map(current.filter(item=>!removedWorkspaceIds.has(item.workspaceId)).map(item=>[item.id,item]));for(const item of reminderResult.reminders)byId.set(item.id,item);return [...byId.values()].sort((x,y)=>y.dueAt.localeCompare(x.dueAt));});
+        reminderCursor=reminderResult.nextCursor??new Date().toISOString();setEventsError("");
+      }catch(error){if(!signal.aborted)setEventsError(error instanceof Error?error.message:"Unable to refresh calendar.");throw error;}
+      finally{setEventsLoading(false);}
+    });
   },[view,user,calendarMode,calendarCursor,calendarRefresh]);
-  
+
   useEffect(()=>{
     if(!notificationsOpen||!user)return;
-    let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
-    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();setNotificationsLoading(true);
-      try{const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)throw new Error("Unable to load notifications.");const result=await response.json() as {notifications:Notification[];unreadCount:number};if(active){setNotifications(result.notifications);setUnreadCount(result.unreadCount);setNotificationError("");}}
-      catch(error){if(active&&!(error instanceof DOMException&&error.name==="AbortError"))setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");}
-      finally{inFlight=false;controller=null;if(active)setNotificationsLoading(false);schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),30000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    void sync();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    let active=true;
+    fetch("/api/notifications/workspaces",{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Unable to load workspace alert preferences.");const result=await response.json() as {workspaces:Array<{id:string;name:string;role:string;mode:"all"|"important"|"mute"}>};if(active)setWorkspaceNotificationPreferences(result.workspaces);}).catch(error=>{if(active)setNotificationError(error instanceof Error?error.message:"Unable to load workspace alert preferences.");});
+    return()=>{active=false;};
+  },[notificationsOpen,user]);
+
+  useEffect(()=>{
+    if(!notificationsOpen||!user)return;
+    setNotificationsLoading(true);
+    return subscribePoll("notifications:inbox:"+user.id,30000,async signal=>{
+      try{
+        const response=await fetch("/api/notifications?limit=50",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to load notifications.");
+        const result=await response.json() as {notifications:Notification[];unreadCount:number;unreadByWorkspace?:Record<string,number>};
+        if(signal.aborted)return;
+        setNotifications(result.notifications);setUnreadCount(result.unreadCount);setUnreadByWorkspace(result.unreadByWorkspace??{});setNotificationError("");
+      }catch(error){if(!signal.aborted)setNotificationError(error instanceof Error?error.message:"Unable to load notifications.");throw error;}
+      finally{setNotificationsLoading(false);}
+    });
   },[notificationsOpen,user]);
 
   useEffect(()=>{
@@ -734,6 +760,13 @@ export default function App() {
     finally{setPushBusy(false);}
   }
 
+  async function saveWorkspaceNotificationPreference(workspaceId:string,mode:"all"|"important"|"mute"){
+    setWorkspaceNotificationSaving(workspaceId);
+    try{const response=await fetch("/api/notifications/workspaces/"+encodeURIComponent(workspaceId),{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({mode})});if(!response.ok)throw new Error("Unable to save workspace notification preference.");setWorkspaceNotificationPreferences(current=>current.map(item=>item.id===workspaceId?{...item,mode}:item));}
+    catch(error){setNotificationError(error instanceof Error?error.message:"Unable to save workspace notification preference.");}
+    finally{setWorkspaceNotificationSaving(null);}
+  }
+
   async function saveNotificationPreferences(){
     if(notificationPrefsSaving)return;
     setNotificationPrefsSaving(true);setNotificationPrefsError("");setNotificationPrefsSaved(false);
@@ -762,7 +795,7 @@ export default function App() {
   const activeWorkspace = workspaces.find(item => item.id === activeWorkspaceId);
   const canWrite = activeWorkspace ? activeWorkspace.role !== "viewer" : true;
 
-  function openGlobalNote(note:Note){setActiveWorkspaceId(note.workspaceId);setShowArchived(false);setViewingNote(note);setNotes(current=>current.some(item=>item.id===note.id)?current:[note,...current]);}
+  function openGlobalNote(note:Note){setActiveWorkspaceId(note.workspaceId);setShowArchived(false);setShowTrash(false);setViewingNote(note);setNotes(current=>current.some(item=>item.id===note.id)?current:[note,...current]);}
 
   function startNewNote() {
     setEditingNote(null);
@@ -772,7 +805,7 @@ export default function App() {
   }
 
   const startEditNote = useCallback((note: Note) => {
-    setEditingNote(note);setDraftTitle(note.title);setDraftContent(note.content);setSelectedCategoryId(note.categoryId??"");
+    setEditingNote(note);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);setDraftTitle(note.title);setDraftContent(note.content);setSelectedCategoryId(note.categoryId??"");
     if(user){try{const raw=localStorage.getItem(noteDraftStorageKey(user.id,note.workspaceId,note.id));if(raw){const draft=JSON.parse(raw) as {title?:string;content?:string;categoryId?:string|null;updatedAt?:number};if(Date.now()-(draft.updatedAt??0)<7*24*60*60*1000){setDraftTitle(draft.title??note.title);setDraftContent(draft.content??note.content);setSelectedCategoryId(draft.categoryId??note.categoryId??"");pushToast("Recovered your unsaved changes.");}}}catch{/* ignore local draft errors */}}
     setComposerOpen(true);
   }, [user,pushToast]);
@@ -836,13 +869,13 @@ export default function App() {
     }
   }
 
-  function useLatestNoteConflict(){if(!noteConflict)return;setDraftTitle(noteConflict.latest.title);setDraftContent(noteConflict.latest.content);setSelectedCategoryId(noteConflict.latest.categoryId??"");setEditingNote(noteConflict.latest);setNoteConflict(null);}
+  function useLatestNoteConflict(){if(!noteConflict)return;setDraftTitle(noteConflict.latest.title);setDraftContent(noteConflict.latest.content);setSelectedCategoryId(noteConflict.latest.categoryId??"");setEditingNote(noteConflict.latest);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);setNoteConflict(null);}
   async function keepMineAfterConflict(){
     if(!noteConflict||saving)return;const conflict=noteConflict;setSaving(true);
     try{const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({...conflict.mine,version:conflict.latest.version})});const result=await response.json() as {note?:Note;latestNote?:Note};
       if(response.status===409&&result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});return;}
       if(!response.ok||!result.note)throw new Error("Unable to save your version of this note.");
-      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));setViewingNote(current=>current?.id===result.note!.id?result.note!:current);setEditingNote(null);setComposerOpen(false);setNoteConflict(null);pushToast("Your version was saved.");
+      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));setViewingNote(current=>current?.id===result.note!.id?result.note!:current);setEditingNote(null);setComposerOpen(false);setNoteConflict(null);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);pushToast("Your version was saved.");
     }catch(error){setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict.");}finally{setSaving(false);}
   }
   async function copyMineAndUseLatest(){if(!noteConflict)return;try{await navigator.clipboard.writeText(noteConflict.mine.content);pushToast("Your unsaved text was copied.");}catch{pushToast("Clipboard unavailable. Copy your text before choosing Use theirs.","error");return;}useLatestNoteConflict();}
@@ -892,16 +925,17 @@ export default function App() {
   }, [pushToast]);
 
   const restoreNote = useCallback((note: Note) => archiveNote(note, false), [archiveNote]);
+  const restoreFromTrash=useCallback(async(note:Note)=>{try{const response=await fetch("/api/notes/"+encodeURIComponent(note.id)+"/restore",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"});const result=await response.json() as {note?:Note;error?:string};if(!response.ok||!result.note)throw new Error(result.error==="TRASH_RETENTION_EXPIRED"?"This note has passed the 30-day recovery period.":"Unable to restore this note.");setNotes(current=>current.filter(item=>item.id!==note.id));pushToast("Note restored from Trash");}catch(error){pushToast(error instanceof Error?error.message:"Unable to restore this note.","error");}},[pushToast]);
 
   const deleteNote = useCallback(async (note: Note) => {
-    if (!window.confirm("Delete \u201c" + note.title + "\u201d? This cannot be undone from the app.")) return;
+    if (!window.confirm("Move \"" + note.title + "\" to Trash? You can restore it for 30 days before permanent deletion.")) return;
     try {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
         method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: note.version })
       });
       if (!response.ok) throw new Error("Unable to delete this note.");
       setNotes(current => current.filter(item => item.id !== note.id));
-      pushToast("Note deleted");
+      pushToast("Note moved to Trash. Restore it within 30 days.");
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Unable to delete this note.", "error");
     }
@@ -1242,6 +1276,7 @@ export default function App() {
       const readAt=new Date().toISOString();
       setNotifications(current=>current.map(item=>item.id===notification.id?{...item,readAt}:item));
       setUnreadCount(count=>Math.max(0,count-1));
+      if(notification.workspaceId)setUnreadByWorkspace(current=>({...current,[notification.workspaceId!]:Math.max(0,(current[notification.workspaceId!]??0)-1)}));
     }
   }
 
@@ -1251,15 +1286,32 @@ export default function App() {
       const readAt=new Date().toISOString();
       setNotifications(current=>current.map(item=>({...item,readAt:item.readAt??readAt})));
       setUnreadCount(0);
+      setUnreadByWorkspace({});
     }
   }
 
+  async function openLinkedNote(noteId:string,workspaceId:string){
+    const workspace=workspaces.find(item=>item.id===workspaceId);
+    if(!workspace){pushToast("This note is no longer available in your workspaces.","error");return;}
+    if(activeWorkspaceId!==workspaceId){setActiveWorkspaceId(workspaceId);pushToast("Switched to "+workspace.name);}
+    setShowArchived(false);setShowTrash(false);setView("notes");
+    try{const response=await fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId)return;setViewingNote(result.note);}
+    catch{pushToast("Note unavailable. It may have been deleted or access may have changed.","error");}
+  }
+
   function openNotification(notification:Notification) {
-    if(notification.resourceType==="workspace"&&notification.resourceId&&workspaces.some(item=>item.id===notification.resourceId)){setActiveWorkspaceId(notification.resourceId);setShowArchived(false);setView("notes");void markNotificationRead(notification);setNotificationsOpen(false);return;}
-    if(notification.resourceType==="event"||notification.type==="reminder")setView("calendar");
-    else if(notification.resourceType==="note"||notification.type==="shared_note")setView("notes");
-    void markNotificationRead(notification);
-    setNotificationsOpen(false);
+    const workspaceId=notification.workspaceId??(notification.resourceType==="workspace"?notification.resourceId:null);
+    if(workspaceId&&workspaces.some(item=>item.id===workspaceId))setActiveWorkspaceId(workspaceId);
+    if(notification.resourceType==="workspace"){setShowArchived(false);setShowTrash(false);setView("notes");}
+    else if(notification.resourceType==="note"&&notification.resourceId){
+      setShowArchived(false);setShowTrash(false);setView("notes");
+      void fetch("/api/notes/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This note is no longer available.");const result=await response.json() as {note:Note};if(workspaceId&&result.note.workspaceId!==workspaceId)return;if(workspaceId&&activeWorkspaceIdRef.current!==workspaceId)return;if(!workspaceId&&workspaces.some(item=>item.id===result.note.workspaceId))setActiveWorkspaceId(result.note.workspaceId);setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available in this workspace.","error"));
+    }else if(notification.resourceType==="event"&&notification.resourceId){
+      setView("calendar");
+      void fetch("/api/events/"+encodeURIComponent(notification.resourceId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("This event is no longer available.");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available in this workspace.","error"));
+    }else if(notification.type==="reminder")setView("calendar");
+    else if(notification.type==="shared_note")setView("notes");
+    void markNotificationRead(notification);setNotificationsOpen(false);
   }
 
   async function acceptInvite() {
@@ -1281,13 +1333,13 @@ export default function App() {
         throw new Error(message);
       }
       setInviteStatus("accepted");
-      setInviteNotice("Invitation accepted. The shared workspace is now available.");
+      setInviteNotice("You joined the workspace as "+(result.role==="editor"?"Editor":"Viewer")+". Events from this workspace will now appear in your calendar.");
       setInviteToken(null);
       const workspaceResponse = await fetch("/api/workspaces", { credentials: "same-origin" });
       if (workspaceResponse.ok) {
         const workspaceResult = await workspaceResponse.json() as { workspaces: Workspace[] };
         setWorkspaces(workspaceResult.workspaces);
-        if (result.workspaceId && workspaceResult.workspaces.some(item => item.id === result.workspaceId)) setActiveWorkspaceId(result.workspaceId);
+        if (result.workspaceId && workspaceResult.workspaces.some(item => item.id === result.workspaceId)) {const joined=workspaceResult.workspaces.find(item=>item.id===result.workspaceId)!;setActiveWorkspaceId(result.workspaceId);setInviteNotice("You joined "+joined.name+" as "+(result.role==="editor"?"Editor":"Viewer")+". "+(joined.icon??"📁")+" Calendar colour "+(joined.color??"#7565d8")+". Events from this workspace will now appear in your calendar.");}
       }
     } catch (error) {
       setInviteStatus("error");
@@ -1450,17 +1502,20 @@ export default function App() {
 
   useEffect(()=>{
     if(!inviteOpen||manageTab!=="activity"||!activeWorkspaceId)return;
-    let active=true,timer:number|undefined,controller:AbortController|null=null,inFlight=false;
-    const sync=async()=>{if(!active||inFlight||document.visibilityState!=="visible"||!navigator.onLine)return;inFlight=true;controller=new AbortController();
-      try{const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter);const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal:controller.signal});if(!response.ok)return;const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};if(active){setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);}}
-      catch{/* next poll retries */}finally{inFlight=false;controller=null;schedule();}
-    };
-    const schedule=()=>{if(active&&document.visibilityState==="visible"&&navigator.onLine)timer=window.setTimeout(()=>void sync(),15000);};
-    const onVisibility=()=>{if(document.visibilityState==="visible"){if(timer!==undefined)window.clearTimeout(timer);void sync();}else{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();}};
-    const onOnline=()=>void sync();const onOffline=()=>{if(timer!==undefined)window.clearTimeout(timer);controller?.abort();};
-    schedule();document.addEventListener("visibilitychange",onVisibility);window.addEventListener("online",onOnline);window.addEventListener("offline",onOffline);
-    return()=>{active=false;if(timer!==undefined)window.clearTimeout(timer);controller?.abort();document.removeEventListener("visibilitychange",onVisibility);window.removeEventListener("online",onOnline);window.removeEventListener("offline",onOffline);};
+    return subscribePoll("activity:"+activeWorkspaceId+":"+activityTypeFilter+":"+activityPersonFilter,15000,async signal=>{
+      const url="/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/activity?limit=50&type="+encodeURIComponent(activityTypeFilter)+"&actor="+encodeURIComponent(activityPersonFilter);
+      const response=await fetch(url,{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh activity.");
+      const result=await response.json() as {activity:ActivityItem[];nextCursor?:string|null};if(signal.aborted)return;setActivity(result.activity);setActivityNextCursor(result.nextCursor??null);
+    });
   },[inviteOpen,manageTab,activeWorkspaceId,activityTypeFilter,activityPersonFilter]);
+
+  useEffect(()=>{
+    if(!inviteOpen||manageTab!=="people"||!activeWorkspaceId)return;
+    return subscribePoll("members:"+activeWorkspaceId,15000,async signal=>{
+      const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspaceId)+"/members",{credentials:"same-origin",cache:"no-store",signal});if(!response.ok)throw new Error("Unable to refresh workspace members.");
+      const result=await response.json() as {members:WorkspaceMember[]};if(signal.aborted)return;setWorkspaceMembers(result.members);
+    });
+  },[inviteOpen,manageTab,activeWorkspaceId]);
 
   async function loadMoreActivity(){
     if(!activeWorkspaceId||!activityNextCursor||activityLoadingMore)return;
@@ -1479,6 +1534,7 @@ export default function App() {
       case "invitation.created": return item.actor + " invited " + (item.target ?? "someone") + (role ? " as " + role : "");
       case "invitation.revoked": return item.actor + " revoked an invitation";
       case "note.created": return item.actor + " created the note " + (item.target ? "“"+item.target+"”" : "");
+      case "note.restored": return item.actor + " restored " + (item.target ? "“"+item.target+"”" : "a note");
       case "note.updated": return item.actor + " updated the note " + (item.target ? "“"+item.target+"”" : "");
       case "note.deleted": return item.actor + " deleted a note";
       case "event.created": return item.actor + " created the event " + (item.target ? "“"+item.target+"”" : "");
@@ -1492,6 +1548,14 @@ export default function App() {
       case "workspace.ownership_transferred": return item.actor + " made " + (item.target ?? "a member") + " the owner";
       default: return item.actor + " · " + item.type;
     }
+  }
+
+  async function saveWorkspaceAppearance(color:string,icon:string){
+    if(!activeWorkspace||activeWorkspace.role!=="owner"||workspaceActionBusy)return;
+    setWorkspaceActionBusy(true);
+    try{const response=await fetch("/api/workspaces/"+encodeURIComponent(activeWorkspace.id)+"/appearance",{method:"PUT",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({color,icon})});if(!response.ok)throw new Error("Unable to save workspace appearance.");setWorkspaces(current=>current.map(item=>item.id===activeWorkspace.id?{...item,color,icon}:item));pushToast("Workspace appearance updated.");}
+    catch(error){pushToast(error instanceof Error?error.message:"Unable to save workspace appearance.","error");}
+    finally{setWorkspaceActionBusy(false);}
   }
 
   async function renameWorkspace() {
@@ -1652,6 +1716,9 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {!isOnline&&<div className="offline-banner" role="status"><strong>You're offline.</strong> If you edit a note, a local recovery draft is saved when browser storage is available. Drafts are not uploaded until you reconnect.</div>}
+      {isOnline&&syncStatus==="paused"&&<div className="offline-banner sync-paused" role="status">Sync is paused after repeated connection errors. KitaNotes will retry automatically.</div>}
+
       {authDialog&&<div className="auth-dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&authDialog!=="codes")setAuthDialog(null);}}>
         <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
           <header><h2 id="auth-dialog-title">{authDialog==="signup"?"Create your KitaNotes account":authDialog==="recovery"?"Recover your account":"Save your recovery codes"}</h2><button type="button" className="mini-icon" onClick={()=>setAuthDialog(null)} aria-label="Close"><X size={17}/></button></header>
@@ -1684,7 +1751,9 @@ export default function App() {
           <span className="brand-text"><span>Kita<span className="brand-soft">Notes</span></span><small className="brand-by">by Binalah.com</small></span>
         </a>
         <div className="workspace-switch-row">
-          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} />
+          <WorkspacePicker workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} onChange={(id:string)=>{setNotes([]);setCategories([]);setNotesLoading(true);setActiveWorkspaceId(id);setSelectedCategoryId("");setComposerOpen(false);setEditingNote(null);}} unreadByWorkspace={unreadByWorkspace} />
+          <div className="sync-status" role="status" aria-live="polite"><span className={"sync-status-dot "+(isOnline&&syncStatus==="up-to-date"?"good":isOnline?"waiting":"offline")}/>{!isOnline?"Offline":syncStatus==="syncing"?"Syncing":syncStatus==="paused"?"Sync paused":lastSyncedAt?"Updated "+new Date(lastSyncedAt).toLocaleTimeString():"Up to date"}</div>
+
           <button type="button" className={starredWorkspaceId===activeWorkspaceId?"workspace-star-button active":"workspace-star-button"} onClick={()=>void toggleWorkspaceStar()} disabled={!activeWorkspaceId||starredWorkspaceSaving} aria-label={starredWorkspaceId===activeWorkspaceId?"Remove default workspace":"Set as default workspace"} title={starredWorkspaceId===activeWorkspaceId?"Default workspace":"Set as default workspace"}>
             <Star size={16} fill={starredWorkspaceId===activeWorkspaceId?"currentColor":"none"}/>
           </button>
@@ -1728,6 +1797,13 @@ export default function App() {
             
             {notificationsLoading?<p>Loading…</p>:notifications.length===0?<p>You're all caught up.</p>:notifications.map(notification=><button className={notification.readAt?"notification-item":"notification-item unread"} key={notification.id} onClick={()=>openNotification(notification)}><strong>{notification.title}</strong><span>{notification.body}</span><small>{new Date(notification.createdAt).toLocaleString()}</small></button>)}
             {user&&<details className="notification-settings">
+              <summary><span><strong>Workspace alerts</strong><small>All, important only, or mute each workspace</small></span><ChevronDown size={16}/></summary>
+              <div className="notification-settings-content">
+                {workspaceNotificationPreferences.length===0?<p>No joined workspaces.</p>:workspaceNotificationPreferences.map(item=><label className="workspace-notification-row" key={item.id}><span><strong>{item.name}</strong><small>{item.role}</small></span><select className="invite-input" value={item.mode} disabled={workspaceNotificationSaving===item.id} onChange={event=>void saveWorkspaceNotificationPreference(item.id,event.target.value as "all"|"important"|"mute")}><option value="all">All alerts</option><option value="important">Important only</option><option value="mute">Mute</option></select></label>)}
+                <p className="notification-settings-note">Important alerts include reminders and workspace access or role changes. Muting a workspace affects push only; the in-app inbox remains available.</p>
+              </div>
+            </details>}
+            {user&&<details className="notification-settings">
               <summary><span><strong>Delivery preferences</strong><small>Choose which alerts reach this device</small></span><ChevronDown size={16}/></summary>
               <div className="notification-settings-content">
                 {notificationPrefsLoading?<p>Loading preferences…</p>:<>
@@ -1749,7 +1825,7 @@ export default function App() {
           </section>}
           {inviteToken && <section className="invite-panel">
             <div><span className="eyebrow">WORKSPACE INVITATION</span><h2>{invitePreview?.valid?invitePreview.workspaceName:"You've been invited."}</h2>
-              {invitePreview?.valid?<p>{invitePreview.inviterName} invited you as <strong>{invitePreview.role==="editor"?"Editor":"Viewer"}</strong>. {invitePreview.memberCount} people are already in this workspace. Events from this workspace will appear in your calendar after you join. Expires {new Date(invitePreview.expiresAt!).toLocaleDateString()}.</p>:invitePreview?.error?<p className="invite-error">{invitePreview.error==="INVITATION_EXPIRED"?"This invitation has expired. Ask the owner for a new link.":invitePreview.error==="INVITATION_REVOKED"?"This invitation was revoked. Ask the owner for a new link.":"This invitation is invalid or no longer available."}</p>:<p>Checking invitation details…</p>}</div>
+              {invitePreview?.valid?<p>{invitePreview.inviterName} invited you as <strong>{invitePreview.role==="editor"?"Editor":"Viewer"}</strong>. {invitePreview.memberCount} people are already in this workspace. Events from this workspace will appear in your calendar after you join. Expires {new Date(invitePreview.expiresAt!).toLocaleDateString()}.</p>:invitePreview?.error?<p className="invite-error">{invitePreview.error==="INVITATION_EXPIRED"?"This invitation has expired. Ask "+(invitePreview.inviterName??"the workspace owner")+" for a new link.":invitePreview.error==="INVITATION_REVOKED"?"This invitation was revoked. Ask "+(invitePreview.inviterName??"the workspace owner")+" for a new link.":invitePreview.error==="INVITATION_ALREADY_USED"?"This invitation has already been used. Ask "+(invitePreview.inviterName??"the workspace owner")+" for a new invitation.":"This invitation is invalid or no longer available. Ask the person who shared it to check the link."}</p>:<p>Checking invitation details…</p>}</div>
             {invitePreview?.valid&&(user ? <button className="primary-button" onClick={acceptInvite} disabled={inviteStatus === "accepting"}>{inviteStatus === "accepting" ? "Accepting…" : "Accept invitation"}</button>
               : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href={"/auth/google?returnTo=" + encodeURIComponent("/invite/accept?token=" + inviteToken)}><LogIn size={16}/> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div>
               : <span className="setup-label">{authStatus === "loading" ? "Checking sign-in…" : "Sign-in setup pending"}</span>)}
@@ -1760,40 +1836,40 @@ export default function App() {
 
           <div className="page-heading">
             <div><div className="eyebrow">NOTES · CALENDAR · SHARED WORKSPACES</div><h1>{view === "notes" ? "My Notes" : view === "calendar" ? "Calendar" : "Shared with Me"}</h1><p>{view === "notes" ? "Save notes, organise them into categories, and find them when you need them." : view === "calendar" ? "View your saved events and reminders." : "Notes and workspaces shared with you."}</p></div>
-            {view === "calendar" && user && workspaces.some(item=>item.role==="owner"||item.role==="editor") && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "calendar" && user && !workspaces.some(item=>item.role==="owner"||item.role==="editor") && <span className="calendar-readonly-hint">You have view-only access to your joined workspaces.</span>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
+            {view === "calendar" && user && workspaces.some(item=>item.role==="owner"||item.role==="editor") && <button className="primary-button" onClick={startNewEvent}><Plus size={17}/> New event</button>}{view === "calendar" && user && !workspaces.some(item=>item.role==="owner"||item.role==="editor") && <span className="calendar-readonly-hint">You have view-only access to your joined workspaces.</span>}{view === "notes" && user && <div className="page-actions">{workspaces.find(item=>item.id===activeWorkspaceId)?.role==="owner" && <button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Manage space</button>}{activeWorkspace?.visibility==="shared"&&activeWorkspace.role!=="owner"&&<button className="secondary-button" onClick={()=>openManage("people")}><Users size={16} /> Members</button>}<button className="secondary-button" onClick={()=>refreshPolls("notes:"+user.id+":"+activeWorkspaceId)} aria-label="Refresh notes"><RefreshCw size={14}/> Refresh</button><button className="secondary-button" onClick={()=>setCategoryModalOpen(true)}>Categories</button><button className="secondary-button" onClick={()=>{setAiModalOpen(true);setAiError("");}}><Sparkles size={16}/> AI Note Assistant</button>{canWrite&&<button className="primary-button" onClick={startNewNote}><Plus size={17} /> New note</button>}</div>}
           </div>
 
           {view === "notes" && <>
             <div className="toolbar">
               <label className="search-box"><Search size={17} /><input ref={searchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search notes  ( / )" />{query&&<button className="mini-icon" onClick={()=>setQuery("")} aria-label="Clear search"><X size={14}/></button>}</label><button type="button" className={globalSearchActive?"filter-button active-filter":"filter-button"} onClick={()=>{setGlobalSearchActive(value=>!value);setGlobalSearchResults([]);}}>Search all spaces</button>
               <label className="filter-button"><select className="sort-select" aria-label="Sort notes" value={sortMode} onChange={event=>setSortMode(event.target.value as SortMode)}><option value="updated">Recently updated</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select></label>
-              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>setShowArchived(value=>!value)}><Archive size={14}/> Arkib</button>
+              <button className={showArchived?"filter-button active-filter":"filter-button"} onClick={()=>{setShowArchived(value=>!value);setShowTrash(false);}}><Archive size={14}/> Arkib</button><button className={showTrash?"filter-button active-filter":"filter-button"} onClick={()=>{setShowTrash(value=>!value);setShowArchived(false);setGlobalSearchActive(false);setQuery("");setCategoryFilter("");}}><Trash2 size={14}/> Trash</button>
             </div>
             {!globalSearchActive&&user&&(categories.length>0)&&<div className="chip-row" role="tablist" aria-label="Tapis mengikut kategori"><button className={!categoryFilter?"chip active":"chip"} onClick={()=>setCategoryFilter("")}>All</button>{categories.filter(category=>!["uncategorised","uncategorized","unassigned"].includes(category.name.trim().toLowerCase())).map(category=><button key={category.id} className={categoryFilter===category.id?"chip active":"chip"} onClick={()=>setCategoryFilter(category.id)}><span className="category-dot" style={{background:category.color||"#8c88a7"}}/>{category.name}</button>)}<button className={categoryFilter==="__none"?"chip active":"chip"} onClick={()=>setCategoryFilter("__none")}><Tag size={11}/> Uncategorised</button>
             </div>}
             <div className="notes-meta">{globalSearchActive?(globalSearchLoading?"Searching all workspaces…":displayNotes.length+" results across joined workspaces"):notesLoading?"":visibleNotes.length+" nota"+(showArchived?" dalam arkib":"")}
             </div>
             {notesError && <div className="inline-error">{notesError}</div>}{globalSearchError&&<div className="inline-error">{globalSearchError}</div>}
-            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="loading-state">Memuatkan nota…</div>:visibleNotes.length > 0 ? <div className="notes-grid">
-              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>) }
+            {globalSearchActive?(globalSearchLoading?<div className="loading-state">Searching all workspaces…</div>:displayNotes.length>0?<div className="global-search-results">{workspaces.map(workspace=>{const matches=globalSearchResults.filter(note=>note.workspaceId===workspace.id);return matches.length===0?null:<section className="global-search-group" key={workspace.id}><h3>{workspace.name}</h3><div className="notes-grid">{matches.map(note=><NoteCard key={note.id} note={note} canWrite={workspace.role!=="viewer"} showArchived={false} onView={()=>openGlobalNote(note)} onEdit={()=>{setActiveWorkspaceId(note.workspaceId);startEditNote(note);}} onArchive={archiveNote} onRestore={restoreNote} onDelete={deleteNote}/>)}</div></section>;})}</div>:<div className="empty-state"><h2>{query.trim()?"No notes found across your workspaces":"Search all joined workspaces"}</h2><p>Search by title or content. Results are grouped by workspace.</p></div>):notesLoading?<div className="notes-skeleton-grid" role="status" aria-live="polite" aria-label="Loading notes" aria-busy="true">{[0,1,2].map(index=><div className="note-skeleton" key={index}><i/><i/><i/></div>)}</div>:visibleNotes.length > 0 ? <div className="notes-grid">
+              {visibleNotes.map(note => <NoteCard key={note.id} note={note} canWrite={canWrite} showArchived={showArchived||showTrash} isTrash={showTrash} onView={setViewingNote} onEdit={startEditNote} onArchive={archiveNote} onRestore={showTrash?restoreFromTrash:restoreNote} onDelete={deleteNote}/>) }
             </div> : <div className="empty-state">
               <div className="empty-illustration"><div className="paper paper-back"></div><div className="paper paper-front"><span></span><span></span><span></span><i><Check size={17} /></i></div><div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✧</div></div>
-              <h2>{query||categoryFilter ? "No notes found" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
-              <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google or a passkey to create and sync your notes."}</p>
-              {user&&canWrite&&!globalSearchActive&&!showArchived&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
+              <h2>{query||categoryFilter ? "No notes found" : showTrash ? "Trash is empty" : showArchived ? "Archive is empty" : user ? "A fresh page." : authStatus === "unavailable" ? "Almost ready." : "Your notes start here."}</h2>
+              <p>{query||categoryFilter ? "Try another search term or clear the category filter." : showTrash ? "Deleted notes stay here for 30 days. Restore them before they are permanently removed." : showArchived ? "Archived notes appear here and can be restored any time." : user ? "Your notes will find a home here. Start with one small thought." : authStatus === "unavailable" ? "The app needs its dedicated D1 database and Google sign-in configuration before accounts can be enabled." : "Sign in with Google or a passkey to create and sync your notes."}</p>
+              {user&&canWrite&&!globalSearchActive&&!showArchived&&!showTrash&&!query&&!categoryFilter ? <button className="primary-button" onClick={startNewNote}><Plus size={17} /> Create your first note</button> : authStatus === "signed_out" ? <div className="empty-auth-actions"><a className="primary-button" href="/auth/google"><LogIn size={16} /> Continue with Google</a><button className="secondary-button" onClick={()=>void signInWithPasskey()} disabled={passkeyBusy}><Fingerprint size={16}/>{passkeyBusy?"Checking…":"Use a passkey"}</button></div> : null}
             </div>}
           </>}
 
           {view === "calendar" && <Suspense fallback={<div className="loading-state">Loading calendar…</div>}>
             <CalendarView
-              events={events} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError} workspaces={workspaces}
+              events={events} reminders={eventReminders} holidays={holidays} eventsLoading={eventsLoading} eventsError={eventsError} workspaces={workspaces}
               holidayFeedStatus={holidayFeedStatus} holidayState={holidayState} onHolidayStateChange={saveHolidayState}
               calendarMode={calendarMode} setCalendarMode={setCalendarMode} calendarCursor={calendarCursor}
               setCalendarCursor={setCalendarCursor} calendarHeading={calendarHeading} calendarDays={calendarDays}
               calendarAgendaItems={calendarAgendaItems} calendarTransferBusy={calendarTransferBusy}
               calendarIcsInputRef={calendarIcsInputRef} onImportCalendarIcs={importCalendarIcs}
               onExportCalendarIcs={exportCalendarIcs} onMoveCalendar={moveCalendar}
-              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent}
+              canManageEvent={(event)=>workspaces.some(item=>item.id===event.workspaceId&&(item.role==="owner"||item.role==="editor"))} onEditEvent={startEditEvent} onDeleteEvent={deleteEvent} onOpenLinkedNote={openLinkedNote} onRefresh={()=>refreshPolls("calendar:"+user?.id+":")} calendarFocusDate={calendarFocusDate}
             />
           </Suspense>}
           {view === "shared" && <section className="shared-section">{sharedWorkspaces.length===0?<div className="placeholder-panel"><Users size={26} /><h2>Nothing shared yet.</h2><p>When someone invites you, or you share a workspace, it will show up here.</p><button className="secondary-button" onClick={()=>setView("notes")}>Back to notes</button></div>:<div className="shared-grid">{sharedWorkspaces.map(workspace=><button key={workspace.id} className={workspace.id===activeWorkspaceId?"shared-card current":"shared-card"} onClick={()=>{setActiveWorkspaceId(workspace.id);setShowArchived(false);setView("notes");}}><span className="workspace-avatar">{workspace.name.slice(0,1).toUpperCase()}</span><strong>{workspace.name}</strong><small>{workspace.role==="owner"?"You own this space":workspace.role==="editor"?"You can edit":"View only"}</small></button>)}</div>}</section>}
@@ -1868,7 +1944,7 @@ export default function App() {
 
           {manageTab==="people"&&<div className="invite-list">
             {invitationsLoading?<p>Loading members…</p>:workspaceMembers.map(member=><div className="invite-list-row" key={member.userId}>
-              <div><strong>{member.displayName||member.email}{member.userId===user?.id?" (you)":""}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()}</small></div>
+              <div><strong>{member.displayName||member.email}{member.userId===user?.id?" (you)":""}</strong><small>{member.email} · {member.role} · joined {new Date(member.joinedAt).toLocaleDateString()} · <span className={member.isOnline?"presence-online":"presence-offline"}>{member.isOnline?"Online":member.lastSeenAt?"Last seen "+new Date(member.lastSeenAt).toLocaleString():"Not active yet"}</span></small></div>
               {activeWorkspace.role==="owner"&&member.role!=="owner"&&<div className="invite-member-actions"><select className="invite-input" aria-label={"Permission for "+member.email} value={member.role} onChange={event=>updateWorkspaceMemberRole(member,event.target.value as "editor"|"viewer")} disabled={workspaceActionBusy}><option value="viewer">Viewer</option><option value="editor">Editor</option></select><button className="text-action" onClick={()=>transferOwnership(member)} disabled={workspaceActionBusy}>Make owner</button><button className="text-action" onClick={()=>removeWorkspaceMember(member)} disabled={workspaceActionBusy}>Remove</button></div>}
             </div>)}
             <p className="invite-list-note">Owners manage people and settings. Editors can change notes, events and categories. Viewers can read only.</p>
@@ -1902,7 +1978,9 @@ export default function App() {
           </div>}
 
           {manageTab==="settings"&&activeWorkspace.role==="owner"&&<div className="invite-list">
-            <strong>Space settings</strong><p className="invite-list-note">Rename this space or change who can access it. Deleting a shared space permanently removes its notes and events.</p>
+            <strong>Space settings</strong><p className="invite-list-note">Rename this space, choose its shared colour and icon, or change who can access it. Deleting a shared space permanently removes its notes and events.</p>
+            <label className="field-label">Workspace colour<input type="color" className="workspace-appearance-color" value={activeWorkspace.color??"#7565d8"} disabled={workspaceActionBusy} onChange={event=>void saveWorkspaceAppearance(event.target.value,activeWorkspace.icon??"📁")}/></label>
+            <label className="field-label">Workspace icon<select className="invite-input" value={activeWorkspace.icon??"📁"} disabled={workspaceActionBusy} onChange={event=>void saveWorkspaceAppearance(activeWorkspace.color??"#7565d8",event.target.value)}>{["📁","👥","💼","🏠","❤️","📚","📅","⭐","🎓","🛒"].map(icon=><option key={icon} value={icon}>{icon}</option>)}</select></label>
             <div className="invite-member-actions"><button className="secondary-button" onClick={renameWorkspace} disabled={workspaceActionBusy}>Rename</button>{activeWorkspace.visibility==="shared"?<button className="secondary-button" onClick={makeWorkspacePrivate} disabled={workspaceActionBusy}>Make private</button>:<button className="secondary-button" onClick={makeWorkspaceShared} disabled={workspaceActionBusy}>Make shared</button>}{activeWorkspace.visibility==="shared"&&<button className="secondary-button danger-action" onClick={deleteWorkspace} disabled={workspaceActionBusy}>Delete space</button>}</div>
           </div>}
 
@@ -1932,10 +2010,13 @@ export default function App() {
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
+          {!remoteNoteDeleted&&!canWrite&&editingNote&&<div className="remote-note-banner deleted" role="status">Your workspace role changed. You can still copy your draft, but you can no longer save edits here.</div>}
+          {remoteNoteDeleted&&<div className="remote-note-banner deleted" role="alert"><span>This note was deleted or you lost access. Your unsaved text remains in a local recovery draft.</span><div><button type="button" className="text-action" onClick={()=>void navigator.clipboard?.writeText(draftContent)}>Copy my draft</button><button type="button" className="text-action" onClick={()=>{setComposerOpen(false);setEditingNote(null);setRemoteNoteDeleted(false);}}>Back to notes</button></div></div>}
+          {remoteNoteUpdate&&!remoteNoteDeleted&&<div className="remote-note-banner" role="status"><span>Updated by {remoteNoteUpdate.updatedByName??"another member"} at {new Date(remoteNoteUpdate.updatedAt).toLocaleString()}.</span><button type="button" className="text-action" onClick={()=>{setNoteConflict({latest:remoteNoteUpdate,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null}});setRemoteNoteUpdate(null);}}>Review update</button></div>}
           <input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} autoFocus />
           <textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} />
           <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div><label className="field-label">Category<select className="invite-input" value={selectedCategoryId} onChange={event=>setSelectedCategoryId(event.target.value)}><option value="">Uncategorised</option>{categories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving}>{saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
+          <footer><span>{editingNote ? "Changes use version checking to avoid overwriting newer edits." : (activeWorkspace?.visibility==="shared"?"Saved to this shared workspace.":"Saved to your private workspace.")+" Ctrl/⌘+Enter to save."}</span><button className="primary-button" onClick={saveNote} disabled={!draftTitle.trim() || saving || remoteNoteDeleted || !canWrite || !isOnline}>{!isOnline?"Saved as local draft":saving ? "Saving…" : editingNote ? "Save changes" : "Save note"}</button></footer>
         </section>
       </div>}
       {viewingNote && <div className="modal-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setViewingNote(null);}}>
