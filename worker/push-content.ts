@@ -37,7 +37,7 @@ export function formatPushWhen(value:string|Date|null|undefined,timeZone="Asia/K
  }catch{return null;}
 }
 function detailed(message:PushMessageInput,timeZone:string):{title:string;body:string}|null{
- const actor=message.actor?clean(message.actor):"";
+ const actor=message.actor&&clean(message.actor).toLowerCase()!=="someone"?clean(message.actor):"";
  const ws=message.workspace?clean(message.workspace):"";
  const item=clean(message.itemTitle??"")||"Untitled note";
  const when=formatPushWhen(message.when,timeZone);
