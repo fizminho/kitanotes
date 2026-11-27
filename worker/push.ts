@@ -101,7 +101,7 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  const tag=validPushTag(message.tag)?message.tag:defaultPushTag(message as PushMessageInput,userId);
  const payloadData={v:2,kind:message.kind,subtype:("subtype" in message?message.subtype:undefined),title:built.title,body:built.body,url:target,tag,renotify:true,data:{workspaceId:("workspaceId" in message?message.workspaceId:undefined)??undefined,resourceType:("resourceType" in message?message.resourceType:undefined)??undefined,resourceId:("resourceId" in message?message.resourceId:undefined)??undefined,notificationId:("notificationId" in message?message.notificationId:undefined)??undefined}};
  let encoded="";
- try{encoded=JSON.stringify(payloadData);if(new TextEncoder().encode(encoded).byteLength>3072)return;}catch{return;}
+ try{encoded=JSON.stringify(payloadData);if(new TextEncoder().encode(encoded).byteLength>2800)return;}catch{return;}
  const ttl=message.kind==="reminder"?86400:message.kind==="event"?14400:3600;
  const urgency=message.kind==="reminder"?"high":"normal";
  const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
