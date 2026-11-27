@@ -120,3 +120,14 @@ test("existing preference rows migrate to generic preview mode",async()=>{
   assert.equal(db.sqlite.prepare("SELECT push_preview_mode FROM notification_preferences WHERE user_id='u1'").get().push_preview_mode,"generic");
  }finally{db.close();}
 });
+
+test("older clients can save delivery settings without changing preview privacy",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  db.sqlite.prepare("INSERT INTO notification_preferences (user_id,created_at,updated_at) VALUES ('u1','now','now')").run();
+  const body={pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"};
+  const response=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",body),env);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).preferences.pushPreviewMode,"generic");
+ }finally{db.close();}
+});
