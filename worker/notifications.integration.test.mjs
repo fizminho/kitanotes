@@ -12,7 +12,7 @@ const migrations=[
  "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
  "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
  "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
- "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0023_workspace_notification_preferences.sql","0030_detailed_notification_default.sql"
+ "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0023_workspace_notification_preferences.sql","0030_detailed_notification_default.sql","0031_push_preview_and_debounce.sql"
 ];
 class D1TestDatabase{
  constructor(){this.sqlite=new DatabaseSync(":memory:");this.sqlite.exec("PRAGMA foreign_keys=ON");for(const file of migrations)this.sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));}
@@ -109,5 +109,29 @@ test("legacy all workspace preference is stored as detailed",async()=>{
   const response=await handleNotificationsRequest(request("/api/notifications/workspaces/w1",tokens.u1,"PUT",{mode:"all"}),env);
   assert.equal(response.status,200);
   assert.equal(db.sqlite.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id='u1' AND workspace_id='w1'").get().mode,"detailed");
+ }finally{db.close();}
+});
+
+test("notification preferences default new users to detailed previews and persist generic mode",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  const initial=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1),env);
+  assert.equal((await initial.json()).preferences.pushPreviewMode,"detailed");
+  const body={pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"generic"};
+  const saved=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",body),env);
+  assert.equal(saved.status,200);
+  assert.equal((await saved.json()).preferences.pushPreviewMode,"generic");
+  assert.equal(db.sqlite.prepare("SELECT push_preview_mode FROM notification_preferences WHERE user_id='u1'").get().push_preview_mode,"generic");
+ }finally{db.close();}
+});
+
+test("existing preference rows default to generic and older clients preserve the preview choice",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  db.sqlite.prepare("INSERT INTO notification_preferences (user_id,created_at,updated_at) VALUES ('u1','now','now')").run();
+  const body={pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"};
+  const response=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",body),env);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).preferences.pushPreviewMode,"generic");
  }finally{db.close();}
 });
