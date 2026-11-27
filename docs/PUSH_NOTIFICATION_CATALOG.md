@@ -42,7 +42,7 @@ Note updates include changes handled by the note update endpoint, such as title/
 | Create an event (`worker/events.ts`, create handler) | Other current workspace members; creator excluded | `event` | **Calendar activity** / A calendar event was created, changed or cancelled. Open KitaNotes to review it. | Implemented |
 | Update an event (`worker/events.ts`, update handler) | Other current workspace members; editor excluded | `event` | Same generic Calendar activity message | Implemented |
 | Delete/cancel an event (`worker/events.ts`, delete handler) | Other current workspace members; deleter excluded | `event` | Same generic Calendar activity message | Implemented |
-| Import calendar events through another import path | Depends on the import implementation; no direct `sendPushToUser()` call is present in the event handler catalogue | None confirmed | No push is documented as guaranteed | Verify separately |
+| Import calendar events through `.ics` (`worker/calendar-ics.ts`, import handler) | Other current workspace members; importer excluded; one push per import batch when at least one event is created or updated | `event` | **Calendar activity** / A calendar event was created, changed or cancelled. Open KitaNotes to review it. | Implemented |
 
 The push message intentionally does not distinguish create, update and delete on the lock screen. The in-app inbox uses more specific event activity types.
 
