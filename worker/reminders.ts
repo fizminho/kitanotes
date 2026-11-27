@@ -74,7 +74,13 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
     return json({reminder:row?dto(row):null},201);
   }
-  const match=url.pathname.match(/^\/api\/reminders\/([^/]+)$/);
+  const match=url.pathname.match(/^\\/api\\/reminders\\/([^/]+)$/);
+  if(match&&request.method==="GET"){
+    const id=decodeURIComponent(match[1]);
+    const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
+    if(!row||!(await roleFor(db,row.workspace_id,user.id)))return json({error:"NOT_FOUND"},404);
+    return json({reminder:dto(row)});
+  }
   if(match&&request.method==="PATCH"){
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
     const id=decodeURIComponent(match[1]);
