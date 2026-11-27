@@ -151,7 +151,7 @@ test("notification preferences default to Malaysia timezone and save per-user qu
   try{
     const defaults=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1),env);
     assert.equal(defaults.status,200);
-    assert.deepEqual((await defaults.json()).preferences,{pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+    assert.deepEqual((await defaults.json()).preferences,{pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});
     const saved=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",{
       pushEnabled:true,reminderPushEnabled:false,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:"22:00",quietHoursEnd:"07:00",timezone:"Asia/Kuala_Lumpur"
     }),env);
