@@ -69,8 +69,8 @@ test("URL and tag validation reject unsafe or malformed values",()=>{
 });
 
 test("note edit debounce allows one send per recipient in 120 seconds, then allows another",async()=>{
- let expiresAt=0;
- const db={prepare(){return{bind(key,expires,now){return{first:async()=>{const current=Date.parse(now);if(expiresAt>current)return null;expiresAt=Date.parse(expires);return{debounce_key:key};}};}};}};
+ const expiresByKey=new Map();
+ const db={prepare(){return{bind(key,expires,now){return{first:async()=>{const current=Date.parse(now),expiresAt=expiresByKey.get(key)??0;if(expiresAt>current)return null;expiresByKey.set(key,Date.parse(expires));return{debounce_key:key};}};}};}};
  assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-1",1000),true);
  for(let i=1;i<10;i++)assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-1",1000+i*10000),false);
  assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-1",122000),true);
