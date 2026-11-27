@@ -37,6 +37,9 @@ if "push_preview_mode" not in prefs_columns:
     raise SystemExit("notification_preferences is missing push_preview_mode")
 if db.execute("SELECT dflt_value FROM pragma_table_info('notification_preferences') WHERE name='push_preview_mode'").fetchone()[0] != "'generic'":
     raise SystemExit("Existing notification preferences must default to generic previews")
+legacy_preview_modes = db.execute("SELECT user_id,push_preview_mode FROM notification_preferences ORDER BY user_id").fetchall()
+if legacy_preview_modes != [("u1", "generic"), ("u2", "generic")]:
+    raise SystemExit(f"Existing accounts were not migrated to generic previews: {legacy_preview_modes}")
 
 missing = required - tables
 if missing:
