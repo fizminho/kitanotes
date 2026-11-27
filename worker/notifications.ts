@@ -22,9 +22,9 @@ function parsePreferences(value:unknown):Preferences|null{
  if(!value||typeof value!=="object")return null;
  const item=value as Record<string,unknown>;
  if(typeof item.pushEnabled!=="boolean"||typeof item.reminderPushEnabled!=="boolean"||typeof item.sharedNotePushEnabled!=="boolean"||typeof item.sharedNoteUpdatePushEnabled!=="boolean"||typeof item.eventPushEnabled!=="boolean"||typeof item.workspacePushEnabled!=="boolean"||
-    !validTime(item.quietHoursStart)||!validTime(item.quietHoursEnd)||!validTimezone(item.timezone)||(item.pushPreviewMode!=="detailed"&&item.pushPreviewMode!=="generic"))return null;
+    !validTime(item.quietHoursStart)||!validTime(item.quietHoursEnd)||!validTimezone(item.timezone)||(item.pushPreviewMode!==undefined&&item.pushPreviewMode!=="detailed"&&item.pushPreviewMode!=="generic"))return null;
  if((item.quietHoursStart===null)!==(item.quietHoursEnd===null)||item.quietHoursStart===item.quietHoursEnd&&item.quietHoursStart!==null)return null;
- return{pushEnabled:item.pushEnabled,reminderPushEnabled:item.reminderPushEnabled,sharedNotePushEnabled:item.sharedNotePushEnabled,sharedNoteUpdatePushEnabled:item.sharedNoteUpdatePushEnabled,eventPushEnabled:item.eventPushEnabled,workspacePushEnabled:item.workspacePushEnabled,quietHoursStart:item.quietHoursStart,quietHoursEnd:item.quietHoursEnd,timezone:item.timezone,pushPreviewMode:item.pushPreviewMode};
+ return{pushEnabled:item.pushEnabled,reminderPushEnabled:item.reminderPushEnabled,sharedNotePushEnabled:item.sharedNotePushEnabled,sharedNoteUpdatePushEnabled:item.sharedNoteUpdatePushEnabled,eventPushEnabled:item.eventPushEnabled,workspacePushEnabled:item.workspacePushEnabled,quietHoursStart:item.quietHoursStart,quietHoursEnd:item.quietHoursEnd,timezone:item.timezone,pushPreviewMode:item.pushPreviewMode==="generic"?"generic":"detailed"};
 }
 export async function handleNotificationsRequest(request:Request,env:AuthEnv):Promise<Response|null>{
  const url=new URL(request.url);
@@ -57,6 +57,10 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
   const body=await readJsonBody(request);
   if(!body)return json({error:"INVALID_JSON_BODY"},400);
   const preferences=parsePreferences(body);if(!preferences)return json({error:"INVALID_NOTIFICATION_PREFERENCES"},400);
+   if(body.pushPreviewMode===undefined){
+    const existing=await db.prepare("SELECT push_preview_mode FROM notification_preferences WHERE user_id=?").bind(user.id).first<{push_preview_mode:"detailed"|"generic"}>();
+    preferences.pushPreviewMode=existing?.push_preview_mode??"detailed";
+   }
   const now=new Date().toISOString();
   await db.prepare("INSERT INTO notification_preferences (user_id,push_enabled,reminder_push_enabled,shared_note_push_enabled,shared_note_update_push_enabled,event_push_enabled,workspace_push_enabled,quiet_hours_start,quiet_hours_end,timezone,push_preview_mode,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET push_enabled=excluded.push_enabled,reminder_push_enabled=excluded.reminder_push_enabled,shared_note_push_enabled=excluded.shared_note_push_enabled,shared_note_update_push_enabled=excluded.shared_note_update_push_enabled,event_push_enabled=excluded.event_push_enabled,workspace_push_enabled=excluded.workspace_push_enabled,quiet_hours_start=excluded.quiet_hours_start,quiet_hours_end=excluded.quiet_hours_end,timezone=excluded.timezone,push_preview_mode=excluded.push_preview_mode,updated_at=excluded.updated_at")
    .bind(user.id,preferences.pushEnabled?1:0,preferences.reminderPushEnabled?1:0,preferences.sharedNotePushEnabled?1:0,preferences.sharedNoteUpdatePushEnabled?1:0,preferences.eventPushEnabled?1:0,preferences.workspacePushEnabled?1:0,preferences.quietHoursStart,preferences.quietHoursEnd,preferences.timezone,preferences.pushPreviewMode,now,now).run();
