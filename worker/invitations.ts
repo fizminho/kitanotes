@@ -51,6 +51,10 @@ async function displayName(db: Db, userId: string): Promise<string> {
   const row = await db.prepare("SELECT display_name,email FROM users WHERE id=?").bind(userId).first<{display_name:string|null;email:string}>();
   return row?.display_name || row?.email || "Someone";
 }
+async function pushDisplayName(db:Db,userId:string):Promise<string|null>{
+  const row=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
+  return row?.display_name?.trim()||null;
+}
 async function memberRole(db: Db, workspaceId: string, userId: string): Promise<string | null> {
   return (await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,userId).first<{role:string}>())?.role ?? null;
 }
@@ -158,7 +162,7 @@ async function acceptInvitation(request: Request, env: InvitationEnv, userId: st
     if(!currentMember)return json({error:"WORKSPACE_NOT_SHARED"},410);
     await logActivity(db,openLink.workspace_id,userId,"member.joined","user",userId,{role:openLink.role,via:"invite_link"});
     if(ws.owner_user_id!==userId)await notifyUser(db,ws.owner_user_id,openLink.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,openLink.workspace_id))+" as "+openLink.role+".","workspace",openLink.workspace_id,"invite-link-join:"+openLink.workspace_id+":"+userId);
-    if(ws.owner_user_id!==userId)await sendPushToUser(db,env,ws.owner_user_id,{kind:"workspace",subtype:"invitation_accepted",actor:await displayName(db,userId),actorId:userId,workspace:await workspaceName(db,openLink.workspace_id),workspaceId:openLink.workspace_id,resourceType:"workspace",resourceId:openLink.workspace_id,url:"/?workspaceId="+encodeURIComponent(openLink.workspace_id),tag:"workspace:"+openLink.workspace_id+":"+userId,important:true});
+    if(ws.owner_user_id!==userId)await sendPushToUser(db,env,ws.owner_user_id,{kind:"workspace",subtype:"invitation_accepted",actor:await pushDisplayName(db,userId),actorId:userId,workspace:await workspaceName(db,openLink.workspace_id),workspaceId:openLink.workspace_id,resourceType:"workspace",resourceId:openLink.workspace_id,url:"/?workspaceId="+encodeURIComponent(openLink.workspace_id),tag:"workspace:"+openLink.workspace_id+":"+userId,important:true});
     return json({accepted:true,workspaceId:openLink.workspace_id,role:currentMember.role,alreadyMember:Boolean(existingMember)});
   }
   const accepted = await db.prepare("UPDATE invitations SET status='accepted',accepted_by_user_id=?,accepted_at=? WHERE token_hash=? AND invited_email_normalized=? AND status='pending' AND expires_at>? AND EXISTS (SELECT 1 FROM workspaces w WHERE w.id=invitations.workspace_id AND w.visibility='shared') RETURNING workspace_id,role")
@@ -178,7 +182,7 @@ async function acceptInvitation(request: Request, env: InvitationEnv, userId: st
   const ownerRow = await db.prepare("SELECT owner_user_id FROM workspaces WHERE id=?").bind(accepted.workspace_id).first<{owner_user_id:string}>();
   if (ownerRow && ownerRow.owner_user_id !== userId) {
     await notifyUser(db,ownerRow.owner_user_id,accepted.workspace_id,"invitation_accepted","Invitation accepted",(await displayName(db,userId))+" joined "+(await workspaceName(db,accepted.workspace_id))+" as "+accepted.role+".","workspace",accepted.workspace_id,"invitation_accepted:"+accepted.workspace_id+":"+userId+":"+now);
-    await sendPushToUser(db,env,ownerRow.owner_user_id,{kind:"workspace",subtype:"invitation_accepted",actor:await displayName(db,userId),actorId:userId,workspace:await workspaceName(db,accepted.workspace_id),workspaceId:accepted.workspace_id,resourceType:"workspace",resourceId:accepted.workspace_id,url:"/?workspaceId="+encodeURIComponent(accepted.workspace_id),tag:"workspace:"+accepted.workspace_id+":"+userId,important:true});
+    await sendPushToUser(db,env,ownerRow.owner_user_id,{kind:"workspace",subtype:"invitation_accepted",actor:await pushDisplayName(db,userId),actorId:userId,workspace:await workspaceName(db,accepted.workspace_id),workspaceId:accepted.workspace_id,resourceType:"workspace",resourceId:accepted.workspace_id,url:"/?workspaceId="+encodeURIComponent(accepted.workspace_id),tag:"workspace:"+accepted.workspace_id+":"+userId,important:true});
   }
   return json({ accepted:true,workspaceId:accepted.workspace_id,role:accepted.role });
 }
@@ -245,7 +249,7 @@ async function leaveWorkspace(request: Request, env: InvitationEnv, userId: stri
   await logActivity(db,workspaceId,userId,"member.left","user",userId);
   const ownerRow = await db.prepare("SELECT owner_user_id FROM workspaces WHERE id=?").bind(workspaceId).first<{owner_user_id:string}>();
   if (ownerRow) await notifyUser(db,ownerRow.owner_user_id,workspaceId,"member_left","A member left",(await displayName(db,userId))+" left "+(await workspaceName(db,workspaceId))+".","workspace",workspaceId,"member_left:"+workspaceId+":"+userId+":"+Date.now());
-  if (ownerRow) await sendPushToUser(db,env,ownerRow.owner_user_id,{kind:"workspace",subtype:"member_left",actor:await displayName(db,userId),actorId:userId,workspace:await workspaceName(db,workspaceId),workspaceId,resourceType:"workspace",resourceId:workspaceId,url:"/?workspaceId="+encodeURIComponent(workspaceId),tag:"workspace:"+workspaceId+":"+userId,important:true});
+  if (ownerRow) await sendPushToUser(db,env,ownerRow.owner_user_id,{kind:"workspace",subtype:"member_left",actor:await pushDisplayName(db,userId),actorId:userId,workspace:await workspaceName(db,workspaceId),workspaceId,resourceType:"workspace",resourceId:workspaceId,url:"/?workspaceId="+encodeURIComponent(workspaceId),tag:"workspace:"+workspaceId+":"+userId,important:true});
   return json({left:true});
 }
 async function deleteWorkspace(request: Request, env: InvitationEnv, userId: string, workspaceId: string): Promise<Response> {
