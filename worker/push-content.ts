@@ -46,17 +46,20 @@ function detailed(message:PushMessageInput,timeZone:string):{title:string;body:s
   case "shared_note_update":{
    if(!actor||!ws)return null;
    const action=message.subtype;
+   if(action!=="created"&&action!=="edited"&&action!=="archived"&&action!=="deleted"&&action!=="restored")return null;
    const verb=action==="created"?"added":action==="archived"?"archived":action==="deleted"?"deleted":action==="restored"?"restored":"edited";
    return{title:actor+" "+verb+" a note",body:item+" · "+ws};
   }
   case "event":{
    if(!actor||!when)return null;
+   if(message.subtype!=="created"&&message.subtype!=="moved"&&message.subtype!=="updated"&&message.subtype!=="cancelled")return null;
    if(message.subtype==="created"){if(!ws)return null;return{title:"New event: "+item,body:when+" · added by "+actor+" · "+ws};}
    if(message.subtype==="moved")return{title:"Event moved: "+item,body:"Now "+when+" · "+actor};
    if(message.subtype==="cancelled")return{title:"Event cancelled: "+item,body:"Was "+when+" · "+actor};
    return{title:"Event updated: "+item,body:when+" · "+actor};
   }
   case "reminder":{
+   if(message.subtype!=="due"&&!message.subtype?.startsWith("due_"))return null;
    if(!ws||!message.itemTitle)return null;
    return{title:"Reminder: "+clean(message.itemTitle),body:when?"Due "+when:"Due now · "+ws};
   }
