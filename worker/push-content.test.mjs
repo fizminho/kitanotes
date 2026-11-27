@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildPushContent, formatPushWhen, validPushTag, validPushUrl } from "./push-content.ts";
+import { claimNoteEditPush } from "./push.ts";
 
 test("note builders distinguish created, edited, archived, deleted and restored",()=>{
  const base={kind:"shared_note_update",actor:"Aina",workspace:"Family",itemTitle:"Groceries",resourceType:"note",resourceId:"n1"};
@@ -65,4 +66,14 @@ test("URL and tag validation reject unsafe or malformed values",()=>{
  assert.equal(validPushTag("note:abc-123"),true);
  assert.equal(validPushTag("note:abc/123"),false);
  assert.equal(validPushTag("x".repeat(65)),false);
+});
+
+test("note edit debounce allows one send per recipient in 120 seconds, then allows another",async()=>{
+ let expiresAt=0;
+ const db={prepare(){return{bind(key,expires,now){return{first:async()=>{const current=Date.parse(now);if(expiresAt>current)return null;expiresAt=Date.parse(expires);return{debounce_key:key};}};}};}};
+ assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-1",1000),true);
+ for(let i=1;i<10;i++)assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-1",1000+i*10000),false);
+ assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-1",122000),true);
+ assert.equal(await claimNoteEditPush(db,"note-1","actor-2","recipient-1",123000),true);
+ assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-2",124000),true);
 });
