@@ -38,10 +38,14 @@ async function linkedResourceExists(db:Db,workspaceId:string,eventId:string|null
   return true;
 }
 function dto(row:ReminderRow){return{id:row.id,workspaceId:row.workspace_id,eventId:row.event_id,noteId:row.note_id,title:row.title,dueAt:row.due_at_utc,timezone:row.timezone,status:row.status,createdBy:row.created_by_user_id,createdAt:row.created_at,updatedAt:row.updated_at,deliveredAt:row.delivered_at,cancelledAt:row.cancelled_at};}
-async function notifyReminderChange(db:Db,env:ReminderEnv,workspaceId:string,actorUserId:string,ctx?:ExecutionContext):Promise<void>{
+async function notifyReminderChange(db:Db,env:ReminderEnv,reminder:ReminderRow,actorUserId:string,subtype:"rescheduled"|"cancelled",ctx?:ExecutionContext):Promise<void>{
   try{
-    const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,actorUserId).all<{user_id:string}>();
-    const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it.",url:"/",tag:"reminder-change-"+crypto.randomUUID()},"reminder_update",{workspaceId,important:true})));
+    const [recipients,workspace]=await Promise.all([
+      db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(reminder.workspace_id,actorUserId).all<{user_id:string}>(),
+      db.prepare("SELECT name FROM workspaces WHERE id=?").bind(reminder.workspace_id).first<{name:string}>()
+    ]);
+    const target="/?workspaceId="+encodeURIComponent(reminder.workspace_id)+(reminder.event_id?"&eventId="+encodeURIComponent(reminder.event_id):reminder.note_id?"&noteId="+encodeURIComponent(reminder.note_id):"&reminderId="+encodeURIComponent(reminder.id));
+    const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{kind:"reminder_update",subtype,itemTitle:reminder.title,when:subtype==="rescheduled"?reminder.due_at_utc:null,workspace:workspace?.name,workspaceId:reminder.workspace_id,resourceType:"reminder",resourceId:reminder.id,url:target,tag:"reminder:"+reminder.id,important:true})));
     if(ctx)ctx.waitUntil(task);else await task;
   }catch{/* Reminder changes must not fail when best-effort push delivery is unavailable. */}
 }
@@ -84,6 +88,12 @@ export async function handleRemindersRequest(request:Request,env:ReminderEnv,ctx
     return json({reminder:row?dto(row):null},201);
   }
   const match=url.pathname.match(/^\/api\/reminders\/([^/]+)$/);
+  if(match&&request.method==="GET"){
+    const id=decodeURIComponent(match[1]);
+    const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
+    if(!row||!(await roleFor(db,row.workspace_id,user.id)))return json({error:"NOT_FOUND"},404);
+    return json({reminder:dto(row)});
+  }
   if(match&&request.method==="PATCH"){
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
     const id=decodeURIComponent(match[1]);
@@ -103,13 +113,13 @@ export async function handleRemindersRequest(request:Request,env:ReminderEnv,ctx
     const result=await db.prepare("UPDATE reminders SET title=?,due_at_utc=?,timezone=?,updated_at=? WHERE id=? AND status='pending'").bind(title,dueAt,tz,now,id).run();
     if(Number((result as {meta?:{changes?:number}}).meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
     const updated=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
-    if(title!==row.title||dueAt!==row.due_at_utc||tz!==row.timezone)await notifyReminderChange(db,env,row.workspace_id,user.id,ctx);
+    if(dueAt!==row.due_at_utc&&updated)await notifyReminderChange(db,env,updated,user.id,"rescheduled",ctx);
     return json({reminder:updated?dto(updated):null});
   }
   if(match&&request.method==="DELETE"){
     if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);
     const id=decodeURIComponent(match[1]);
-    const row=await db.prepare("SELECT workspace_id,status FROM reminders WHERE id=?").bind(id).first<{workspace_id:string;status:string}>();
+    const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
     if(!row)return json({error:"NOT_FOUND"},404);
     const role=await roleFor(db,row.workspace_id,user.id);
     if(!role)return json({error:"NOT_FOUND"},404);
@@ -118,7 +128,7 @@ export async function handleRemindersRequest(request:Request,env:ReminderEnv,ctx
     const now=new Date().toISOString();
     const result=await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE id=? AND status='pending'").bind(now,now,id).run();
     if(Number((result as {meta?:{changes?:number}}).meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
-    await notifyReminderChange(db,env,row.workspace_id,user.id,ctx);
+    await notifyReminderChange(db,env,{...row,status:"cancelled",cancelled_at:now,updated_at:now},user.id,"cancelled",ctx);
     return json({cancelled:true});
   }
   return json({error:"METHOD_NOT_ALLOWED"},405);
