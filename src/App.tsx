@@ -959,7 +959,8 @@ export default function App() {
     }
   }
 
-  async function copyCurrentNoteDraft(){const category=categories.find(item=>item.id===selectedCategoryId)?.name??"Uncategorised";try{await navigator.clipboard.writeText("Title: "+draftTitle+"\\nCategory: "+category+"\\n\\n"+draftContent);pushToast("Your full note draft was copied.");}catch{pushToast("Clipboard unavailable. Keep this recovery draft open and copy the fields manually.","error");}}\n  function clearNoteDraft(note:Note){if(!user)return;try{localStorage.removeItem(noteDraftStorageKey(user.id,note.workspaceId,note.id));}catch{/* ignore storage errors */}}
+  async function copyCurrentNoteDraft(){const category=categories.find(item=>item.id===selectedCategoryId)?.name??"Uncategorised";try{await navigator.clipboard.writeText("Title: "+draftTitle+"\nCategory: "+category+"\n\n"+draftContent);pushToast("Your full note draft was copied.");}catch{pushToast("Clipboard unavailable. Keep this recovery draft open and copy the fields manually.","error");}}
+  function clearNoteDraft(note:Note){if(!user)return;try{localStorage.removeItem(noteDraftStorageKey(user.id,note.workspaceId,note.id));}catch{/* ignore storage errors */}}
   function useLatestNoteConflict(){
     if(!noteConflict)return;
     const conflict=noteConflict;
