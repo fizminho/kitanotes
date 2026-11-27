@@ -20,7 +20,7 @@ All activity push messages are deliberately generic. The strings below are retur
 | `workspace` | **Workspace activity** | Your workspace membership or permissions changed. Open KitaNotes to review it. |
 | `test` | **KitaNotes** | Push notifications are connected on this device. |
 
-The caller may construct a more specific title, body, URL or tag, but `sendPushToUser()` intentionally ignores those values. It always uses `safePushMessage(kind)`, sets the target URL to `/`, and creates an opaque random tag. Therefore note titles, note text, event titles/descriptions, reminder titles/due times, member names, workspace names and resource IDs are not included in the push payload.
+The `detailed` workspace mode is the default for existing and new users unless they explicitly selected `important` or `mute`. The caller may construct a more specific title, body, URL or tag, but `sendPushToUser()` intentionally ignores those values. It always uses `safePushMessage(kind)`, sets the target URL to `/`, and creates an opaque random tag. Therefore note titles, note text, event titles/descriptions, reminder titles/due times, member names, workspace names and resource IDs are not included in the push payload.
 
 ## 2. Function-by-function coverage
 
@@ -97,7 +97,7 @@ Some SQL triggers create inbox records without a corresponding push call. Always
 
 1. **Global switch:** `push_enabled` must be enabled. If no preference row exists, the Worker uses enabled defaults.
 2. **Activity switches:** reminder due/change, new shared note, shared-note update/delete, event and workspace pushes each have their own user preference.
-3. **Workspace mode:** each workspace can be set to `all`, `important` or `mute`. Note and event changes are marked non-important. Due reminders, reminder edits/cancellations and workspace membership/access changes are marked important.
+3. **Workspace mode:** each workspace can be set to `detailed`, `important` or `mute`. The migration converts existing `all` preferences to `detailed`; users without a saved preference default to `detailed`. Note and event changes are marked non-important. Due reminders, reminder edits/cancellations and workspace membership/access changes are marked important.
 4. **Quiet hours:** activity pushes are suppressed during the user's quiet hours in their IANA timezone. Default timezone is `Asia/Kuala_Lumpur`. Overnight windows are supported. Suppressed pushes are not queued for later delivery.
 5. **Test exception:** test pushes bypass activity switches and quiet hours, but still require the global push switch.
 6. **Best-effort delivery:** push delivery failures do not roll back the user action. The in-app inbox remains the source of truth where an inbox entry is created.
