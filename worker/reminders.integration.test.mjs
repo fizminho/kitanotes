@@ -12,7 +12,7 @@ const migrations = [
   "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
   "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
   "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
-  "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0025_workspace_membership_delta.sql"
+  "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0025_workspace_membership_delta.sql","0030_push_preview_and_debounce.sql"
 ];
 class D1TestDatabase {
   constructor() {
@@ -68,6 +68,17 @@ test("reminder listing is restricted to workspace membership and current user's 
     assert.equal(member.status,200);
     assert.deepEqual((await member.json()).reminders.map(x=>x.id),["r1"]);
     const outsider=await handleRemindersRequest(request("/api/reminders?workspaceId=w2",tokens.u1),env);
+    assert.equal(outsider.status,404);
+  }finally{db.close();}
+});
+
+test("reminder deep-link lookup is available only to current workspace members",async()=>{
+  const {db,env,tokens}=seed();
+  try{
+    const member=await handleRemindersRequest(request("/api/reminders/r1",tokens.u2),env);
+    assert.equal(member.status,200);
+    assert.equal((await member.json()).reminder.id,"r1");
+    const outsider=await handleRemindersRequest(request("/api/reminders/r1",tokens.u3),env);
     assert.equal(outsider.status,404);
   }finally{db.close();}
 });
