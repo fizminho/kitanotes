@@ -219,7 +219,7 @@ test("note update conflict includes the latest full note snapshot", async () => 
   const { db, env, tokens } = seed();
   try {
     await handleNotesRequest(request("/api/notes/n1", tokens.u1, "PATCH", { title: "Latest title", content: "Latest content", version: 1 }), env);
-    const conflict = await handleNotesRequest(request("/api/notes/n1", tokens.u2, "PATCH", { title: "Stale title", content: "Stale content", version: 1 }), env);
+    const conflict = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "PATCH", { title: "Stale title", content: "Stale content", version: 1 }), env);
     assert.equal(conflict.status, 409);
     const body = await conflict.json();
     assert.equal(body.error, "VERSION_CONFLICT");
