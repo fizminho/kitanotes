@@ -30,7 +30,7 @@ The caller may construct a more specific title, body, URL or tag, but `sendPushT
 | Create a note in a shared workspace (`worker/notes.ts`, create handler) | Other current workspace members; creator excluded | `shared_note` | **New shared note** / Someone added a note in a shared workspace. Open KitaNotes to view it. | Implemented |
 | Update a note (`worker/notes.ts`, update handler) | Other current workspace members; editor excluded | `shared_note_update` | **Shared note changed** / A shared note was updated or removed. Open KitaNotes to review it. | Implemented |
 | Delete a note (`worker/notes.ts`, delete handler) | Other current workspace members; deleter excluded | `shared_note_update` | **Shared note changed** / A shared note was updated or removed. Open KitaNotes to review it. | Implemented |
-| Restore a deleted note (`worker/notes.ts`, restore handler) | No push call in the restore handler | None | No push is sent | Not implemented |
+| Restore a deleted note (`worker/notes.ts`, restore handler) | Other current workspace members; restorer excluded | `shared_note_update` | **Shared note changed** / A shared note was updated or removed. Open KitaNotes to review it. | Implemented |
 
 Note updates include changes handled by the note update endpoint, such as title/content/archive state. The SQL notification triggers also create or update in-app inbox entries, but the push itself is sent by the Worker handler.
 
@@ -117,7 +117,6 @@ Some SQL triggers create inbox records without a corresponding push call. Always
 
 These are gaps observed in the current source, not claims that the features are already implemented:
 
-- Push after restoring a note.
 - Push for reminder cancellation, edits or rescheduling, if those actions should notify collaborators.
 - Push for calendar import operations, if imported events should notify workspace members.
 - Push for invitation creation/revocation, if the product intends to notify invitees or owners.
