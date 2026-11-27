@@ -13,7 +13,7 @@ class D1TestDatabase {
   constructor() {
     this.sqlite = new DatabaseSync(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
-    for (const file of ["migrations/0001_initial.sql","migrations/0002_sessions.sql","migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0016_calendar_2_0.sql","migrations/0017_calendar_holiday_cache.sql"]) {
+    for (const file of ["migrations/0001_initial.sql","migrations/0002_sessions.sql","migrations/0003_invitation_accept_trigger.sql","migrations/0004_calendar_reminders_notifications.sql","migrations/0005_shared_note_notifications.sql","migrations/0006_ai_consent_and_usage.sql", "migrations/0007_request_rate_limits.sql", "migrations/0008_push_subscriptions.sql","migrations/0009_notification_preferences.sql","migrations/0011_workspace_visibility.sql","migrations/0012_unified_workspace_type.sql","migrations/0013_content_audit_and_open_invites.sql", "migrations/0014_google_calendar_import.sql","migrations/0015_notification_activity_preferences.sql","migrations/0016_calendar_2_0.sql","migrations/0017_calendar_holiday_cache.sql","migrations/0031_push_preview_and_debounce.sql"]) {
       this.sqlite.exec(readFileSync(new URL("../"+file,import.meta.url),"utf8"));
     }
   }
@@ -151,7 +151,7 @@ test("notification preferences default to Malaysia timezone and save per-user qu
   try{
     const defaults=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1),env);
     assert.equal(defaults.status,200);
-    assert.deepEqual((await defaults.json()).preferences,{pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+    assert.deepEqual((await defaults.json()).preferences,{pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});
     const saved=await handleNotificationsRequest(request("/api/notifications/preferences",tokens.u1,"PUT",{
       pushEnabled:true,reminderPushEnabled:false,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:"22:00",quietHoursEnd:"07:00",timezone:"Asia/Kuala_Lumpur"
     }),env);

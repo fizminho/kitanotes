@@ -23,7 +23,7 @@ Web Push uses the standard browser push service and the Web Crypto-compatible `@
    - `VAPID_PUBLIC_KEY`: public key, configured as a Worker variable.
    - `VAPID_PRIVATE_KEY`: private JWK `d` value, configured as a Worker Secret.
    - `VAPID_SUBJECT`: a contact URI such as `mailto:you@example.com`, configured as a Worker variable. Replace the example with an email address you control.
-3. Deploy the Worker and apply all pending D1 migrations, including `0008_push_subscriptions.sql`, `0009_notification_preferences.sql`, `0015_notification_activity_preferences.sql` and `0030_detailed_notification_default.sql`. The configured Workers Builds deploy command should be `npm run cf:deploy`, which applies remote migrations before publishing the Worker.
+3. Deploy the Worker and apply all pending D1 migrations, including `0008_push_subscriptions.sql`, `0009_notification_preferences.sql`, `0015_notification_activity_preferences.sql`, `0030_detailed_notification_default.sql` and `0031_push_preview_and_debounce.sql`. The configured Workers Builds deploy command should be `npm run cf:deploy`, which applies remote migrations before publishing the Worker.
 4. Sign in on a supported browser, open Notifications and choose Enable push. Permission is requested only after the user taps the button.
 5. Use Test to send a generic notification to the current device.
 
@@ -33,7 +33,7 @@ Never commit the private key or paste it into a chat or frontend environment var
 
 - Subscriptions are stored per authenticated user and endpoint. Each user can register up to 10 devices.
 - The Worker accepts only HTTPS endpoints from known browser push-service domains to prevent arbitrary outbound fetches.
-- Push payloads contain generic text and a same-origin path, never note content, event descriptions, invitation tokens or other private data.
+- Push payloads use the recipient's preview mode: detailed previews may contain actor names, note/event/reminder titles, workspace names and resource IDs; generic previews preserve the original generic catalogue. Note body text, event descriptions and invitation tokens are never included. All payloads use validated same-origin paths.
 - New shared notes and due reminders create durable in-app notifications first. Web Push is best-effort; the inbox remains the source of truth.
 - Expired subscriptions (HTTP 404/410) are removed automatically.
 - If VAPID is not configured, the app keeps working and the push controls report that push is not configured.
@@ -51,12 +51,12 @@ See [Push Notification Content Catalogue](./PUSH_NOTIFICATION_CATALOG.md) for th
 
 ## Per-user notification preferences
 
-Migrations `0009_notification_preferences.sql` and `0015_notification_activity_preferences.sql` add user-scoped delivery settings exposed through:
+Migrations `0009_notification_preferences.sql`, `0015_notification_activity_preferences.sql` and `0031_push_preview_and_debounce.sql` add user-scoped delivery settings and edit-debounce storage exposed through:
 
 - `GET /api/notifications/preferences`
 - `PUT /api/notifications/preferences`
 
-Users can independently enable/disable push delivery for reminders, new shared notes, shared-note updates/deletions, calendar event changes and workspace membership/access changes. The durable in-app inbox is not affected by these switches. Activity caused by the current user is excluded from shared-workspace push delivery.
+Users can independently enable/disable push delivery for reminders, new shared notes, shared-note updates/deletions, calendar event changes and workspace membership/access changes. They can also choose detailed or generic lock-screen previews. Every account that existed at migration time is seeded with `generic`, including accounts without a previous preference row. Accounts created later, without a preference row, default to `detailed`. The durable in-app inbox is not affected by these switches. Activity caused by the current user is excluded from shared-workspace push delivery.
 
 Quiet hours use the user's IANA timezone (default `Asia/Kuala_Lumpur`) and a local start/end time. Overnight windows such as 22:00–07:00 are supported. During quiet hours, activity push attempts are suppressed; they are not queued for later delivery. The corresponding in-app notification remains available in the inbox where that activity type creates one. Test pushes bypass quiet hours and category switches but still respect the global push-enabled switch.
 
