@@ -1,4 +1,4 @@
-export type PushKind = "reminder" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
+export type PushKind = "reminder" | "reminder_update" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
 export type PushMessageInput = {
  kind:PushKind; subtype?:string; actor?:string|null; actorId?:string|null; workspace?:string|null;
  itemTitle?:string|null; when?:string|Date|null; role?:"editor"|"viewer"|"owner"|string|null;
@@ -9,6 +9,7 @@ export type PushMessageInput = {
 export function safePushMessage(kind:PushKind):{title:string;body:string}{
  switch(kind){
   case "reminder":return{title:"Reminder due",body:"A reminder is due. Open KitaNotes to review it."};
+  case "reminder_update":return{title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it."};
   case "shared_note":return{title:"New shared note",body:"Someone added a note in a shared workspace. Open KitaNotes to view it."};
   case "shared_note_update":return{title:"Shared note changed",body:"A shared note was updated or removed. Open KitaNotes to review it."};
   case "event":return{title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it."};
@@ -62,6 +63,12 @@ function detailed(message:PushMessageInput,timeZone:string):{title:string;body:s
    if(message.subtype!=="due"&&!message.subtype?.startsWith("due_"))return null;
    if(!ws||!message.itemTitle)return null;
    return{title:"Reminder: "+clean(message.itemTitle),body:when?"Due "+when:"Due now · "+ws};
+  }
+  case "reminder_update":{
+   if(!message.itemTitle)return null;
+   if(message.subtype==="rescheduled"&&when)return{title:"Reminder rescheduled",body:clean(message.itemTitle)+" · now "+when};
+   if(message.subtype==="cancelled")return{title:"Reminder cancelled",body:clean(message.itemTitle)};
+   return null;
   }
   case "workspace":{
    if(!ws&&message.subtype!=="removed"&&message.subtype!=="deleted")return null;
