@@ -4,6 +4,11 @@ ALTER TABLE notification_preferences
   ADD COLUMN push_preview_mode TEXT NOT NULL DEFAULT 'generic'
   CHECK (push_preview_mode IN ('detailed','generic'));
 
+-- Give every account that existed at migration time the previous generic preview default.
+-- Accounts created after this migration have no row and receive the API's detailed default.
+INSERT OR IGNORE INTO notification_preferences (user_id,created_at,updated_at)
+SELECT id,created_at,updated_at FROM users;
+
 -- Atomic 120-second note-edit debounce, scoped to note + actor + recipient.
 CREATE TABLE IF NOT EXISTS push_debounce (
   debounce_key TEXT PRIMARY KEY,
