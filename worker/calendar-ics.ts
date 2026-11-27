@@ -64,8 +64,14 @@ async function importIcs(request:Request,db:Db,userId:string,env:CalendarEnv,ctx
  }
  if(imported+updated>0){
   try{
-   const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
-   const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it.",url:"/",tag:"calendar-import-"+crypto.randomUUID()},"event",{workspaceId,important:false})));
+   const [recipients,actor,workspace]=await Promise.all([
+    db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>(),
+    db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>(),
+    db.prepare("SELECT name FROM workspaces WHERE id=?").bind(workspaceId).first<{name:string}>()
+   ]);
+   const task=Promise.all(recipients.results.map(member=>imported>0
+    ?sendPushToUser(db,env,member.user_id,{kind:"event",subtype:"imported",actor:actor?.display_name,actorId:userId,workspace:workspace?.name,count:imported,workspaceId,resourceType:"workspace",resourceId:workspaceId,url:"/?workspaceId="+encodeURIComponent(workspaceId)+"&calendar=1",tag:"calendar-import:"+crypto.randomUUID(),important:false})
+    :sendPushToUser(db,env,member.user_id,{title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it.",url:"/?workspaceId="+encodeURIComponent(workspaceId)+"&calendar=1",tag:"calendar-import:"+crypto.randomUUID()},"event",{workspaceId,important:false})));
    if(ctx)ctx.waitUntil(task);else await task;
   }catch{/* Calendar import must succeed even when best-effort push delivery is unavailable. */}
  }
