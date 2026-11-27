@@ -1011,9 +1011,10 @@ export default function App() {
           ? { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, version: editingNote.version }
           : { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, workspaceId: activeWorkspaceId })
       });
-      const result = await response.json() as { note?: Note; error?: string; latestNote?:Note };
+      const result = await response.json() as { note?: Note; error?: string; latestNote?:Note|null };
       if(response.status===409&&result.latestNote){setNoteConflict({latest:result.latestNote,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null},source:"editor"});return;}
-      if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "This note changed elsewhere. Refresh and try again." : "Unable to save this note.");
+      if(response.status===404||response.status===410){setRemoteNoteDeleted(true);throw new Error("This note was deleted or access was removed. Your unsaved title, content and category remain in the recovery draft.");}
+      if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "The latest version could not be loaded. Your draft is preserved; reload the note before trying again." : "Unable to save this note.");
       setNotes(current => editingNote
         ? current.map(note => note.id === result.note!.id ? result.note! : note)
         : [result.note!, ...current]);
