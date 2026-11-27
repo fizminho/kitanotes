@@ -17,6 +17,7 @@ const MAX_NOTE_CONTENT_CHARS = 50_000;
 
 function pushDescription(value:string):string { return value.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,150) || "No description was added."; }
 
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: {
     "content-type": "application/json; charset=utf-8", "cache-control": "no-store",
@@ -151,10 +152,13 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.created','note',?,'{}',?)").bind(crypto.randomUUID(),workspace.id,userId,id,now).run();
     const row = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(id).first<NoteRow>();
+    try{
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspace.id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("New note: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(workspace.id)+"&noteId="+encodeURIComponent(id),tag:"shared-note-"+id},"shared_note",{workspaceId:workspace.id,important:false})));
+    const workspaceName=await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(workspace.id).first<{name:string}>();
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{kind:"shared_note",subtype:"created",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:title,workspaceId:workspace.id,resourceType:"note",resourceId:id,url:"/?workspaceId="+encodeURIComponent(workspace.id)+"&noteId="+encodeURIComponent(id),tag:"note:"+id,important:false})));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+    }catch{/* Push is best-effort and must not block the mutation. */}
     return json({ note: row ? noteDto(row) : null }, 201);
   }
   const restoreMatch=path.match(/^\/api\/notes\/([^/]+)\/restore$/);
@@ -171,9 +175,13 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
     if(changes(result)!==1)return json({error:"RESTORE_CONFLICT"},409);
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.restored','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
     const restored=await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?").bind(noteId).first<NoteRow>();
+    try{
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:"A shared note was restored",body:"A deleted note was restored in a shared workspace. Open KitaNotes to review it.",url:"/",tag:"note-restored-"+crypto.randomUUID()},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
+    const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
+    const workspaceName=await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(row.workspace_id).first<{name:string}>();
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{kind:"shared_note_update",subtype:"restored",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:restored?.title??"Untitled note",workspaceId:row.workspace_id,resourceType:"note",resourceId:noteId,url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&noteId="+encodeURIComponent(noteId),tag:"note:"+noteId,important:false})));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+    }catch{/* Push is best-effort and must not block the mutation. */}
     return json({note:restored?noteDto(restored):null});
   }
   const match = path.match(/^\/api\/notes\/([^/]+)$/);
@@ -202,10 +210,14 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
       .bind(title, content, categoryId, archivedAt, userId, now, noteId, row.workspace_id, version).run();
     if (changes(result) !== 1) { const latest=await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=? AND n.deleted_at IS NULL").bind(noteId).first<NoteRow>();return json({error:"VERSION_CONFLICT",latestNote:latest?noteDto(latest):null},409); }
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.updated','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
+    try{
     const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
     const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Updated: "+title).slice(0,80),body:((actor?.display_name??"A member")+" · "+pushDescription(content)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&noteId="+encodeURIComponent(noteId),tag:"shared-note-update-"+noteId},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
+    const workspaceName=await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(row.workspace_id).first<{name:string}>();
+    const subtype=archivedAt&&!row.archived_at?"archived":row.archived_at&&!archivedAt?"restored":"edited";
+    const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{kind:"shared_note_update",subtype,actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:title,workspaceId:row.workspace_id,resourceType:"note",resourceId:noteId,url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&noteId="+encodeURIComponent(noteId),tag:"note:"+noteId,important:false})));
     if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+    }catch{/* Push is best-effort and must not block the mutation. */}
     const updated = await db.prepare("SELECT n.*,c.name AS category_name,cu.display_name AS created_by_name,uu.display_name AS updated_by_name FROM notes n LEFT JOIN categories c ON c.id=n.category_id LEFT JOIN users cu ON cu.id=n.created_by_user_id LEFT JOIN users uu ON uu.id=n.updated_by_user_id WHERE n.id=?")
       .bind(noteId).first<NoteRow>();
     return json({ note: updated ? noteDto(updated) : null });
@@ -218,10 +230,13 @@ async function handleNotes(request: Request, env: AuthEnv & {VAPID_PUBLIC_KEY?:s
       .bind(now, now, userId, noteId, row.workspace_id).run();
     if(changes(result)===1){
       await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'note.deleted','note',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,noteId,now).run();
+      try{
       const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
       const actor=await db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>();
-      const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{title:("Deleted: "+row.title).slice(0,80),body:((actor?.display_name??"A member")+" deleted this note · "+pushDescription(row.content)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(row.workspace_id),tag:"shared-note-deleted-"+noteId},"shared_note_update",{workspaceId:row.workspace_id,important:false})));
+      const workspaceName=await db.prepare("SELECT name FROM workspaces WHERE id=?").bind(row.workspace_id).first<{name:string}>();
+      const pushTask=Promise.all(recipients.results.map(recipient=>sendPushToUser(db,env,recipient.user_id,{kind:"shared_note_update",subtype:"deleted",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:row.title,workspaceId:row.workspace_id,resourceType:"note",resourceId:noteId,url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&noteId="+encodeURIComponent(noteId),tag:"note:"+noteId,important:false})));
       if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+      }catch{/* Push is best-effort and must not block the mutation. */}
       return json({ok:true});
     }
     return json({error:"NOT_FOUND"},404);
