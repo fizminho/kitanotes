@@ -24,7 +24,7 @@ export function truncatePushText(value:string,max:number):string{
  if(chars.length<=max)return chars.join("");
  const limit=Math.max(1,max-1),slice=chars.slice(0,limit).join("");
  const boundary=slice.lastIndexOf(" ");
- return (boundary>Math.floor(limit*.55)?slice.slice(0,boundary):slice.trimEnd())+"…";
+ return (boundary>0?slice.slice(0,boundary):slice.trimEnd())+"…";
 }
 export function formatPushWhen(value:string|Date|null|undefined,timeZone="Asia/Kuala_Lumpur"):string|null{
  if(!value)return null;
