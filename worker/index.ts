@@ -45,7 +45,7 @@ export default {
     } else if(url.pathname.startsWith("/api/google-calendar/")||url.pathname.startsWith("/auth/google/calendar/")) {
       response=json({error:"CALENDAR_OAUTH_REMOVED",message:"Use .ics calendar import and export instead."},410);
     } else {
-      response=await handleCalendarIcsRequest(request,env)
+      response=await handleCalendarIcsRequest(request,env,ctx)
         ?? await handleAuthRequest(request,env)
         ?? await handleNotesRequest(request,env,ctx)
         ?? await handleInvitationsRequest(request,env)

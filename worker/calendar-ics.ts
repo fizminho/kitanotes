@@ -1,8 +1,10 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { readJsonBody } from "./notes.ts";
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
+import { sendPushToUser } from "./push.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
+type CalendarEnv = AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string};
 type Role = "owner" | "editor" | "viewer";
 type IcsEvent = { uid:string; title:string; description:string; start:string; end:string; timezone:string; allDay:boolean };
 function json(data:unknown,status=200,headers:Record<string,string>={}):Response { return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...headers}}); }
@@ -51,7 +53,7 @@ function eventIcs(row:{id:string;title:string;description:string;starts_at_utc:s
 }
 const STATE_SLUGS:Record<string,string>={johor:"jhr",kedah:"kdh",kelantan:"ktn",melaka:"mlk","negeri-sembilan":"nsn",pahang:"phg",perak:"prk",perlis:"pls","pulau-pinang":"png",sabah:"sbh",sarawak:"swk",selangor:"sgr",terengganu:"trg","kuala-lumpur":"kul",labuan:"lbn",putrajaya:"pjy"};
 function validState(value:string|null):string|null{return value&&Object.hasOwn(STATE_SLUGS,value)?value:null;}
-async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
+async function importIcs(request:Request,db:Db,userId:string,env:CalendarEnv,ctx?:ExecutionContext):Promise<Response>{
  if(!sameOrigin(request))return json({error:"CSRF_ORIGIN_REJECTED"},403);const body=await readCalendarImportBody(request);if(!body||typeof body.ics!=="string"||body.ics.length>2_000_000)return json({error:"INVALID_ICS_FILE"},400);
  const workspaceId=typeof body.workspaceId==="string"?body.workspaceId:"";if(!workspaceId||!(["owner","editor"].includes((await roleFor(db,workspaceId,userId))??"")))return json({error:"WORKSPACE_FORBIDDEN"},403);
  if(!body.ics.includes("BEGIN:VCALENDAR"))return json({error:"INVALID_ICS_FILE"},400);const parsed=parseIcs(body.ics);if(!parsed.length)return json({error:"NO_SUPPORTED_EVENTS"},400);
@@ -59,6 +61,13 @@ async function importIcs(request:Request,db:Db,userId:string):Promise<Response>{
  for(const item of events){const existing=await db.prepare("SELECT local_event_id FROM calendar_event_imports WHERE workspace_id=? AND source_uid=?").bind(workspaceId,item.uid).first<{local_event_id:string}>();
   if(existing){const changed=await db.prepare("UPDATE calendar_events SET title=?,description=?,starts_at_utc=?,ends_at_utc=?,timezone=?,all_day=?,updated_at=?,version=version+1 WHERE id=? AND workspace_id=? AND deleted_at IS NULL").bind(item.title,item.description,item.start,item.end,item.timezone,item.allDay?1:0,now,existing.local_event_id,workspaceId).run();if(Number((changed as {meta?:{changes?:number}}).meta?.changes??0)>0)updated++;else skipped++;}
   else{const id=crypto.randomUUID();await db.prepare("INSERT INTO calendar_events (id,workspace_id,title,description,starts_at_utc,ends_at_utc,timezone,all_day,created_by_user_id,updated_by_user_id,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)").bind(id,workspaceId,item.title,item.description,item.start,item.end,item.timezone,item.allDay?1:0,userId,userId,now,now).run();await db.prepare("INSERT INTO calendar_event_imports (workspace_id,source_uid,local_event_id,created_at,updated_at) VALUES (?,?,?,?,?)").bind(workspaceId,item.uid,id,now,now).run();imported++;}
+ }
+ if(imported+updated>0){
+  try{
+   const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
+   const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it.",url:"/",tag:"calendar-import-"+crypto.randomUUID()},"event",{workspaceId,important:false})));
+   if(ctx)ctx.waitUntil(task);else await task;
+  }catch{/* Calendar import must succeed even when best-effort push delivery is unavailable. */}
  }
  return json({ok:true,imported,updated,skipped,ignored:parsed.length-events.length});
 }
@@ -212,7 +221,7 @@ export async function syncCalendarHolidayData(db:Db,now=new Date()):Promise<{sta
  return{states:stateEntries.length,publicEvents,schoolEvents,failedStates};
 }
 
-export async function handleCalendarIcsRequest(request:Request,env:AuthEnv):Promise<Response|null>{
+export async function handleCalendarIcsRequest(request:Request,env:CalendarEnv,ctx?:ExecutionContext):Promise<Response|null>{
  const url=new URL(request.url);
  if(url.pathname==="/api/calendar/holidays"&&request.method==="GET")return holidays(request,env.DB);
  if(!url.pathname.startsWith("/api/calendar/ics/")&&url.pathname!=="/api/calendar/preferences")return null;
@@ -229,7 +238,7 @@ export async function handleCalendarIcsRequest(request:Request,env:AuthEnv):Prom
   await env.DB.prepare("INSERT INTO user_calendar_preferences (user_id,holiday_state,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET holiday_state=excluded.holiday_state,updated_at=excluded.updated_at").bind(user.id,state,new Date().toISOString()).run();
   return json({holidayState:state});
  }
- if(url.pathname==="/api/calendar/ics/import"&&request.method==="POST")return importIcs(request,env.DB,user.id);
+ if(url.pathname==="/api/calendar/ics/import"&&request.method==="POST")return importIcs(request,env.DB,user.id,env,ctx);
  if(url.pathname==="/api/calendar/ics/export"&&request.method==="GET")return exportIcs(request,env.DB,user.id);
  return json({error:"METHOD_NOT_ALLOWED"},405);
 }
