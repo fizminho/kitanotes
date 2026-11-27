@@ -24,7 +24,18 @@ else:
     raise SystemExit("Duplicate legacy personal workspace was not rejected")
 
 for migration_path in visibility_migrations:
+    if migration_path.name == "0030_detailed_notification_default.sql":
+        # Seed legacy per-workspace preferences immediately before the rename migration.
+        db.execute("INSERT INTO workspace_notification_preferences (user_id,workspace_id,mode,updated_at) VALUES ('u1','w1','all','before-migration')")
+        db.execute("INSERT INTO workspace_notification_preferences (user_id,workspace_id,mode,updated_at) VALUES ('u2','w2','important','before-migration')")
+        db.execute("INSERT INTO workspace_notification_preferences (user_id,workspace_id,mode,updated_at) VALUES ('u1','w2','mute','before-migration')")
     db.executescript(migration_path.read_text(encoding="utf-8"))
+
+migrated_modes = db.execute("SELECT user_id,workspace_id,mode FROM workspace_notification_preferences ORDER BY user_id,workspace_id").fetchall()
+if migrated_modes != [("u1", "w1", "detailed"), ("u1", "w2", "mute"), ("u2", "w2", "important")]:
+    raise SystemExit(f"Workspace notification preference migration produced unexpected rows: {migrated_modes}")
+if db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='workspace_notification_preferences'").fetchone()[0].find("'detailed'") < 0:
+    raise SystemExit("Detailed is not the default workspace notification preference")
 
 workspace_rows = db.execute("SELECT id,workspace_type,visibility FROM workspaces ORDER BY id").fetchall()
 if workspace_rows != [("w1", "shared", "private"), ("w2", "shared", "shared")]:

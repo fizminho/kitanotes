@@ -12,7 +12,7 @@ const migrations=[
  "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
  "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
  "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
- "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql"
+ "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0023_workspace_notification_preferences.sql","0030_detailed_notification_default.sql"
 ];
 class D1TestDatabase{
  constructor(){this.sqlite=new DatabaseSync(":memory:");this.sqlite.exec("PRAGMA foreign_keys=ON");for(const file of migrations)this.sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));}
@@ -97,5 +97,17 @@ test("workspace notifications are hidden after membership is revoked",async()=>{
   assert.deepEqual(result.notifications.map(item=>item.id),["n2"]);
   assert.equal(result.unreadCount,1);
   assert.deepEqual(result.unreadByWorkspace,{});
+ }finally{db.close();}
+});
+
+test("legacy all workspace preference is stored as detailed",async()=>{
+ const {db,env,tokens}=seed();
+ try{
+  const now=new Date().toISOString();
+  db.sqlite.prepare("INSERT INTO workspaces (id,name,owner_user_id,workspace_type,visibility,created_at,updated_at) VALUES ('w1','Workspace','u1','shared','shared',?,?)").run(now,now);
+  db.sqlite.prepare("INSERT INTO workspace_members (workspace_id,user_id,role,joined_at) VALUES ('w1','u1','owner',?)").run(now);
+  const response=await handleNotificationsRequest(request("/api/notifications/workspaces/w1",tokens.u1,"PUT",{mode:"all"}),env);
+  assert.equal(response.status,200);
+  assert.equal(db.sqlite.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id='u1' AND workspace_id='w1'").get().mode,"detailed");
  }finally{db.close();}
 });
