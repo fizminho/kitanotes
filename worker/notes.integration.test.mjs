@@ -158,7 +158,7 @@ test("category management is workspace-scoped and viewers cannot create categori
 test("note delete is soft and removes the note from normal reads", async () => {
   const { db, env, tokens } = seed();
   try {
-    const deleted = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "DELETE", {}), env);
+    const deleted = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "DELETE", { version: 1 }), env);
     assert.equal(deleted.status, 200);
     const detail = await handleNotesRequest(request("/api/notes/n1", tokens.u1), env);
     assert.equal(detail.status, 404);
@@ -196,5 +196,35 @@ test("viewer cannot delete a shared note and removed members immediately lose ac
     assert.equal(removedMemberUpdate.status, 404);
     const removedMemberDelete = await handleNotesRequest(request("/api/notes/n1", tokens.u2, "DELETE", {}), env);
     assert.equal(removedMemberDelete.status, 404);
+  } finally { db.close(); }
+});
+
+
+test("stale note deletion is rejected and returns the latest note", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    const newer = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "PATCH", { title: "New title", version: 1 }), env);
+    assert.equal(newer.status, 200);
+    const staleDelete = await handleNotesRequest(request("/api/notes/n1", tokens.u1, "DELETE", { version: 1 }), env);
+    assert.equal(staleDelete.status, 409);
+    const body = await staleDelete.json();
+    assert.equal(body.error, "VERSION_CONFLICT");
+    assert.equal(body.latestNote.title, "New title");
+    assert.equal(body.latestNote.version, 2);
+    assert.equal(db.sqlite.prepare("SELECT deleted_at FROM notes WHERE id='n1'").get().deleted_at, null);
+  } finally { db.close(); }
+});
+
+test("note update conflict includes the latest full note snapshot", async () => {
+  const { db, env, tokens } = seed();
+  try {
+    await handleNotesRequest(request("/api/notes/n1", tokens.u1, "PATCH", { title: "Latest title", content: "Latest content", version: 1 }), env);
+    const conflict = await handleNotesRequest(request("/api/notes/n1", tokens.u2, "PATCH", { title: "Stale title", content: "Stale content", version: 1 }), env);
+    assert.equal(conflict.status, 409);
+    const body = await conflict.json();
+    assert.equal(body.error, "VERSION_CONFLICT");
+    assert.equal(body.latestNote.title, "Latest title");
+    assert.equal(body.latestNote.content, "Latest content");
+    assert.equal(body.latestNote.version, 2);
   } finally { db.close(); }
 });
