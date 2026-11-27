@@ -97,7 +97,7 @@ Some SQL triggers create inbox records without a corresponding push call. Always
 
 1. **Global switch:** `push_enabled` must be enabled. If no preference row exists, the Worker uses enabled defaults.
 2. **Activity switches:** reminder due/change, new shared note, shared-note update/delete, event and workspace pushes each have their own user preference.
-3. **Workspace mode:** each workspace can be set to `all`, `important` or `mute`. Note and event changes are marked non-important. Due reminders and workspace membership/access changes are marked important.
+3. **Workspace mode:** each workspace can be set to `all`, `important` or `mute`. Note and event changes are marked non-important. Due reminders, reminder edits/cancellations and workspace membership/access changes are marked important.
 4. **Quiet hours:** activity pushes are suppressed during the user's quiet hours in their IANA timezone. Default timezone is `Asia/Kuala_Lumpur`. Overnight windows are supported. Suppressed pushes are not queued for later delivery.
 5. **Test exception:** test pushes bypass activity switches and quiet hours, but still require the global push switch.
 6. **Best-effort delivery:** push delivery failures do not roll back the user action. The in-app inbox remains the source of truth where an inbox entry is created.
