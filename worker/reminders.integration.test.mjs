@@ -72,6 +72,17 @@ test("reminder listing is restricted to workspace membership and current user's 
   }finally{db.close();}
 });
 
+test("reminder deep-link lookup is available only to current workspace members",async()=>{
+  const {db,env,tokens}=seed();
+  try{
+    const member=await handleRemindersRequest(request("/api/reminders/r1",tokens.u2),env);
+    assert.equal(member.status,200);
+    assert.equal((await member.json()).reminder.id,"r1");
+    const outsider=await handleRemindersRequest(request("/api/reminders/r1",tokens.u3),env);
+    assert.equal(outsider.status,404);
+  }finally{db.close();}
+});
+
 test("viewer can read reminders but cannot cancel them; outsider cannot cancel by ID",async()=>{
   const {db,env,tokens}=seed();
   try{
