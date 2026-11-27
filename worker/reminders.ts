@@ -39,9 +39,11 @@ async function linkedResourceExists(db:Db,workspaceId:string,eventId:string|null
 }
 function dto(row:ReminderRow){return{id:row.id,workspaceId:row.workspace_id,eventId:row.event_id,noteId:row.note_id,title:row.title,dueAt:row.due_at_utc,timezone:row.timezone,status:row.status,createdBy:row.created_by_user_id,createdAt:row.created_at,updatedAt:row.updated_at,deliveredAt:row.delivered_at,cancelledAt:row.cancelled_at};}
 async function notifyReminderChange(db:Db,env:ReminderEnv,workspaceId:string,actorUserId:string,ctx?:ExecutionContext):Promise<void>{
-  const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,actorUserId).all<{user_id:string}>();
-  const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it.",url:"/",tag:"reminder-change-"+crypto.randomUUID()},"reminder_update",{workspaceId,important:true})));
-  if(ctx)ctx.waitUntil(task);else await task;
+  try{
+    const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,actorUserId).all<{user_id:string}>();
+    const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it.",url:"/",tag:"reminder-change-"+crypto.randomUUID()},"reminder_update",{workspaceId,important:true})));
+    if(ctx)ctx.waitUntil(task);else await task;
+  }catch{/* Reminder changes must not fail when best-effort push delivery is unavailable. */}
 }
 export async function handleRemindersRequest(request:Request,env:ReminderEnv,ctx?:ExecutionContext):Promise<Response|null>{
   const url=new URL(request.url);
