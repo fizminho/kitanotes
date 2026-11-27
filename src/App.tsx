@@ -174,7 +174,7 @@ function notificationPresentation(notification:Notification):{kind:string;title:
 }
 
 type CalendarItem = CalendarEvent & {holiday?:boolean;holidayType?:"public"|"school"};
-type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string};
+type NotificationPreferences = {pushEnabled:boolean;reminderPushEnabled:boolean;sharedNotePushEnabled:boolean;sharedNoteUpdatePushEnabled:boolean;eventPushEnabled:boolean;workspacePushEnabled:boolean;quietHoursStart:string|null;quietHoursEnd:string|null;timezone:string;pushPreviewMode:"detailed"|"generic"};
 type AiDraft = {
   summary:string; timezone:string;
   note:{title:string;content:string};
@@ -342,7 +342,7 @@ export default function App() {
   const [pushSubscribed,setPushSubscribed]=useState(false);
   const [pushBusy,setPushBusy]=useState(false);
   const [pushError,setPushError]=useState("");
-  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});
+  const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});
   const [notificationPrefsLoading,setNotificationPrefsLoading]=useState(false);
   const [notificationPrefsSaving,setNotificationPrefsSaving]=useState(false);
   const [notificationPrefsError,setNotificationPrefsError]=useState("");
@@ -490,14 +490,15 @@ export default function App() {
 
   useEffect(()=>{
     if(deepLinkHandled.current||workspaces.length===0)return;
-    const params=new URLSearchParams(window.location.search),workspaceId=params.get("workspaceId"),noteId=params.get("noteId"),eventId=params.get("eventId");
-    if(!workspaceId&&!noteId&&!eventId)return;
+    const params=new URLSearchParams(window.location.search),workspaceId=params.get("workspaceId"),noteId=params.get("noteId"),eventId=params.get("eventId"),reminderId=params.get("reminderId");
+    if(!workspaceId&&!noteId&&!eventId&&!reminderId)return;
     deepLinkHandled.current=true;
     if(workspaceId&&!workspaces.some(item=>item.id===workspaceId)){window.history.replaceState({},"","/");pushToast("That workspace is no longer available.","error");return;}
     if(workspaceId)setActiveWorkspaceId(workspaceId);
     window.history.replaceState({},"","/");
     if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(workspaceId&&(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId))return;if(!workspaceId&&workspaces.some(item=>item.id===result.note.workspaceId))setActiveWorkspaceId(result.note.workspaceId);setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
     if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
+    if(reminderId){setView("calendar");void fetch("/api/reminders/"+encodeURIComponent(reminderId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Reminder unavailable");const result=await response.json() as {reminder:Reminder};setCalendarCursor(new Date(result.reminder.dueAt));setCalendarFocusDate(result.reminder.dueAt.slice(0,10));pushToast("Reminder: "+result.reminder.title);}).catch(()=>pushToast("This reminder is no longer available.","error"));}
   },[workspaces,pushToast]);
 
   useEffect(()=>{setViewingNote(current=>current&&current.workspaceId!==activeWorkspaceId?null:current);},[activeWorkspaceId]);
@@ -745,7 +746,7 @@ export default function App() {
   },[]);
 
   useEffect(()=>{
-    if(!user){setNotificationPrefs({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur"});return;}
+    if(!user){setNotificationPrefs({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});return;}
     let active=true;setNotificationPrefsLoading(true);
     fetch("/api/notifications/preferences",{credentials:"same-origin"}).then(async response=>{
       if(!response.ok)throw new Error("Unable to load notification preferences.");
@@ -1882,6 +1883,9 @@ export default function App() {
               <div className="notification-settings-content">
                 {notificationPrefsLoading?<p>Loading preferences…</p>:<>
                   <p className="notification-settings-note">Your in-app inbox always keeps notifications. These settings only control push alerts.</p>
+                  {notificationPrefs.pushPreviewMode==="generic"&&!localStorage.getItem("kitanotes-preview-prompt-dismissed:"+user.id)&&<div className="notification-settings-note"><strong>Want more useful alerts?</strong> Show who changed a note and which event moved. <button className="text-action" onClick={()=>{setNotificationPrefs(value=>({...value,pushPreviewMode:"detailed"}));setNotificationPrefsSaved(false);}}>Switch to detailed</button> <button className="text-action" onClick={()=>localStorage.setItem("kitanotes-preview-prompt-dismissed:"+user.id,"1")}>Not now</button></div>}
+                  <label className="timezone-setting">Notification details<select className="invite-input" value={notificationPrefs.pushPreviewMode} onChange={event=>{setNotificationPrefs(value=>({...value,pushPreviewMode:event.target.value as "detailed"|"generic"}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}><option value="detailed">Show note titles, event names and who made changes</option><option value="generic">Hide details (shows generic text on your lock screen)</option></select></label>
+                  <p className="notification-settings-note">Detailed notification text may be visible to anyone who can see your locked screen.</p>
                   <label><input type="checkbox" checked={notificationPrefs.pushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,pushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}}/> Enable push delivery</label>
                   <label><input type="checkbox" checked={notificationPrefs.reminderPushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,reminderPushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> Event and reminder alerts</label>
                   <label><input type="checkbox" checked={notificationPrefs.sharedNotePushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,sharedNotePushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}/> New shared-note alerts</label>
