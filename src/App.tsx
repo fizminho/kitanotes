@@ -221,6 +221,7 @@ export default function App() {
   const [noteConflict,setNoteConflict]=useState<NoteConflict|null>(null);
   const [remoteNoteUpdate,setRemoteNoteUpdate]=useState<Note|null>(null);
   const [remoteNoteDeleted,setRemoteNoteDeleted]=useState(false);
+  const skipNoteDraftPersistRef=useRef<string|null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [manageTab, setManageTab] = useState<ManageTab>("people");
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -594,7 +595,9 @@ export default function App() {
 
   useEffect(()=>{
     if(!composerOpen||!user||!activeWorkspaceId)return;
-    try{localStorage.setItem(noteDraftStorageKey(user.id,editingNote?.workspaceId??activeWorkspaceId,editingNote?.id??null),JSON.stringify({title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null,updatedAt:Date.now()}));}catch{/* local drafts are best-effort */}
+    const key=noteDraftStorageKey(user.id,editingNote?.workspaceId??activeWorkspaceId,editingNote?.id??null);
+    if(skipNoteDraftPersistRef.current===key){skipNoteDraftPersistRef.current=null;try{localStorage.removeItem(key);}catch{/* ignore storage errors */}return;}
+    try{localStorage.setItem(key,JSON.stringify({title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null,updatedAt:Date.now()}));}catch{/* local drafts are best-effort */}
   },[composerOpen,user,activeWorkspaceId,editingNote?.id,editingNote?.workspaceId,draftTitle,draftContent,selectedCategoryId]);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem("kitanotes-theme", theme); } catch { /* ignore */ } }, [theme]);
@@ -941,8 +944,8 @@ export default function App() {
         return;
       }
       if (response.status === 404 || response.status === 410) {
-        setRemoteNoteDeleted(true);
-        throw new Error("This note was deleted before the checklist change could be saved. Your change is kept in the conflict panel.");
+        setDraftTitle(viewingNote.title);setDraftContent(lines.join("\\n"));setSelectedCategoryId(viewingNote.categoryId??"");setEditingNote(viewingNote);setRemoteNoteDeleted(true);setComposerOpen(true);setViewingNote(null);
+        throw new Error("This note was deleted before the checklist change could be saved. Your checklist change was moved to a recovery draft.");
       }
       if (!response.ok || !result.note) {
         throw new Error(result.error === "VERSION_CONFLICT" ? "The latest version could not be loaded. Your checklist change was not saved." : "Tak dapat kemas kini checklist.");
@@ -964,7 +967,8 @@ export default function App() {
     setViewingNote(current=>current?.id===conflict.latest.id?conflict.latest:current);
     if(conflict.source==="editor"){
       setDraftTitle(conflict.latest.title);setDraftContent(conflict.latest.content);setSelectedCategoryId(conflict.latest.categoryId??"");
-      setEditingNote(conflict.latest);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);clearNoteDraft(conflict.latest);
+      setEditingNote(conflict.latest);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);
+      if(user)skipNoteDraftPersistRef.current=noteDraftStorageKey(user.id,conflict.latest.workspaceId,conflict.latest.id);
     }
     setNoteConflict(null);
   }
@@ -1030,7 +1034,9 @@ export default function App() {
         method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" },
         body: JSON.stringify({ version: note.version, archived })
       });
-      if (!response.ok) throw new Error(archived ? "Unable to archive this note." : "Unable to restore this note.");
+      const result=await response.json() as {note?:Note;latestNote?:Note;error?:string};
+      if(response.status===409&&result.latestNote){setNotes(current=>current.map(item=>item.id===note.id?result.latestNote!:item));throw new Error("Someone saved a newer version. The latest note has been refreshed; try the action again.");}
+      if (!response.ok || !result.note) throw new Error(archived ? "Unable to archive this note." : "Unable to restore this note.");
       setNotes(current => current.filter(item => item.id !== note.id));
       pushToast(archived ? "Note archived" : "Note restored");
     } catch (error) {
@@ -1047,7 +1053,9 @@ export default function App() {
       const response = await fetch("/api/notes/" + encodeURIComponent(note.id), {
         method: "DELETE", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: note.version })
       });
-      if (!response.ok) throw new Error("Unable to delete this note.");
+      const result=await response.json() as {latestNote?:Note;error?:string};
+      if(response.status===409&&result.latestNote){setNotes(current=>current.map(item=>item.id===note.id?result.latestNote!:item));throw new Error("Someone saved a newer version. The latest note has been refreshed; review it before deleting.");}
+      if (!response.ok) throw new Error(result.error==="NOTE_DELETED"?"This note was already deleted by another member.":"Unable to delete this note.");
       setNotes(current => current.filter(item => item.id !== note.id));
       pushToast("Note moved to Trash. Restore it within 30 days.");
     } catch (error) {
