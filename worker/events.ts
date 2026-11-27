@@ -29,7 +29,6 @@ function cleanText(value:unknown,max:number,allowEmpty=false):string|null {
   const result=value.trim();
   return !allowEmpty && !result?null:result;
 }
-function pushDescription(value:string):string { return value.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,140) || "No description was added."; }
 function changes(result:unknown):number { return Number((result as {meta?:{changes?:number}})?.meta?.changes??0); }
 async function roleFor(db:Db,workspaceId:string,userId:string):Promise<Role|null> {
   const row=await db.prepare("SELECT role FROM workspace_members WHERE workspace_id=? AND user_id=?").bind(workspaceId,userId).first<{role:Role}>();
@@ -94,9 +93,15 @@ async function createEvent(request:Request,env:EventEnv,userId:string,ctx?:Execu
       .bind(id,workspaceId,title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,userId,now,now).run();
   } catch { return json({error:"EVENT_CREATE_FAILED"},400); }
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.created','event',?,'{}',?)").bind(crypto.randomUUID(),workspaceId,userId,id,now).run();
+  try{
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,userId).all<{user_id:string}>();
-  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("New event: "+title).slice(0,80),body:pushDescription(description),url:"/?workspaceId="+encodeURIComponent(workspaceId)+"&eventId="+encodeURIComponent(id),tag:"event-created-"+id},"event",{workspaceId,important:false})));
+  const [actor,workspaceName]=await Promise.all([
+    db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>(),
+    db.prepare("SELECT name FROM workspaces WHERE id=?").bind(workspaceId).first<{name:string}>()
+  ]);
+  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{kind:"event",subtype:"created",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:title,when:starts,workspaceId,resourceType:"event",resourceId:id,url:"/?workspaceId="+encodeURIComponent(workspaceId)+"&eventId="+encodeURIComponent(id),tag:"event:"+id,important:false})));
   if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+  }catch{/* Push is best-effort and must not block the mutation. */}
   const row=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name,ln.title AS linked_note_title FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id LEFT JOIN notes ln ON ln.id=e.linked_note_id AND ln.workspace_id=e.workspace_id AND ln.deleted_at IS NULL WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:row?dto(row):null},201);
 }
@@ -116,9 +121,15 @@ async function eventById(request:Request,env:EventEnv,userId:string,id:string,ct
     if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
     await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE event_id=? AND status='pending'").bind(now,now,id).run();
     await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.deleted','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
+    try{
     const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
-    const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Cancelled: "+row.title).slice(0,80),body:("This calendar event was deleted. "+pushDescription(row.description)).slice(0,160),url:"/?workspaceId="+encodeURIComponent(row.workspace_id),tag:"event-deleted-"+id},"event",{workspaceId:row.workspace_id,important:false})));
+    const [actor,workspaceName]=await Promise.all([
+      db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>(),
+      db.prepare("SELECT name FROM workspaces WHERE id=?").bind(row.workspace_id).first<{name:string}>()
+    ]);
+    const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{kind:"event",subtype:"cancelled",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:row.title,when:row.starts_at_utc,workspaceId:row.workspace_id,resourceType:"event",resourceId:id,url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&eventId="+encodeURIComponent(id),tag:"event:"+id,important:false})));
   if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+  }catch{/* Push is best-effort and must not block the mutation. */}
     return json({ok:true});
   }
   if(request.method!=="PATCH") return json({error:"METHOD_NOT_ALLOWED"},405);
@@ -138,9 +149,16 @@ async function eventById(request:Request,env:EventEnv,userId:string,id:string,ct
     .bind(title,description,starts,ends,timezone,allDay?1:0,linkedNoteId,userId,now,id,version).run();
   if(changes(result)!==1) return json({error:"VERSION_CONFLICT"},409);
   await db.prepare("INSERT INTO activity_events (id,workspace_id,actor_user_id,event_type,target_type,target_id,metadata_json,created_at) VALUES (?,?,?,'event.updated','event',?,'{}',?)").bind(crypto.randomUUID(),row.workspace_id,userId,id,now).run();
+  try{
   const members=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(row.workspace_id,userId).all<{user_id:string}>();
-  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{title:("Updated event: "+title).slice(0,80),body:pushDescription(description),url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&eventId="+encodeURIComponent(id),tag:"event-updated-"+id},"event",{workspaceId:row.workspace_id,important:false})));
+  const [actor,workspaceName]=await Promise.all([
+    db.prepare("SELECT display_name FROM users WHERE id=?").bind(userId).first<{display_name:string|null}>(),
+    db.prepare("SELECT name FROM workspaces WHERE id=?").bind(row.workspace_id).first<{name:string}>()
+  ]);
+  const moved=starts!==row.starts_at_utc;
+  const pushTask=Promise.all(members.results.map(member=>sendPushToUser(db,env,member.user_id,{kind:"event",subtype:moved?"moved":"updated",actor:actor?.display_name,actorId:userId,workspace:workspaceName?.name,itemTitle:title,when:starts,workspaceId:row.workspace_id,resourceType:"event",resourceId:id,url:"/?workspaceId="+encodeURIComponent(row.workspace_id)+"&eventId="+encodeURIComponent(id),tag:"event:"+id,important:false})));
   if(ctx)ctx.waitUntil(pushTask);else await pushTask;
+  }catch{/* Push is best-effort and must not block the mutation. */}
   const updated=await db.prepare("SELECT e.*,cu.display_name AS created_by_name,uu.display_name AS updated_by_name,ln.title AS linked_note_title FROM calendar_events e LEFT JOIN users cu ON cu.id=e.created_by_user_id LEFT JOIN users uu ON uu.id=e.updated_by_user_id LEFT JOIN notes ln ON ln.id=e.linked_note_id AND ln.workspace_id=e.workspace_id AND ln.deleted_at IS NULL WHERE e.id=?").bind(id).first<EventRow>();
   return json({event:updated?dto(updated):null});
 }
