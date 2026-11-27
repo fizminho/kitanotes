@@ -1330,3 +1330,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .conflict-warning{font-size:12px;line-height:1.5;color:var(--muted,#777)}
 @media(max-width:600px){.conflict-composer{width:calc(100% - 20px);max-height:calc(var(--app-visual-height,100dvh) - 12px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));padding:16px}.conflict-comparison{grid-template-columns:1fr}.conflict-preview p{max-height:110px}.conflict-composer footer{display:grid;grid-template-columns:1fr;gap:8px}.conflict-composer footer button{width:100%;min-height:44px;justify-content:center}}
 [data-theme=dark] .conflict-preview{background:#202137}
+
+/* Keep the note editor frame stable when the iOS keyboard opens. */
+@media(max-width:760px){
+  .modal-backdrop:has(.note-composer){
+    inset:0!important;height:100vh!important;max-height:100vh!important;
+    padding:8px 10px max(8px,env(safe-area-inset-bottom,0px))!important;
+  }
+  .modal-backdrop .note-composer{max-height:calc(100vh - 16px - env(safe-area-inset-bottom,0px))!important;}
+  .modal-backdrop .note-composer-body textarea{height:180px!important;min-height:120px!important;max-height:240px!important;}
+}
+.conflict-error{margin:10px 0 0;padding:10px 12px;border:1px solid #efcaca;border-radius:10px;background:#fff5f5;color:#a33d3d;font-size:12px;line-height:1.5;overflow-wrap:anywhere;}
+[data-theme=dark] .conflict-error{border-color:#673b46;background:#321f2a;color:#ffc4cb;}
