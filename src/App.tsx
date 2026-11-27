@@ -219,6 +219,7 @@ export default function App() {
   const [globalSearchLoading,setGlobalSearchLoading]=useState(false);
   const [globalSearchError,setGlobalSearchError]=useState("");
   const [noteConflict,setNoteConflict]=useState<NoteConflict|null>(null);
+  const [conflictSaving,setConflictSaving]=useState(false);
   const [remoteNoteUpdate,setRemoteNoteUpdate]=useState<Note|null>(null);
   const [remoteNoteDeleted,setRemoteNoteDeleted]=useState(false);
   const skipNoteDraftPersistRef=useRef<string|null>(null);
@@ -974,21 +975,46 @@ export default function App() {
     setNoteConflict(null);
   }
   async function keepMineAfterConflict(){
-    if(!noteConflict||saving)return;
-    const conflict=noteConflict;setSaving(true);setNotesError("");
+    if(!noteConflict||conflictSaving)return;
+    const conflict=noteConflict;
+    setConflictSaving(true);
+    setNotesError("");
     try{
-      const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({...conflict.mine,version:conflict.latest.version})});
-      const result=await response.json() as {note?:Note;latestNote?:Note|null;error?:string};
-      if(response.status===409&&result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});return;}
-      if(response.status===404||response.status===410){setRemoteNoteDeleted(true);throw new Error("This note was deleted or access was removed. Your unsaved changes are still available to copy.");}
-      if(!response.ok||!result.note)throw new Error(result.error==="VERSION_CONFLICT"?"A newer version appeared again. Review the latest version before retrying.":"Unable to save your version of this note.");
+      const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{
+        method:"PATCH",credentials:"same-origin",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({...conflict.mine,version:conflict.latest.version})
+      });
+      const result=await response.json().catch(()=>({error:"INVALID_SERVER_RESPONSE"})) as {note?:Note;latestNote?:Note|null;error?:string};
+      if(response.status===409){
+        if(result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});setNotesError("Another edit was saved just now. Review the refreshed version and try again.");}
+        else setNotesError("The note changed again, but the latest version could not be loaded. Close this dialog and reopen the note to refresh it.");
+        return;
+      }
+      if(response.status===404||response.status===410){
+        setRemoteNoteDeleted(true);
+        setNotesError("This note was deleted or access was removed. Your unsaved changes are still available to copy.");
+        return;
+      }
+      if(!response.ok||!result.note){
+        setNotesError(result.error==="FORBIDDEN"?"You no longer have permission to edit this note. Your changes are preserved.":result.error==="INVALID_CATEGORY"?"The selected category is no longer available. Choose a current category before saving.":"Unable to save your version (HTTP "+response.status+"). Your changes are preserved.");
+        return;
+      }
       setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));
       setViewingNote(current=>current?.id===result.note!.id?result.note!:current);
-      clearNoteDraft(result.note);setNoteConflict(null);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);
-      if(conflict.source==="editor"){setEditingNote(null);setComposerOpen(false);pushToast("Your version replaced the newer saved version.");}
-      else{pushToast("Your checklist change was saved.");}
-    }catch(error){setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict.");}
-    finally{setSaving(false);}
+      clearNoteDraft(result.note);
+      setNoteConflict(null);setNotesError("");setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);
+      if(conflict.source==="editor"){
+        setEditingNote(null);setComposerOpen(false);
+        pushToast("Your version replaced the newer saved version.");
+      }else{
+        pushToast("Your checklist change was saved.");
+      }
+    }catch(error){
+      setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict. Your changes are preserved.");
+    }finally{
+      setConflictSaving(false);
+    }
   }
   async function copyMineAndUseLatest(){
     if(!noteConflict)return;
@@ -2133,7 +2159,7 @@ export default function App() {
         </section>
       </div>}
 
-      {noteConflict&&<div className="modal-backdrop conflict-backdrop" role="presentation"><section className="composer conflict-composer" role="dialog" aria-modal="true" aria-labelledby="note-conflict-title"><header><div><span className="eyebrow">EDIT CONFLICT · VERSION {noteConflict.latest.version}</span><h2 id="note-conflict-title">Someone saved a newer version</h2></div></header><p>Another workspace member saved this note at {new Date(noteConflict.latest.updatedAt).toLocaleString()}. Your changes are preserved. Review both versions before choosing.</p><div className="conflict-comparison"><article className="conflict-preview"><strong>Your unsaved version</strong><small>{noteConflict.mine.title} · {categories.find(item=>item.id===noteConflict.mine.categoryId)?.name??"Uncategorised"}</small><p>{noteConflict.mine.content||"No content"}</p></article><article className="conflict-preview latest"><strong>Latest saved version</strong><small>{noteConflict.latest.title} · {noteConflict.latest.categoryName??"Uncategorised"}</small><p>{noteConflict.latest.content||"No content"}</p></article></div><p className="conflict-warning">“Keep my changes” replaces the latest saved title, content and category with your version. This cannot be undone from this screen.</p><footer><button className="secondary-button" onClick={copyMineAndUseLatest} disabled={saving}>Copy my full draft</button><button className="secondary-button" onClick={useLatestNoteConflict} disabled={saving}>Use latest</button><button className="primary-button" onClick={keepMineAfterConflict} disabled={saving}>{saving?"Saving…":"Keep my changes"}</button></footer></section></div>}
+      {noteConflict&&<div className="modal-backdrop conflict-backdrop" role="presentation"><section className="composer conflict-composer" role="dialog" aria-modal="true" aria-labelledby="note-conflict-title"><header><div><span className="eyebrow">EDIT CONFLICT · VERSION {noteConflict.latest.version}</span><h2 id="note-conflict-title">Someone saved a newer version</h2></div></header><p>Another workspace member saved this note at {new Date(noteConflict.latest.updatedAt).toLocaleString()}. Your changes are preserved. Review both versions before choosing.</p><div className="conflict-comparison"><article className="conflict-preview"><strong>Your unsaved version</strong><small>{noteConflict.mine.title} · {categories.find(item=>item.id===noteConflict.mine.categoryId)?.name??"Uncategorised"}</small><p>{noteConflict.mine.content||"No content"}</p></article><article className="conflict-preview latest"><strong>Latest saved version</strong><small>{noteConflict.latest.title} · {noteConflict.latest.categoryName??"Uncategorised"}</small><p>{noteConflict.latest.content||"No content"}</p></article></div><p className="conflict-warning">“Keep my changes” replaces the latest saved title, content and category with your version. This cannot be undone from this screen.</p>{notesError&&<p className="conflict-error" role="alert">{notesError}</p>}<footer><button className="secondary-button" onClick={copyMineAndUseLatest} disabled={conflictSaving}>Copy my full draft</button><button className="secondary-button" onClick={useLatestNoteConflict} disabled={conflictSaving}>Use latest</button><button className="primary-button" onClick={keepMineAfterConflict} disabled={conflictSaving}>{conflictSaving?"Saving…":"Keep my changes"}</button></footer></section></div>}
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
