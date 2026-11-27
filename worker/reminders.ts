@@ -74,7 +74,7 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
     return json({reminder:row?dto(row):null},201);
   }
-  const match=url.pathname.match(/^\\/api\\/reminders\\/([^/]+)$/);
+  const match=url.pathname.match(/^\/api\/reminders\/([^/]+)$/);
   if(match&&request.method==="GET"){
     const id=decodeURIComponent(match[1]);
     const row=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
