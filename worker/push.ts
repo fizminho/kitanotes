@@ -8,16 +8,7 @@ type StoredSubscription = { id:string; endpoint:string; subscription_json:string
 
 type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string;push_preview_mode:"detailed"|"generic"};
 
-export function safePushMessage(kind:PushKind):{title:string;body:string} {
- switch(kind){
-  case "reminder": return {title:"Reminder due",body:"A reminder is due. Open KitaNotes to review it."};
-  case "shared_note": return {title:"New shared note",body:"Someone added a note in a shared workspace. Open KitaNotes to view it."};
-  case "shared_note_update": return {title:"Shared note changed",body:"A shared note was updated or removed. Open KitaNotes to review it."};
-  case "event": return {title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it."};
-  case "workspace": return {title:"Workspace activity",body:"Your workspace membership or permissions changed. Open KitaNotes to review it."};
-  default: return {title:"KitaNotes",body:"Push notifications are connected on this device."};
- }
-}
+export { safePushMessage } from "./push-content.ts";
 
 export function isWithinQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
  if(!row.quiet_hours_start||!row.quiet_hours_end)return false;
