@@ -193,7 +193,7 @@ type Note = {
   categoryName: string | null; createdBy: string; createdByName:string|null; updatedBy:string|null; updatedByName:string|null; version: number; createdAt: string; updatedAt: string; archivedAt: string | null; deletedAt?:string|null;
 };
 function noteDraftStorageKey(userId:string,workspaceId:string,noteId:string|null){return "kitanotes-note-draft:"+userId+":"+workspaceId+":"+(noteId??"new");}
-type NoteConflict = {latest:Note;mine:{title:string;content:string;categoryId:string|null}};
+type NoteConflict = {latest:Note;mine:{title:string;content:string;categoryId:string|null};source:"editor"|"checklist"};
 
 export default function App() {
   // Track the iPhone's visual viewport so bottom-sheet modals resize when the keyboard opens.
@@ -935,9 +935,17 @@ export default function App() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ version: viewingNote.version, content: lines.join("\n") })
       });
-      const result = await response.json() as { note?: Note; error?: string };
+      const result = await response.json() as { note?: Note; error?: string; latestNote?: Note | null };
+      if (response.status === 409 && result.latestNote) {
+        setNoteConflict({ latest: result.latestNote, mine: { title: viewingNote.title, content: lines.join("\n"), categoryId: viewingNote.categoryId }, source: "checklist" });
+        return;
+      }
+      if (response.status === 404 || response.status === 410) {
+        setRemoteNoteDeleted(true);
+        throw new Error("This note was deleted before the checklist change could be saved. Your change is kept in the conflict panel.");
+      }
       if (!response.ok || !result.note) {
-        throw new Error(result.error === "VERSION_CONFLICT" ? "Nota ini telah berubah di tempat lain. Refresh dan cuba lagi." : "Tak dapat kemas kini checklist.");
+        throw new Error(result.error === "VERSION_CONFLICT" ? "The latest version could not be loaded. Your checklist change was not saved." : "Tak dapat kemas kini checklist.");
       }
       setViewingNote(result.note);
       setNotes(current => current.map(note => note.id === result.note!.id ? result.note! : note));
@@ -948,17 +956,44 @@ export default function App() {
     }
   }
 
-  function useLatestNoteConflict(){if(!noteConflict)return;setDraftTitle(noteConflict.latest.title);setDraftContent(noteConflict.latest.content);setSelectedCategoryId(noteConflict.latest.categoryId??"");setEditingNote(noteConflict.latest);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);setNoteConflict(null);}
-  async function keepMineAfterConflict(){
-    if(!noteConflict||saving)return;const conflict=noteConflict;setSaving(true);
-    try{const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({...conflict.mine,version:conflict.latest.version})});const result=await response.json() as {note?:Note;latestNote?:Note};
-      if(response.status===409&&result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});return;}
-      if(!response.ok||!result.note)throw new Error("Unable to save your version of this note.");
-      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));setViewingNote(current=>current?.id===result.note!.id?result.note!:current);setEditingNote(null);setComposerOpen(false);setNoteConflict(null);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);pushToast("Your version was saved.");
-    }catch(error){setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict.");}finally{setSaving(false);}
+  function clearNoteDraft(note:Note){if(!user)return;try{localStorage.removeItem(noteDraftStorageKey(user.id,note.workspaceId,note.id));}catch{/* ignore storage errors */}}
+  function useLatestNoteConflict(){
+    if(!noteConflict)return;
+    const conflict=noteConflict;
+    setNotes(current=>current.map(item=>item.id===conflict.latest.id?conflict.latest:item));
+    setViewingNote(current=>current?.id===conflict.latest.id?conflict.latest:current);
+    if(conflict.source==="editor"){
+      setDraftTitle(conflict.latest.title);setDraftContent(conflict.latest.content);setSelectedCategoryId(conflict.latest.categoryId??"");
+      setEditingNote(conflict.latest);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);clearNoteDraft(conflict.latest);
+    }
+    setNoteConflict(null);
   }
-  async function copyMineAndUseLatest(){if(!noteConflict)return;try{await navigator.clipboard.writeText(noteConflict.mine.content);pushToast("Your unsaved text was copied.");}catch{pushToast("Clipboard unavailable. Copy your text before choosing Use theirs.","error");return;}useLatestNoteConflict();}
-
+  async function keepMineAfterConflict(){
+    if(!noteConflict||saving)return;
+    const conflict=noteConflict;setSaving(true);setNotesError("");
+    try{
+      const response=await fetch("/api/notes/"+encodeURIComponent(conflict.latest.id),{method:"PATCH",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({...conflict.mine,version:conflict.latest.version})});
+      const result=await response.json() as {note?:Note;latestNote?:Note|null;error?:string};
+      if(response.status===409&&result.latestNote){setNoteConflict({...conflict,latest:result.latestNote});return;}
+      if(response.status===404||response.status===410){setRemoteNoteDeleted(true);throw new Error("This note was deleted or access was removed. Your unsaved changes are still available to copy.");}
+      if(!response.ok||!result.note)throw new Error(result.error==="VERSION_CONFLICT"?"A newer version appeared again. Review the latest version before retrying.":"Unable to save your version of this note.");
+      setNotes(current=>current.map(item=>item.id===result.note!.id?result.note!:item));
+      setViewingNote(current=>current?.id===result.note!.id?result.note!:current);
+      clearNoteDraft(result.note);setNoteConflict(null);setRemoteNoteUpdate(null);setRemoteNoteDeleted(false);
+      if(conflict.source==="editor"){setEditingNote(null);setComposerOpen(false);pushToast("Your version replaced the newer saved version.");}
+      else{pushToast("Your checklist change was saved.");}
+    }catch(error){setNotesError(error instanceof Error?error.message:"Unable to resolve this conflict.");}
+    finally{setSaving(false);}
+  }
+  async function copyMineAndUseLatest(){
+    if(!noteConflict)return;
+    const conflict=noteConflict;
+    const category=categories.find(item=>item.id===conflict.mine.categoryId)?.name??"Uncategorised";
+    const text="Title: "+conflict.mine.title+"\nCategory: "+category+"\n\n"+conflict.mine.content;
+    try{await navigator.clipboard.writeText(text);pushToast("Your title, category and content were copied.");}
+    catch{pushToast("Clipboard unavailable. Your draft remains open; copy it before choosing Use latest.","error");return;}
+    useLatestNoteConflict();
+  }
   async function saveNote() {
     if (!draftTitle.trim() || saving) return;
     setSaving(true);
@@ -973,7 +1008,7 @@ export default function App() {
           : { title: draftTitle, content: draftContent, categoryId: selectedCategoryId || null, workspaceId: activeWorkspaceId })
       });
       const result = await response.json() as { note?: Note; error?: string; latestNote?:Note };
-      if(response.status===409&&result.latestNote){setNoteConflict({latest:result.latestNote,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null}});return;}
+      if(response.status===409&&result.latestNote){setNoteConflict({latest:result.latestNote,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null},source:"editor"});return;}
       if (!response.ok || !result.note) throw new Error(result.error === "VERSION_CONFLICT" ? "This note changed elsewhere. Refresh and try again." : "Unable to save this note.");
       setNotes(current => editingNote
         ? current.map(note => note.id === result.note!.id ? result.note! : note)
@@ -2088,14 +2123,14 @@ export default function App() {
         </section>
       </div>}
 
-      {noteConflict&&<div className="modal-backdrop" role="presentation"><section className="composer conflict-composer" role="dialog" aria-modal="true" aria-labelledby="note-conflict-title"><header><div><span className="eyebrow">EDIT CONFLICT</span><h2 id="note-conflict-title">This note changed elsewhere</h2></div></header><p>Someone saved a newer version at {new Date(noteConflict.latest.updatedAt).toLocaleString()}. Your unsaved text is still here. Choose how to continue.</p><div className="conflict-preview"><strong>Latest saved version</strong><p>{noteConflict.latest.content.slice(0,320)||"No content"}</p></div><footer><button className="secondary-button" onClick={copyMineAndUseLatest} disabled={saving}>Copy mine and use theirs</button><button className="secondary-button" onClick={useLatestNoteConflict} disabled={saving}>Use theirs</button><button className="primary-button" onClick={keepMineAfterConflict} disabled={saving}>{saving?"Saving…":"Keep mine"}</button></footer></section></div>}
+      {noteConflict&&<div className="modal-backdrop conflict-backdrop" role="presentation"><section className="composer conflict-composer" role="dialog" aria-modal="true" aria-labelledby="note-conflict-title"><header><div><span className="eyebrow">EDIT CONFLICT · VERSION {noteConflict.latest.version}</span><h2 id="note-conflict-title">Someone saved a newer version</h2></div></header><p>Another workspace member saved this note at {new Date(noteConflict.latest.updatedAt).toLocaleString()}. Your changes are preserved. Review both versions before choosing.</p><div className="conflict-comparison"><article className="conflict-preview"><strong>Your unsaved version</strong><small>{noteConflict.mine.title} · {categories.find(item=>item.id===noteConflict.mine.categoryId)?.name??"Uncategorised"}</small><p>{noteConflict.mine.content||"No content"}</p></article><article className="conflict-preview latest"><strong>Latest saved version</strong><small>{noteConflict.latest.title} · {noteConflict.latest.categoryName??"Uncategorised"}</small><p>{noteConflict.latest.content||"No content"}</p></article></div><p className="conflict-warning">“Keep my changes” replaces the latest saved title, content and category with your version. This cannot be undone from this screen.</p><footer><button className="secondary-button" onClick={copyMineAndUseLatest} disabled={saving}>Copy my full draft</button><button className="secondary-button" onClick={useLatestNoteConflict} disabled={saving}>Use latest</button><button className="primary-button" onClick={keepMineAfterConflict} disabled={saving}>{saving?"Saving…":"Keep my changes"}</button></footer></section></div>}
       {composerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setComposerOpen(false); }}>
         <section className="composer note-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
           <header><div><span className="eyebrow">{editingNote?"EDIT NOTE":(workspaces.find(item=>item.id===activeWorkspaceId)?.visibility==="shared"?"SHARED WORKSPACE NOTE":"PRIVATE WORKSPACE NOTE")}</span><h2 id="composer-title">{editingNote ? "Edit note" : "New note"}</h2></div><button className="icon-button" onClick={() => setComposerOpen(false)} aria-label="Close"><X size={19} /></button></header>
           <div className="note-composer-body">
             {!remoteNoteDeleted&&!canWrite&&editingNote&&<div className="remote-note-banner deleted" role="status">Your workspace role changed. You can still copy your draft, but you can no longer save edits here.</div>}
             {remoteNoteDeleted&&<div className="remote-note-banner deleted" role="alert"><span>This note was deleted or you lost access. Your unsaved text remains in a local recovery draft.</span><div><button type="button" className="text-action" onClick={()=>void navigator.clipboard?.writeText(draftContent)}>Copy my draft</button><button type="button" className="text-action" onClick={()=>{setComposerOpen(false);setEditingNote(null);setRemoteNoteDeleted(false);}}>Back to notes</button></div></div>}
-            {remoteNoteUpdate&&!remoteNoteDeleted&&<div className="remote-note-banner" role="status"><span>Updated by {remoteNoteUpdate.updatedByName??"another member"} at {new Date(remoteNoteUpdate.updatedAt).toLocaleString()}.</span><button type="button" className="text-action" onClick={()=>{setNoteConflict({latest:remoteNoteUpdate,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null}});setRemoteNoteUpdate(null);}}>Review update</button></div>}
+            {remoteNoteUpdate&&!remoteNoteDeleted&&<div className="remote-note-banner" role="status"><span>Updated by {remoteNoteUpdate.updatedByName??"another member"} at {new Date(remoteNoteUpdate.updatedAt).toLocaleString()}.</span><button type="button" className="text-action" onClick={()=>{setNoteConflict({latest:remoteNoteUpdate,mine:{title:draftTitle,content:draftContent,categoryId:selectedCategoryId||null},source:"editor"});setRemoteNoteUpdate(null);}}>Review update</button></div>}
             <label className="field-label note-title-field">Title<input className="composer-title" value={draftTitle} onChange={event => setDraftTitle(event.target.value)} placeholder="Give your note a title" maxLength={200} /></label>
             <label className="field-label note-content-field">Content<textarea value={draftContent} onKeyDown={event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();void saveNote();}}} onChange={event => setDraftContent(event.target.value)} placeholder="Start writing… anything worth remembering." maxLength={50000} rows={9} /></label>
             <div className="composer-counter">{draftContent.trim()?draftContent.trim().split(/\s+/).length:0} words · {draftContent.length.toLocaleString()} / 50,000</div>
