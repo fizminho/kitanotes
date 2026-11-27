@@ -1,23 +1,14 @@
 import { buildPushPayload, type PushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
+import { buildPushContent, defaultPushTag, defaultPushUrl, validPushTag, validPushUrl, type PushMessageInput, type PushKind } from "./push-content.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
-type PushKind = "reminder" | "reminder_update" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
-type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
 
-export function safePushMessage(kind:PushKind):{title:string;body:string} {
- switch(kind){
-  case "reminder": return {title:"Reminder due",body:"A reminder is due. Open KitaNotes to review it."};
-  case "reminder_update": return {title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it."};
-  case "shared_note": return {title:"New shared note",body:"Someone added a note in a shared workspace. Open KitaNotes to view it."};
-  case "shared_note_update": return {title:"Shared note changed",body:"A shared note was updated or removed. Open KitaNotes to review it."};
-  case "event": return {title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it."};
-  case "workspace": return {title:"Workspace activity",body:"Your workspace membership or permissions changed. Open KitaNotes to review it."};
-  default: return {title:"KitaNotes",body:"Push notifications are connected on this device."};
- }
-}
+type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string;push_preview_mode:"detailed"|"generic"};
+
+export { safePushMessage } from "./push-content.ts";
 
 export function isWithinQuietHours(row:PushPreferenceRow,now=new Date()):boolean {
  if(!row.quiet_hours_start||!row.quiet_hours_end)return false;
@@ -66,36 +57,60 @@ function validSubscription(value:unknown):value is PushSubscription {
  return validEndpoint(item.endpoint)&&!!keys&&typeof keys.p256dh==="string"&&keys.p256dh.length>=80&&keys.p256dh.length<=100&&typeof keys.auth==="string"&&keys.auth.length>=16&&keys.auth.length<=32;
 }
 
-export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,_data:{title:string;body:string;url?:string;tag?:string},kind:PushKind="test",scope?:{workspaceId?:string|null;important?:boolean}):Promise<void> {
+type PushScope={workspaceId?:string|null;important?:boolean};
+type LegacyPushData={title:string;body:string;url?:string;tag?:string};
+export async function claimNoteEditPush(db:NonNullable<PushEnv["DB"]>,noteId:string,actorId:string,recipientId:string,nowMs=Date.now()):Promise<boolean>{
+ const key="push:edit:"+noteId+":"+actorId+":"+recipientId;
+ try{
+  const claimed=await db.prepare("INSERT INTO push_debounce (debounce_key,expires_at) VALUES (?,?) ON CONFLICT(debounce_key) DO UPDATE SET expires_at=excluded.expires_at WHERE push_debounce.expires_at<=? RETURNING debounce_key")
+   .bind(key,new Date(nowMs+120000).toISOString(),new Date(nowMs).toISOString()).first<{debounce_key:string}>();
+  return Boolean(claimed);
+ }catch{return true;}
+}
+export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,input:PushMessageInput|LegacyPushData,kindOrScope?:PushKind|PushScope,legacyScope?:PushScope):Promise<void> {
+ const legacy=!("kind" in input);
+ const kind:PushKind=legacy?(typeof kindOrScope==="string"?kindOrScope:"test" ):input.kind;
+ const scope=legacy?(typeof kindOrScope==="object"?kindOrScope:legacyScope):kindOrScope as PushScope|undefined;
+ const message:PushMessageInput=legacy?{kind,subtype:"legacy",url:input.url,tag:input.tag}:input;
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
-  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,shared_note_update_push_enabled,event_push_enabled,workspace_push_enabled,quiet_hours_start,quiet_hours_end,timezone FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur"};
+  preferences=await db.prepare("SELECT push_enabled,reminder_push_enabled,shared_note_push_enabled,shared_note_update_push_enabled,event_push_enabled,workspace_push_enabled,quiet_hours_start,quiet_hours_end,timezone,push_preview_mode FROM notification_preferences WHERE user_id=?").bind(userId).first<PushPreferenceRow>()??{push_enabled:1,reminder_push_enabled:1,shared_note_push_enabled:1,shared_note_update_push_enabled:1,event_push_enabled:1,workspace_push_enabled:1,quiet_hours_start:null,quiet_hours_end:null,timezone:"Asia/Kuala_Lumpur",push_preview_mode:"detailed"};
  } catch { return; }
  if(preferences.push_enabled!==1)return;
- if(scope?.workspaceId){
+ const workspaceId=("workspaceId" in message?message.workspaceId:null)??scope?.workspaceId??null;
+ if(workspaceId){
   try{
-   const workspacePreference=await db.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id=? AND workspace_id=?").bind(userId,scope.workspaceId).first<{mode:"detailed"|"all"|"important"|"mute"}>();
+   const workspacePreference=await db.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id=? AND workspace_id=?").bind(userId,workspaceId).first<{mode:"detailed"|"all"|"important"|"mute"}>();
    const mode=workspacePreference?.mode??"detailed";
-   if(mode==="mute"||(mode==="important"&&scope.important!==true))return;
+   if(mode==="mute"||(mode==="important"&&(message.important??scope?.important)!==true))return;
   }catch{return;}
  }
+ const kind=message.kind;
  if((kind==="reminder"||kind==="reminder_update")&&preferences.reminder_push_enabled!==1)return;
  if(kind==="shared_note"&&preferences.shared_note_push_enabled!==1)return;
  if(kind==="shared_note_update"&&preferences.shared_note_update_push_enabled!==1)return;
  if(kind==="event"&&preferences.event_push_enabled!==1)return;
  if(kind==="workspace"&&preferences.workspace_push_enabled!==1)return;
  if(kind!=="test"&&isWithinQuietHours(preferences))return;
- const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
+ if(message.subtype==="edited"&&message.resourceType==="note"&&message.resourceId&&message.actorId){
+  if(!await claimNoteEditPush(db,message.resourceId,message.actorId,userId))return;
+ }
+ const built=buildPushContent(message as PushMessageInput,preferences.push_preview_mode,preferences.timezone||"Asia/Kuala_Lumpur");
+ const target=validPushUrl(message.url)?message.url:defaultPushUrl(message as PushMessageInput);
+ const tag=validPushTag(message.tag)?message.tag:defaultPushTag(message as PushMessageInput,userId);
+ const payloadData={v:2,kind:message.kind,subtype:("subtype" in message?message.subtype:undefined),title:built.title,body:built.body,url:target,tag,renotify:true,data:{workspaceId:("workspaceId" in message?message.workspaceId:undefined)??undefined,resourceType:("resourceType" in message?message.resourceType:undefined)??undefined,resourceId:("resourceId" in message?message.resourceId:undefined)??undefined,notificationId:("notificationId" in message?message.notificationId:undefined)??undefined}};
+ let encoded="";
+ try{encoded=JSON.stringify(payloadData);if(new TextEncoder().encode(encoded).byteLength>2800)return;}catch{return;}
+ const ttl=message.kind==="reminder"?86400:message.kind==="event"?14400:3600;
+ const urgency=message.kind==="reminder"?"high":"normal";
+ let rows:{results:StoredSubscription[]};
+ try{rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();}
+ catch{return;}
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
-   const baseMessage=safePushMessage(kind);
-   const message=baseMessage;
-   // Push services and lock screens must never receive resource/workspace identifiers.
-   const requestedUrl="/";
-   const requestedTag="kitanotes-"+kind+"-"+crypto.randomUUID();
-   const payload=await buildPushPayload({data:{...message,url:requestedUrl,tag:requestedTag},options:{ttl:3600,urgency:"normal"}},subscription,vapid(env));
+   const payload=await buildPushPayload({data:payloadData,options:{ttl,urgency}},subscription,vapid(env));
    const response=await fetch(row.endpoint,{...payload,signal:AbortSignal.timeout(5000)});
    if(response.status===404||response.status===410){await db.prepare("DELETE FROM push_subscriptions WHERE id=?").bind(row.id).run();return;}
    if(response.ok){const now=new Date().toISOString();await db.prepare("UPDATE push_subscriptions SET last_success_at=?,updated_at=? WHERE id=?").bind(now,now,row.id).run();}
@@ -142,7 +157,7 @@ export async function handlePushRequest(request:Request,env:PushEnv):Promise<Res
   if(!pushConfigured(env))return json({error:"PUSH_NOT_CONFIGURED"},503);
   const rate=await consumeRateLimit(env.DB,"push:test:user:"+user.id,3,60*1000);
   if(!rate.allowed)return rateLimitResponse(rate.retryAfterSeconds);
-  await sendPushToUser(env.DB,env,user.id,{title:"KitaNotes",body:"Push notifications are connected on this device.",url:"/",tag:"kitanotes-test"});
+  await sendPushToUser(env.DB,env,user.id,{kind:"test",subtype:"test",url:"/",tag:"kitanotes-test"});
   return json({ok:true});
  }
  return json({error:"METHOD_NOT_ALLOWED"},405);
