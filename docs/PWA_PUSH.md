@@ -56,7 +56,7 @@ Migrations `0009_notification_preferences.sql`, `0015_notification_activity_pref
 - `GET /api/notifications/preferences`
 - `PUT /api/notifications/preferences`
 
-Users can independently enable/disable push delivery for reminders, new shared notes, shared-note updates/deletions, calendar event changes and workspace membership/access changes. They can also choose detailed or generic lock-screen previews. Existing preference rows migrate to `generic`; users without a preference row default to `detailed`. The durable in-app inbox is not affected by these switches. Activity caused by the current user is excluded from shared-workspace push delivery.
+Users can independently enable/disable push delivery for reminders, new shared notes, shared-note updates/deletions, calendar event changes and workspace membership/access changes. They can also choose detailed or generic lock-screen previews. Every account that existed at migration time is seeded with `generic`, including accounts without a previous preference row. Accounts created later, without a preference row, default to `detailed`. The durable in-app inbox is not affected by these switches. Activity caused by the current user is excluded from shared-workspace push delivery.
 
 Quiet hours use the user's IANA timezone (default `Asia/Kuala_Lumpur`) and a local start/end time. Overnight windows such as 22:00–07:00 are supported. During quiet hours, activity push attempts are suppressed; they are not queued for later delivery. The corresponding in-app notification remains available in the inbox where that activity type creates one. Test pushes bypass quiet hours and category switches but still respect the global push-enabled switch.
 
