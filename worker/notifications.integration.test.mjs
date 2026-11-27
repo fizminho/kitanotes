@@ -12,7 +12,7 @@ const migrations=[
  "0009_notification_preferences.sql","0010_gemini_ocr.sql","0011_workspace_visibility.sql",
  "0012_unified_workspace_type.sql","0013_content_audit_and_open_invites.sql",
  "0014_google_calendar_import.sql","0015_notification_activity_preferences.sql",
- "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql"
+ "0016_calendar_2_0.sql","0017_calendar_holiday_cache.sql","0018_workspace_starred_default.sql","0030_detailed_notification_default.sql"
 ];
 class D1TestDatabase{
  constructor(){this.sqlite=new DatabaseSync(":memory:");this.sqlite.exec("PRAGMA foreign_keys=ON");for(const file of migrations)this.sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));}
