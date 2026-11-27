@@ -59,6 +59,14 @@ function validSubscription(value:unknown):value is PushSubscription {
 
 type PushScope={workspaceId?:string|null;important?:boolean};
 type LegacyPushData={title:string;body:string;url?:string;tag?:string};
+export async function claimNoteEditPush(db:NonNullable<PushEnv["DB"]>,noteId:string,actorId:string,recipientId:string,nowMs=Date.now()):Promise<boolean>{
+ const key="push:edit:"+noteId+":"+actorId+":"+recipientId;
+ try{
+  const claimed=await db.prepare("INSERT INTO push_debounce (debounce_key,expires_at) VALUES (?,?) ON CONFLICT(debounce_key) DO UPDATE SET expires_at=excluded.expires_at WHERE push_debounce.expires_at<=? RETURNING debounce_key")
+   .bind(key,new Date(nowMs+120000).toISOString(),new Date(nowMs).toISOString()).first<{debounce_key:string}>();
+  return Boolean(claimed);
+ }catch{return true;}
+}
 export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,input:PushMessageInput|LegacyPushData,kindOrScope?:PushKind|PushScope,legacyScope?:PushScope):Promise<void> {
  const legacy=!("kind" in input);
  const kind:PushKind=legacy?(typeof kindOrScope==="string"?kindOrScope:"test" ):input.kind;
@@ -85,13 +93,8 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  if(kind==="event"&&preferences.event_push_enabled!==1)return;
  if(kind==="workspace"&&preferences.workspace_push_enabled!==1)return;
  if(kind!=="test"&&isWithinQuietHours(preferences))return;
- if("subtype" in message&&message.subtype==="edited"&&message.resourceType==="note"&&message.resourceId){
-  try{
-   const now=Date.now(),key="push:edit:"+message.resourceId+":"+(message.actorId??"unknown")+":"+userId;
-   const claimed=await db.prepare("INSERT INTO push_debounce (debounce_key,expires_at) VALUES (?,?) ON CONFLICT(debounce_key) DO UPDATE SET expires_at=excluded.expires_at WHERE push_debounce.expires_at<=? RETURNING debounce_key")
-    .bind(key,new Date(now+120000).toISOString(),new Date(now).toISOString()).first<{debounce_key:string}>();
-   if(!claimed)return;
-  }catch{return;}
+ if(message.subtype==="edited"&&message.resourceType==="note"&&message.resourceId&&message.actorId){
+  if(!await claimNoteEditPush(db,message.resourceId,message.actorId,userId))return;
  }
  const built=buildPushContent(message as PushMessageInput,preferences.push_preview_mode,preferences.timezone||"Asia/Kuala_Lumpur");
  const target=validPushUrl(message.url)?message.url:defaultPushUrl(message as PushMessageInput);
