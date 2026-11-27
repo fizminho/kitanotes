@@ -30,7 +30,7 @@ test("event builders distinguish created, moved, updated and cancelled",()=>{
 });
 
 test("reminder and workspace builders use the catalogue wording",()=>{
- assert.deepEqual(buildPushContent({kind:"reminder",workspace:"Family",itemTitle:"Medicine"}, "detailed"),{title:"Reminder: Medicine",body:"Due now · Family"});
+ assert.deepEqual(buildPushContent({kind:"reminder",subtype:"due",workspace:"Family",itemTitle:"Medicine"}, "detailed"),{title:"Reminder: Medicine",body:"Due now · Family"});
  assert.deepEqual(buildPushContent({kind:"workspace",subtype:"role_changed",workspace:"Family",role:"editor"},"detailed"),{title:"Your role changed in Family",body:"You are now Editor."});
  assert.deepEqual(buildPushContent({kind:"workspace",subtype:"member_removed",workspace:"Family"},"detailed"),{title:"Removed from Family",body:"You no longer have access to this workspace."});
 });
@@ -95,7 +95,7 @@ test("note edit debounce allows one send per recipient in 120 seconds, then allo
 });
 
 test("reminder reschedule and cancellation use distinct detailed messages",()=>{
- assert.deepEqual(buildPushContent({kind:"reminder_update",subtype:"rescheduled",itemTitle:"Dentist",when:"2026-12-02T07:00:00Z"},"detailed"),{title:"Reminder rescheduled",body:"Dentist · now 3:00 PM"});
+ assert.deepEqual(buildPushContent({kind:"reminder_update",subtype:"rescheduled",itemTitle:"Dentist",when:"2026-12-02T07:00:00Z"},"detailed"),{title:"Reminder rescheduled",body:"Dentist · now Wed 2 Dec, 3:00 PM"});
  assert.deepEqual(buildPushContent({kind:"reminder_update",subtype:"cancelled",itemTitle:"Dentist"},"detailed"),{title:"Reminder cancelled",body:"Dentist"});
 });
 
