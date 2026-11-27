@@ -23,7 +23,7 @@ Web Push uses the standard browser push service and the Web Crypto-compatible `@
    - `VAPID_PUBLIC_KEY`: public key, configured as a Worker variable.
    - `VAPID_PRIVATE_KEY`: private JWK `d` value, configured as a Worker Secret.
    - `VAPID_SUBJECT`: a contact URI such as `mailto:you@example.com`, configured as a Worker variable. Replace the example with an email address you control.
-3. Deploy the Worker and apply all pending D1 migrations, including `0008_push_subscriptions.sql`, `0009_notification_preferences.sql` and `0015_notification_activity_preferences.sql`. The configured Workers Builds deploy command should be `npm run cf:deploy`, which applies remote migrations before publishing the Worker.
+3. Deploy the Worker and apply all pending D1 migrations, including `0008_push_subscriptions.sql`, `0009_notification_preferences.sql`, `0015_notification_activity_preferences.sql` and `0030_detailed_notification_default.sql`. The configured Workers Builds deploy command should be `npm run cf:deploy`, which applies remote migrations before publishing the Worker.
 4. Sign in on a supported browser, open Notifications and choose Enable push. Permission is requested only after the user taps the button.
 5. Use Test to send a generic notification to the current device.
 
