@@ -75,8 +75,8 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  if(preferences.push_enabled!==1)return;
  if(scope?.workspaceId){
   try{
-   const workspacePreference=await db.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id=? AND workspace_id=?").bind(userId,scope.workspaceId).first<{mode:"all"|"important"|"mute"}>();
-   const mode=workspacePreference?.mode??"all";
+   const workspacePreference=await db.prepare("SELECT mode FROM workspace_notification_preferences WHERE user_id=? AND workspace_id=?").bind(userId,scope.workspaceId).first<{mode:"detailed"|"all"|"important"|"mute"}>();
+   const mode=workspacePreference?.mode??"detailed";
    if(mode==="mute"||(mode==="important"&&scope.important!==true))return;
   }catch{return;}
  }
