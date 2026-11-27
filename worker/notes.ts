@@ -15,7 +15,6 @@ type CategoryRow = {
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_NOTE_CONTENT_CHARS = 50_000;
 
-function pushDescription(value:string):string { return value.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,150) || "No description was added."; }
 
 
 function json(data: unknown, status = 200): Response {
