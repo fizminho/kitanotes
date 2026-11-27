@@ -42,7 +42,7 @@ test("long, multiline, markdown and emoji-heavy text is sanitized and truncated 
  const result=buildPushContent({kind:"shared_note",subtype:"created",actor:"Aina",workspace:"Family",itemTitle:"**🚀 Rocket**\n"+("verylongword ".repeat(20))},"detailed");
  assert.ok(Array.from(result.title).length<=60);
  assert.ok(Array.from(result.body).length<=120);
- assert.doesNotMatch(result.body,/\\n|\\*\\*/);
+ assert.doesNotMatch(result.body,/[\r\n]|\*\*/);
  assert.match(result.body,/🚀 Rocket/);
 });
 
