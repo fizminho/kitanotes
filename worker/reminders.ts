@@ -1,7 +1,9 @@
 import { getCurrentUser, type AuthEnv } from "./auth.ts";
 import { readJsonBody } from "./notes.ts";
+import { sendPushToUser } from "./push.ts";
 
 type Db = NonNullable<AuthEnv["DB"]>;
+type ReminderEnv = AuthEnv & {VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string};
 type Role = "owner" | "editor" | "viewer";
 type ReminderRow = {
   id:string; workspace_id:string; event_id:string|null; note_id:string|null; title:string;
@@ -36,7 +38,12 @@ async function linkedResourceExists(db:Db,workspaceId:string,eventId:string|null
   return true;
 }
 function dto(row:ReminderRow){return{id:row.id,workspaceId:row.workspace_id,eventId:row.event_id,noteId:row.note_id,title:row.title,dueAt:row.due_at_utc,timezone:row.timezone,status:row.status,createdBy:row.created_by_user_id,createdAt:row.created_at,updatedAt:row.updated_at,deliveredAt:row.delivered_at,cancelledAt:row.cancelled_at};}
-export async function handleRemindersRequest(request:Request,env:AuthEnv):Promise<Response|null>{
+async function notifyReminderChange(db:Db,env:ReminderEnv,workspaceId:string,actorUserId:string,ctx?:ExecutionContext):Promise<void>{
+  const recipients=await db.prepare("SELECT user_id FROM workspace_members WHERE workspace_id=? AND user_id<>?").bind(workspaceId,actorUserId).all<{user_id:string}>();
+  const task=Promise.all(recipients.results.map(member=>sendPushToUser(db,env,member.user_id,{title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it.",url:"/",tag:"reminder-change-"+crypto.randomUUID()},"reminder_update",{workspaceId,important:true})));
+  if(ctx)ctx.waitUntil(task);else await task;
+}
+export async function handleRemindersRequest(request:Request,env:ReminderEnv,ctx?:ExecutionContext):Promise<Response|null>{
   const url=new URL(request.url);
   if(!url.pathname.startsWith("/api/reminders"))return null;
   if(!env.DB)return json({error:"DATABASE_NOT_CONFIGURED"},503);
@@ -94,6 +101,7 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     const result=await db.prepare("UPDATE reminders SET title=?,due_at_utc=?,timezone=?,updated_at=? WHERE id=? AND status='pending'").bind(title,dueAt,tz,now,id).run();
     if(Number((result as {meta?:{changes?:number}}).meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
     const updated=await db.prepare("SELECT * FROM reminders WHERE id=?").bind(id).first<ReminderRow>();
+    if(title!==row.title||dueAt!==row.due_at_utc||tz!==row.timezone)await notifyReminderChange(db,env,row.workspace_id,user.id,ctx);
     return json({reminder:updated?dto(updated):null});
   }
   if(match&&request.method==="DELETE"){
@@ -106,7 +114,9 @@ export async function handleRemindersRequest(request:Request,env:AuthEnv):Promis
     if(role!=="owner"&&role!=="editor")return json({error:"FORBIDDEN"},403);
     if(row.status!=="pending")return json({error:"REMINDER_NOT_PENDING"},409);
     const now=new Date().toISOString();
-    await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE id=? AND status='pending'").bind(now,now,id).run();
+    const result=await db.prepare("UPDATE reminders SET status='cancelled',cancelled_at=?,updated_at=? WHERE id=? AND status='pending'").bind(now,now,id).run();
+    if(Number((result as {meta?:{changes?:number}}).meta?.changes??0)!==1)return json({error:"REMINDER_NOT_PENDING"},409);
+    await notifyReminderChange(db,env,row.workspace_id,user.id,ctx);
     return json({cancelled:true});
   }
   return json({error:"METHOD_NOT_ALLOWED"},405);
