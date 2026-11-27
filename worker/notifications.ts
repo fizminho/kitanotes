@@ -47,7 +47,7 @@ export async function handleNotificationsRequest(request:Request,env:AuthEnv):Pr
   if(!membership)return json({error:"NOT_FOUND"},404);
   const now=new Date().toISOString();
   await db.prepare("INSERT INTO workspace_notification_preferences (user_id,workspace_id,mode,updated_at) VALUES (?,?,?,?) ON CONFLICT(user_id,workspace_id) DO UPDATE SET mode=excluded.mode,updated_at=excluded.updated_at").bind(user.id,workspaceId,mode==="all"?"detailed":mode,now).run();
-  return json({ok:true,workspaceId,mode:mode==="all"?"all":"all"===mode?"all":mode});
+  return json({ok:true,workspaceId,mode:mode==="all"?"all":mode});
  }
  if(url.pathname==="/api/notifications/preferences"&&request.method==="GET"){
   return json({preferences:await readPreferences(db,user.id)});
