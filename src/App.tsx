@@ -498,7 +498,7 @@ export default function App() {
     if(workspaceId&&!workspaces.some(item=>item.id===workspaceId)){window.history.replaceState({},"","/");pushToast("That workspace is no longer available.","error");return;}
     if(workspaceId)setActiveWorkspaceId(workspaceId);
     if(calendarFocus)setView("calendar");
-    if(manageTarget==="people"||manageTarget==="settings")openManage(manageTarget);
+    if(manageTarget==="people"||manageTarget==="settings"){setManageTab(manageTarget);setInviteCreateError("");setCopiedInvite(false);setCreatedInvite(null);setInviteOpen(true);}
     window.history.replaceState({},"","/");
     if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(workspaceId&&(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId))return;if(!workspaceId&&workspaces.some(item=>item.id===result.note.workspaceId))setActiveWorkspaceId(result.note.workspaceId);setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
     if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
