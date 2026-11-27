@@ -1,7 +1,7 @@
 export type PushKind = "reminder" | "reminder_update" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
 export type PushMessageInput = {
  kind:PushKind; subtype?:string; actor?:string|null; actorId?:string|null; workspace?:string|null;
- itemTitle?:string|null; when?:string|Date|null; role?:"editor"|"viewer"|"owner"|string|null;
+ itemTitle?:string|null; when?:string|Date|null; count?:number; role?:"editor"|"viewer"|"owner"|string|null;
  workspaceId?:string|null; resourceType?:"note"|"event"|"reminder"|"workspace"|string|null; resourceId?:string|null;
  notificationId?:string|null; url?:string; tag?:string; important?:boolean;
 };
@@ -52,6 +52,10 @@ function detailed(message:PushMessageInput,timeZone:string):{title:string;body:s
    return{title:actor+" "+verb+" a note",body:item+" · "+ws};
   }
   case "event":{
+   if(message.subtype==="imported"){
+    if(!actor||!ws||!Number.isInteger(message.count)||!message.count||message.count<1)return null;
+    return{title:actor+" imported "+message.count+" events into "+ws,body:"Open the calendar to review the imported events."};
+   }
    if(!actor||!when)return null;
    if(message.subtype!=="created"&&message.subtype!=="moved"&&message.subtype!=="updated"&&message.subtype!=="cancelled")return null;
    if(message.subtype==="created"){if(!ws)return null;return{title:"New event: "+item,body:when+" · added by "+actor+" · "+ws};}
