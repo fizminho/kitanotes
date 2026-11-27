@@ -51,9 +51,11 @@ export async function deliverDueReminders(db:D1Database,env?:{VAPID_PUBLIC_KEY?:
           members=result.results.map(member=>member.user_id);
           workspaceMembers.set(reminder.workspace_id,members);
         }
-        const late=Date.now()-new Date(reminder.due_at_utc).getTime()>5*60*1000;
-        const target="/?workspaceId="+encodeURIComponent(reminder.workspace_id)+(reminder.event_id?"&eventId="+encodeURIComponent(reminder.event_id):reminder.note_id?"&noteId="+encodeURIComponent(reminder.note_id):"&reminderId="+encodeURIComponent(reminder.id));
-        await Promise.all(members.map(userId=>sendPushToUser(db,env,userId,{kind:"reminder",subtype:"due",workspace:reminder.workspace_name,itemTitle:reminder.title,when:late?reminder.due_at_utc:null,workspaceId:reminder.workspace_id,resourceType:"reminder",resourceId:reminder.id,url:target,tag:"reminder:"+reminder.id,important:true})));
+        try{
+          const late=Date.now()-new Date(reminder.due_at_utc).getTime()>5*60*1000;
+          const target="/?workspaceId="+encodeURIComponent(reminder.workspace_id)+(reminder.event_id?"&eventId="+encodeURIComponent(reminder.event_id):reminder.note_id?"&noteId="+encodeURIComponent(reminder.note_id):"&reminderId="+encodeURIComponent(reminder.id));
+          await Promise.all(members.map(userId=>sendPushToUser(db,env,userId,{kind:"reminder",subtype:"due",workspace:reminder.workspace_name,itemTitle:reminder.title,when:late?reminder.due_at_utc:null,workspaceId:reminder.workspace_id,resourceType:"reminder",resourceId:reminder.id,url:target,tag:"reminder:"+reminder.id,important:true})));
+        }catch{/* Reminder delivery is complete even if device push cannot be prepared. */}
       }
     }
   }
