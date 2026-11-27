@@ -13,6 +13,7 @@ All activity push messages are deliberately generic. The strings below are retur
 | Push kind | Device title | Device body |
 |---|---|---|
 | `reminder` | **Reminder due** | A reminder is due. Open KitaNotes to review it. |
+| `reminder_update` | **Reminder changed** | A shared workspace reminder was updated or cancelled. Open KitaNotes to review it. |
 | `shared_note` | **New shared note** | Someone added a note in a shared workspace. Open KitaNotes to view it. |
 | `shared_note_update` | **Shared note changed** | A shared note was updated or removed. Open KitaNotes to review it. |
 | `event` | **Calendar activity** | A calendar event was created, changed or cancelled. Open KitaNotes to review it. |
@@ -50,8 +51,8 @@ The push message intentionally does not distinguish create, update and delete on
 | User action / code path | Recipient | Push kind | Device content | Status |
 |---|---|---|---|---|
 | Reminder reaches its due time (`worker/reminder-cron.ts`, `deliverDueReminders()`) | Every current member of the reminder's workspace, including the creator/owner | `reminder` | **Reminder due** / A reminder is due. Open KitaNotes to review it. | Implemented |
-| Reminder is cancelled before due time | No push call | None | No push is sent | Not implemented |
-| Reminder is edited or rescheduled | No push call in the reminder CRUD handler | None | No push is sent | Not implemented |
+| Reminder is edited or rescheduled (`worker/reminders.ts`, PATCH handler) | Other current workspace members; editor excluded | `reminder_update` | **Reminder changed** / A shared workspace reminder was updated or cancelled. Open KitaNotes to review it. | Implemented |
+| Reminder is cancelled before due time (`worker/reminders.ts`, DELETE handler) | Other current workspace members; canceller excluded | `reminder_update` | Same generic Reminder changed message | Implemented |
 
 The scheduled Worker invokes reminder delivery every five minutes. Due reminders are processed in batches of up to 25. A reminder linked to an event or note that has already been deleted is cancelled instead of being delivered. The in-app inbox stores the reminder title and due-time context; the device push does not expose either value.
 
@@ -95,7 +96,7 @@ Some SQL triggers create inbox records without a corresponding push call. Always
 ## 4. Delivery rules applied to every push
 
 1. **Global switch:** `push_enabled` must be enabled. If no preference row exists, the Worker uses enabled defaults.
-2. **Activity switches:** reminder, new shared note, shared-note update/delete, event and workspace pushes each have their own user preference.
+2. **Activity switches:** reminder due/change, new shared note, shared-note update/delete, event and workspace pushes each have their own user preference.
 3. **Workspace mode:** each workspace can be set to `all`, `important` or `mute`. Note and event changes are marked non-important. Due reminders and workspace membership/access changes are marked important.
 4. **Quiet hours:** activity pushes are suppressed during the user's quiet hours in their IANA timezone. Default timezone is `Asia/Kuala_Lumpur`. Overnight windows are supported. Suppressed pushes are not queued for later delivery.
 5. **Test exception:** test pushes bypass activity switches and quiet hours, but still require the global push switch.
