@@ -56,6 +56,7 @@ test("disabled per-user push preference prevents any subscription lookup", async
 test("activity-specific preferences suppress their own push category", async () => {
   const cases=[
     ["event",{event_push_enabled:0},"event"],
+    ["reminder_update",{reminder_push_enabled:0},"reminder_update"],
     ["workspace",{workspace_push_enabled:0},"workspace"],
     ["shared_note_update",{shared_note_update_push_enabled:0},"shared_note_update"]
   ];
@@ -119,6 +120,7 @@ test("push test endpoint limits repeated sends per user",async()=>{
 test("push payload messages never include private note, event, reminder or workspace content",()=>{
   const cases=[
     ["reminder","Reminder due","A reminder is due. Open KitaNotes to review it."],
+    ["reminder_update","Reminder changed","A shared workspace reminder was updated or cancelled. Open KitaNotes to review it."],
     ["shared_note","New shared note","Someone added a note in a shared workspace. Open KitaNotes to view it."],
     ["shared_note_update","Shared note changed","A shared note was updated or removed. Open KitaNotes to review it."],
     ["event","Calendar activity","A calendar event was created, changed or cancelled. Open KitaNotes to review it."],

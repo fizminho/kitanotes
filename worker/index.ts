@@ -50,7 +50,7 @@ export default {
         ?? await handleNotesRequest(request,env,ctx)
         ?? await handleInvitationsRequest(request,env)
         ?? await handleEventsRequest(request,env,ctx)
-        ?? await handleRemindersRequest(request,env)
+        ?? await handleRemindersRequest(request,env,ctx)
         ?? await handleNotificationsRequest(request,env)
         ?? await handlePushRequest(request,env)
         ?? await handleOcrRequest(request,env)

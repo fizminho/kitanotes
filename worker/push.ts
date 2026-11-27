@@ -4,12 +4,13 @@ import { consumeRateLimit, rateLimitResponse } from "./rate-limit.ts";
 
 type PushEnv = AuthEnv & { VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; VAPID_SUBJECT?: string };
 type StoredSubscription = { id:string; endpoint:string; subscription_json:string };
-type PushKind = "reminder" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
+type PushKind = "reminder" | "reminder_update" | "shared_note" | "shared_note_update" | "event" | "workspace" | "test";
 type PushPreferenceRow = {push_enabled:number;reminder_push_enabled:number;shared_note_push_enabled:number;shared_note_update_push_enabled:number;event_push_enabled:number;workspace_push_enabled:number;quiet_hours_start:string|null;quiet_hours_end:string|null;timezone:string};
 
 export function safePushMessage(kind:PushKind):{title:string;body:string} {
  switch(kind){
   case "reminder": return {title:"Reminder due",body:"A reminder is due. Open KitaNotes to review it."};
+  case "reminder_update": return {title:"Reminder changed",body:"A shared workspace reminder was updated or cancelled. Open KitaNotes to review it."};
   case "shared_note": return {title:"New shared note",body:"Someone added a note in a shared workspace. Open KitaNotes to view it."};
   case "shared_note_update": return {title:"Shared note changed",body:"A shared note was updated or removed. Open KitaNotes to review it."};
   case "event": return {title:"Calendar activity",body:"A calendar event was created, changed or cancelled. Open KitaNotes to review it."};
@@ -79,7 +80,7 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
    if(mode==="mute"||(mode==="important"&&scope.important!==true))return;
   }catch{return;}
  }
- if(kind==="reminder"&&preferences.reminder_push_enabled!==1)return;
+ if((kind==="reminder"||kind==="reminder_update")&&preferences.reminder_push_enabled!==1)return;
  if(kind==="shared_note"&&preferences.shared_note_push_enabled!==1)return;
  if(kind==="shared_note_update"&&preferences.shared_note_update_push_enabled!==1)return;
  if(kind==="event"&&preferences.event_push_enabled!==1)return;
