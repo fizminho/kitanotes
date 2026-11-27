@@ -77,3 +77,13 @@ test("note edit debounce allows one send per recipient in 120 seconds, then allo
  assert.equal(await claimNoteEditPush(db,"note-1","actor-2","recipient-1",123000),true);
  assert.equal(await claimNoteEditPush(db,"note-1","actor-1","recipient-2",124000),true);
 });
+
+test("reminder reschedule and cancellation use distinct detailed messages",()=>{
+ assert.deepEqual(buildPushContent({kind:"reminder_update",subtype:"rescheduled",itemTitle:"Dentist",when:"2026-12-02T07:00:00Z"},"detailed"),{title:"Reminder rescheduled",body:"Dentist · now 3:00 PM"});
+ assert.deepEqual(buildPushContent({kind:"reminder_update",subtype:"cancelled",itemTitle:"Dentist"},"detailed"),{title:"Reminder cancelled",body:"Dentist"});
+});
+
+test("calendar import summary includes actor, count and workspace",()=>{
+ assert.deepEqual(buildPushContent({kind:"event",subtype:"imported",actor:"Aina",workspace:"Family",count:5},"detailed"),{title:"Aina imported 5 events into Family",body:"Open the calendar to review the imported events."});
+ assert.equal(buildPushContent({kind:"event",subtype:"imported",actor:null,workspace:"Family",count:5},"detailed").title,"Calendar activity");
+});
