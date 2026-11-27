@@ -490,11 +490,12 @@ export default function App() {
 
   useEffect(()=>{
     if(deepLinkHandled.current||workspaces.length===0)return;
-    const params=new URLSearchParams(window.location.search),workspaceId=params.get("workspaceId"),noteId=params.get("noteId"),eventId=params.get("eventId"),reminderId=params.get("reminderId");
-    if(!workspaceId&&!noteId&&!eventId&&!reminderId)return;
+    const params=new URLSearchParams(window.location.search),workspaceId=params.get("workspaceId"),noteId=params.get("noteId"),eventId=params.get("eventId"),reminderId=params.get("reminderId"),calendarFocus=params.get("calendar")==="1";
+    if(!workspaceId&&!noteId&&!eventId&&!reminderId&&!calendarFocus)return;
     deepLinkHandled.current=true;
     if(workspaceId&&!workspaces.some(item=>item.id===workspaceId)){window.history.replaceState({},"","/");pushToast("That workspace is no longer available.","error");return;}
     if(workspaceId)setActiveWorkspaceId(workspaceId);
+    if(calendarFocus)setView("calendar");
     window.history.replaceState({},"","/");
     if(noteId){setView("notes");void fetch("/api/notes/"+encodeURIComponent(noteId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Note unavailable");const result=await response.json() as {note:Note};if(workspaceId&&(result.note.workspaceId!==workspaceId||activeWorkspaceIdRef.current!==workspaceId))return;if(!workspaceId&&workspaces.some(item=>item.id===result.note.workspaceId))setActiveWorkspaceId(result.note.workspaceId);setViewingNote(result.note);}).catch(()=>pushToast("This note is no longer available.","error"));}
     if(eventId){setView("calendar");void fetch("/api/events/"+encodeURIComponent(eventId),{credentials:"same-origin",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error("Event unavailable");const result=await response.json() as {event:CalendarEvent};setCalendarCursor(new Date(result.event.startsAt));setCalendarFocusDate(result.event.startsAt.slice(0,10));}).catch(()=>pushToast("This event is no longer available.","error"));}
