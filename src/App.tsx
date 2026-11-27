@@ -343,6 +343,8 @@ export default function App() {
   const [pushBusy,setPushBusy]=useState(false);
   const [pushError,setPushError]=useState("");
   const [notificationPrefs,setNotificationPrefs]=useState<NotificationPreferences>({pushEnabled:true,reminderPushEnabled:true,sharedNotePushEnabled:true,sharedNoteUpdatePushEnabled:true,eventPushEnabled:true,workspacePushEnabled:true,quietHoursStart:null,quietHoursEnd:null,timezone:"Asia/Kuala_Lumpur",pushPreviewMode:"detailed"});
+  const [previewNudgeDismissed,setPreviewNudgeDismissed]=useState(false);
+  useEffect(()=>{if(!user)return;try{setPreviewNudgeDismissed(localStorage.getItem("kitanotes-preview-prompt-dismissed:"+user.id)==="1");}catch{setPreviewNudgeDismissed(false);}},[user?.id]);
   const [notificationPrefsLoading,setNotificationPrefsLoading]=useState(false);
   const [notificationPrefsSaving,setNotificationPrefsSaving]=useState(false);
   const [notificationPrefsError,setNotificationPrefsError]=useState("");
@@ -1884,7 +1886,7 @@ export default function App() {
               <div className="notification-settings-content">
                 {notificationPrefsLoading?<p>Loading preferences…</p>:<>
                   <p className="notification-settings-note">Your in-app inbox always keeps notifications. These settings only control push alerts.</p>
-                  {notificationPrefs.pushPreviewMode==="generic"&&!localStorage.getItem("kitanotes-preview-prompt-dismissed:"+user.id)&&<div className="notification-settings-note"><strong>Want more useful alerts?</strong> Show who changed a note and which event moved. <button className="text-action" onClick={()=>{setNotificationPrefs(value=>({...value,pushPreviewMode:"detailed"}));setNotificationPrefsSaved(false);}}>Switch to detailed</button> <button className="text-action" onClick={()=>localStorage.setItem("kitanotes-preview-prompt-dismissed:"+user.id,"1")}>Not now</button></div>}
+                  {notificationPrefs.pushPreviewMode==="generic"&&!previewNudgeDismissed&&<div className="notification-settings-note"><strong>Want more useful alerts?</strong> Show who changed a note and which event moved. <button className="text-action" onClick={()=>{setNotificationPrefs(value=>({...value,pushPreviewMode:"detailed"}));setNotificationPrefsSaved(false);}}>Switch to detailed</button> <button className="text-action" onClick={()=>{try{localStorage.setItem("kitanotes-preview-prompt-dismissed:"+user.id,"1");}catch{}setPreviewNudgeDismissed(true);}}>Not now</button></div>}
                   <label className="timezone-setting">Notification details<select className="invite-input" value={notificationPrefs.pushPreviewMode} onChange={event=>{setNotificationPrefs(value=>({...value,pushPreviewMode:event.target.value as "detailed"|"generic"}));setNotificationPrefsSaved(false);}} disabled={!notificationPrefs.pushEnabled}><option value="detailed">Show note titles, event names and who made changes</option><option value="generic">Hide details (shows generic text on your lock screen)</option></select></label>
                   <p className="notification-settings-note">Detailed notification text may be visible to anyone who can see your locked screen.</p>
                   <label><input type="checkbox" checked={notificationPrefs.pushEnabled} onChange={event=>{setNotificationPrefs(value=>({...value,pushEnabled:event.target.checked}));setNotificationPrefsSaved(false);}}/> Enable push delivery</label>
