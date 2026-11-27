@@ -944,7 +944,7 @@ export default function App() {
         return;
       }
       if (response.status === 404 || response.status === 410) {
-        setDraftTitle(viewingNote.title);setDraftContent(lines.join("\\n"));setSelectedCategoryId(viewingNote.categoryId??"");setEditingNote(viewingNote);setRemoteNoteDeleted(true);setComposerOpen(true);setViewingNote(null);
+        setDraftTitle(viewingNote.title);setDraftContent(lines.join("\n"));setSelectedCategoryId(viewingNote.categoryId??"");setEditingNote(viewingNote);setRemoteNoteDeleted(true);setComposerOpen(true);setViewingNote(null);
         throw new Error("This note was deleted before the checklist change could be saved. Your checklist change was moved to a recovery draft.");
       }
       if (!response.ok || !result.note) {
