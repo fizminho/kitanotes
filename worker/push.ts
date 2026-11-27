@@ -104,7 +104,9 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  try{encoded=JSON.stringify(payloadData);if(new TextEncoder().encode(encoded).byteLength>2800)return;}catch{return;}
  const ttl=message.kind==="reminder"?86400:message.kind==="event"?14400:3600;
  const urgency=message.kind==="reminder"?"high":"normal";
- const rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();
+ let rows:{results:StoredSubscription[]};
+ try{rows=await db.prepare("SELECT id,endpoint,subscription_json FROM push_subscriptions WHERE user_id=?").bind(userId).all<StoredSubscription>();}
+ catch{return;}
  await Promise.all(rows.results.map(async row=>{
   try {
    const subscription=JSON.parse(row.subscription_json) as PushSubscription;
