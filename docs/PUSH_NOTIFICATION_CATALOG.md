@@ -9,7 +9,7 @@ Push previews are selected per recipient from `notification_preferences.push_pre
 - `detailed`: show actor, resource title, workspace and time where available.
 - `generic`: preserve the original `safePushMessage(kind)` title/body exactly.
 
-New accounts without a saved preference receive `detailed`. Migration `0030_push_preview_and_debounce.sql` adds the column with a `generic` database default, so existing preference rows retain the privacy-preserving behaviour they had before this release.
+New accounts without a saved preference receive `detailed`. Migration `0030_push_preview_and_debounce.sql` adds the column with a `generic` database default and seeds a generic preference row for every account that existed at migration time, including accounts that had never opened notification settings.
 
 The in-app notifications table and its content are unchanged.
 
