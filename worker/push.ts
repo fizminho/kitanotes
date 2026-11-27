@@ -69,9 +69,9 @@ export async function claimNoteEditPush(db:NonNullable<PushEnv["DB"]>,noteId:str
 }
 export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,userId:string,input:PushMessageInput|LegacyPushData,kindOrScope?:PushKind|PushScope,legacyScope?:PushScope):Promise<void> {
  const legacy=!("kind" in input);
- const kind:PushKind=legacy?(typeof kindOrScope==="string"?kindOrScope:"test" ):input.kind;
+ const resolvedKind:PushKind=legacy?(typeof kindOrScope==="string"?kindOrScope:"test"):input.kind;
  const scope=legacy?(typeof kindOrScope==="object"?kindOrScope:legacyScope):kindOrScope as PushScope|undefined;
- const message:PushMessageInput=legacy?{kind,subtype:"legacy",url:input.url,tag:input.tag}:input;
+ const message:PushMessageInput=legacy?{kind:resolvedKind,subtype:"legacy",url:input.url,tag:input.tag}:input;
  if(!pushConfigured(env))return;
  let preferences:PushPreferenceRow;
  try {
@@ -99,7 +99,7 @@ export async function sendPushToUser(db:NonNullable<PushEnv["DB"]>,env:VapidEnv,
  const built=buildPushContent(message as PushMessageInput,preferences.push_preview_mode,preferences.timezone||"Asia/Kuala_Lumpur");
  const target=validPushUrl(message.url)?message.url:defaultPushUrl(message as PushMessageInput);
  const tag=validPushTag(message.tag)?message.tag:defaultPushTag(message as PushMessageInput,userId);
- const payloadData={v:2,kind:message.kind,subtype:("subtype" in message?message.subtype:undefined),title:built.title,body:built.body,url:target,tag,renotify:true,data:{workspaceId:("workspaceId" in message?message.workspaceId:undefined)??undefined,resourceType:("resourceType" in message?message.resourceType:undefined)??undefined,resourceId:("resourceId" in message?message.resourceId:undefined)??undefined,notificationId:("notificationId" in message?message.notificationId:undefined)??undefined}};
+ const payloadData={v:2,kind:message.kind,...(message.subtype?{subtype:message.subtype}:{}),title:built.title,body:built.body,url:target,tag,renotify:true,data:{...(message.workspaceId?{workspaceId:message.workspaceId}:{}),...(message.resourceType?{resourceType:message.resourceType}:{}),...(message.resourceId?{resourceId:message.resourceId}:{}),...(message.notificationId?{notificationId:message.notificationId}:{})}};
  let encoded="";
  try{encoded=JSON.stringify(payloadData);if(new TextEncoder().encode(encoded).byteLength>2800)return;}catch{return;}
  const ttl=message.kind==="reminder"?86400:message.kind==="event"?14400:3600;
